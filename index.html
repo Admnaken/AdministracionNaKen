@@ -8,17 +8,17 @@
 <link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@400;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --paper:#F7F4EC;
-    --paper-deep:#EFEBDE;
-    --ink:#1C2321;
-    --navy:#2B4570;
-    --navy-deep:#1B2C47;
-    --brass:#B08A2E;
-    --line:#D8D2C0;
-    --line-soft:#E8E3D5;
-    --danger:#9A3B2E;
-    --ok:#3C6E47;
-    --muted:#6b6455;
+    --paper:#FBFCFB;
+    --paper-deep:#F0F4F1;
+    --ink:#20261F;
+    --navy:#0E7A56;
+    --navy-deep:#0A5C42;
+    --brass:#E8952C;
+    --line:#DCE3DE;
+    --line-soft:#EAEFEB;
+    --danger:#D64545;
+    --ok:#0E7A56;
+    --muted:#6B756E;
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--paper);color:var(--ink);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
@@ -32,12 +32,12 @@
     display:flex;flex-direction:column;padding:22px 0;
   }
   .sidebar .brand{padding:0 20px 20px;border-bottom:1px solid rgba(255,255,255,0.12);margin-bottom:14px;}
-  .sidebar .brand .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#9FB0C8;display:block;margin-bottom:4px;}
+  .sidebar .brand .eyebrow{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#A9CBBB;display:block;margin-bottom:4px;}
   .sidebar .brand h1{font-family:'Zilla Slab',serif;font-size:22px;margin:0;font-weight:700;}
   .navgroup{padding:0 10px;}
-  .navgroup .group-label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:#7E90AB;padding:14px 10px 6px;}
+  .navgroup .group-label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:#7FA595;padding:14px 10px 6px;}
   .navbtn{
-    display:block;width:100%;text-align:left;background:none;border:none;color:#D9DEE8;
+    display:block;width:100%;text-align:left;background:none;border:none;color:#DCEAE2;
     font-family:'Inter',sans-serif;font-size:13.5px;padding:9px 10px;border-radius:5px;cursor:pointer;
     margin-bottom:1px;
   }
@@ -109,7 +109,7 @@
   .card-meta{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);}
   .badge{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.04em;padding:3px 8px;border-radius:20px;text-transform:uppercase;white-space:nowrap;}
   .badge.pendiente{background:#F3E6C8;color:#7A5A0F;}
-  .badge.proceso{background:#DCE4EE;color:var(--navy-deep);}
+  .badge.proceso{background:#DCEEE5;color:var(--navy-deep);}
   .badge.resuelto{background:#DEEBE0;color:var(--ok);}
   .card textarea, .card input, .card select{
     width:100%;border:1px solid var(--line);border-radius:4px;padding:8px 9px;font-family:'Inter',sans-serif;
@@ -153,7 +153,7 @@
   }
   .profile-banner .who{font-size:14px;}
   .profile-banner .who b{font-family:'Zilla Slab',serif;font-size:16px;}
-  .profile-banner .meta{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#C7D2E3;margin-top:2px;}
+  .profile-banner .meta{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#BFE0CE;margin-top:2px;}
   .profile-banner button{
     font-family:'IBM Plex Mono',monospace;font-size:11px;background:rgba(255,255,255,0.12);
     border:1px solid rgba(255,255,255,0.3);color:#fff;padding:7px 12px;border-radius:4px;cursor:pointer;
@@ -237,6 +237,7 @@
     <div class="navgroup">
       <div class="group-label">Consorcistas</div>
       <button class="navbtn active" data-panel="expensas">Expensas</button>
+      <button class="navbtn" data-panel="formapago">Forma de pago</button>
       <button class="navbtn" data-panel="reclamos">Reclamos y consultas</button>
       <button class="navbtn" data-panel="facturas">Facturas del mes</button>
       <button class="navbtn" data-panel="asamblea">Asamblea virtual</button>
@@ -250,6 +251,7 @@
       <button class="navbtn" data-panel="reserva">Fondo de reserva</button>
       <button class="navbtn" data-panel="honorarios">Honorarios</button>
       <button class="navbtn" data-panel="conciliaciones">Conciliación bancaria</button>
+      <button class="navbtn" data-panel="segurosdepositos">Seguros y depósitos</button>
     </div>
 
     <div class="navgroup">
@@ -290,6 +292,16 @@
           <p class="panel-note">Resumen mensual de expensas ordinarias y extraordinarias. Los propietarios pueden consultar y descargar cualquier período publicado.</p>
         </div>
         <div id="expensas-mount"></div>
+      </section>
+
+      <!-- FORMA DE PAGO -->
+      <section class="panel" id="panel-formapago">
+        <div class="panel-head">
+          <span class="eyebrow">Consorcistas</span>
+          <h2>Forma de pago y cobranzas</h2>
+          <p class="panel-note">Datos de contacto de la administración y del consorcio, y los medios habilitados para pagar la expensa.</p>
+        </div>
+        <div id="formapago-mount"></div>
       </section>
 
       <!-- RECLAMOS -->
@@ -381,6 +393,19 @@
           <p class="panel-note">Partiendo del saldo según el mayor contable, se suman/restan las diferencias contra el extracto del banco. El mes en vigencia queda destacado arriba.</p>
         </div>
         <div id="conciliaciones-mount"></div>
+      </section>
+
+      <!-- SEGUROS Y DEPÓSITOS -->
+      <section class="panel" id="panel-segurosdepositos">
+        <div class="panel-head">
+          <span class="eyebrow">Transparencia</span>
+          <h2>Seguros y depósitos no identificados</h2>
+          <p class="panel-note">Pólizas vigentes del edificio y depósitos bancarios recibidos que todavía no se pudieron asociar a un pago.</p>
+        </div>
+        <div class="subhead" style="margin-top:0;">Pólizas de seguros</div>
+        <div id="polizas-mount"></div>
+        <div class="subhead">Depósitos no identificados</div>
+        <div id="depositos-mount"></div>
       </section>
 
       <!-- REGISTRO DE ASAMBLEA -->
@@ -1039,6 +1064,91 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     }
   }
 
+  /* ---------- Forma de pago y cobranzas ---------- */
+  function mountFormaPago(mountId){
+    const mount = document.getElementById(mountId);
+    const statusId = mountId+'-status';
+    const fields = ['empresaCobranzas','notasCobranzas','cbu','alias','banco','sucursal','titularCuit'];
+
+    mount.innerHTML = `<div id="${mountId}-contact"></div><div id="${mountId}-pago"></div>`;
+
+    loadData('naken-consorcio-datos', {}).then(cfg=>{
+      document.getElementById(mountId+'-contact').innerHTML = `
+        <div class="config-row" style="margin-bottom:6px;">
+          <div class="infoblock">
+            <h3>Administración</h3>
+            <p><b>${escapeHtml(cfg.administradorNombre||'—')}</b><br>
+            CUIT: ${escapeHtml(cfg.administradorCuit||'—')}<br>
+            ${escapeHtml(cfg.administradorDomicilio||'—')}<br>
+            ${escapeHtml(cfg.administradorTel||'—')}<br>
+            ${escapeHtml(cfg.administradorFiscal||'')}<br>
+            ${escapeHtml(cfg.administradorRedes||'')}</p>
+          </div>
+          <div class="infoblock">
+            <h3>Consorcio</h3>
+            <p><b>${escapeHtml(cfg.edificio||'—')}</b><br>
+            ${escapeHtml(cfg.barrio||'—')}<br>
+            CUIT: ${escapeHtml(cfg.consorcioCuit||'—')}<br>
+            Convenio: ${escapeHtml(cfg.consorcioConvenio||'—')}</p>
+          </div>
+        </div>
+      `;
+    });
+
+    const pagoMount = document.getElementById(mountId+'-pago');
+    if(role==='admin'){
+      pagoMount.innerHTML = `
+        <div class="infoblock">
+          <h3>Empresa de cobranzas y depósito</h3>
+          <div class="config-row">
+            <div><label>Empresa de cobranzas</label><input type="text" id="fp-empresa" placeholder="Ej: SIRO"></div>
+            <div><label>Notas</label><input type="text" id="fp-notas" placeholder=""></div>
+            <div><label>CBU</label><input type="text" id="fp-cbu" placeholder=""></div>
+            <div><label>Alias</label><input type="text" id="fp-alias" placeholder=""></div>
+            <div><label>Banco</label><input type="text" id="fp-banco" placeholder=""></div>
+            <div><label>Sucursal</label><input type="text" id="fp-sucursal" placeholder=""></div>
+            <div><label>Titular / CUIT de la cuenta</label><input type="text" id="fp-titular" placeholder=""></div>
+          </div>
+          <div class="toolbar"><span></span><div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}<button class="btn primary" id="fp-save">Guardar</button></div></div>
+        </div>
+      `;
+      loadData('naken-forma-pago', {}).then(d=>{
+        document.getElementById('fp-empresa').value = d.empresaCobranzas||'';
+        document.getElementById('fp-notas').value = d.notasCobranzas||'';
+        document.getElementById('fp-cbu').value = d.cbu||'';
+        document.getElementById('fp-alias').value = d.alias||'';
+        document.getElementById('fp-banco').value = d.banco||'';
+        document.getElementById('fp-sucursal').value = d.sucursal||'';
+        document.getElementById('fp-titular').value = d.titularCuit||'';
+      });
+      document.getElementById('fp-save').addEventListener('click', ()=>{
+        saveData('naken-forma-pago', {
+          empresaCobranzas: document.getElementById('fp-empresa').value.trim(),
+          notasCobranzas: document.getElementById('fp-notas').value.trim(),
+          cbu: document.getElementById('fp-cbu').value.trim(),
+          alias: document.getElementById('fp-alias').value.trim(),
+          banco: document.getElementById('fp-banco').value.trim(),
+          sucursal: document.getElementById('fp-sucursal').value.trim(),
+          titularCuit: document.getElementById('fp-titular').value.trim(),
+        }, statusId);
+      });
+    } else {
+      loadData('naken-forma-pago', {}).then(d=>{
+        pagoMount.innerHTML = `
+          <div class="infoblock">
+            <h3>Cómo pagar</h3>
+            <p><b>Empresa de cobranzas:</b> ${escapeHtml(d.empresaCobranzas||'—')} ${d.notasCobranzas?'— '+escapeHtml(d.notasCobranzas):''}</p>
+            <p><b>Transferencia / depósito:</b><br>
+            CBU: ${escapeHtml(d.cbu||'—')}<br>
+            Alias: ${escapeHtml(d.alias||'—')}<br>
+            ${escapeHtml(d.banco||'')} ${escapeHtml(d.sucursal||'')}<br>
+            Titular: ${escapeHtml(d.titularCuit||'—')}</p>
+          </div>
+        `;
+      });
+    }
+  }
+
   /* ---------- Fondo de reserva (with running total) ---------- */
   function mountReserva(mountId, storageKey){
     const mount = document.getElementById(mountId);
@@ -1225,17 +1335,23 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
   function mountUsuarios(mountId){
     const mount = document.getElementById(mountId);
     mount.innerHTML = `
-      <div class="subhead" style="margin-top:0;">Datos del consorcio</div>
-      <p class="panel-note" style="margin-bottom:14px;">Esto es lo que ve el propietario apenas inicia sesión.</p>
+      <div class="subhead" style="margin-top:0;">Datos de la administración</div>
+      <p class="panel-note" style="margin-bottom:14px;">Esto es lo que exige mostrar el Modelo Único de Liquidación de Expensas — se muestra al propietario y en el recibo.</p>
       <div class="config-row">
-        <div>
-          <label>Nombre del edificio</label>
-          <input type="text" id="cfg-edificio" placeholder="Ej: Edificio Almirante">
-        </div>
-        <div>
-          <label>Dirección / Barrio</label>
-          <input type="text" id="cfg-barrio" placeholder="Ej: Av. Libertador 1234, Núñez">
-        </div>
+        <div><label>Nombre del administrador</label><input type="text" id="cfg-adm-nombre" placeholder="Tu nombre completo"></div>
+        <div><label>CUIT</label><input type="text" id="cfg-adm-cuit" placeholder="20-XXXXXXXX-X"></div>
+        <div><label>Domicilio / Mail</label><input type="text" id="cfg-adm-domicilio" placeholder="Domicilio y/o mail de contacto"></div>
+        <div><label>Teléfono / WhatsApp</label><input type="text" id="cfg-adm-tel" placeholder="+54 9 11 ..."></div>
+        <div><label>Situación fiscal / Horario</label><input type="text" id="cfg-adm-fiscal" placeholder="Ej: Monotributo — Lun a Vie 9 a 17hs"></div>
+        <div><label>Redes / Web</label><input type="text" id="cfg-adm-redes" placeholder="Instagram, sitio web, etc."></div>
+      </div>
+
+      <div class="subhead">Datos del consorcio</div>
+      <div class="config-row">
+        <div><label>Nombre del edificio</label><input type="text" id="cfg-edificio" placeholder="Ej: Edificio Almirante"></div>
+        <div><label>Dirección / Barrio</label><input type="text" id="cfg-barrio" placeholder="Ej: Av. Libertador 1234, Núñez"></div>
+        <div><label>CUIT del consorcio</label><input type="text" id="cfg-cons-cuit" placeholder="30-XXXXXXXX-X"></div>
+        <div><label>Convenio de personal</label><input type="text" id="cfg-cons-convenio" placeholder="Ej: 589/10 FATERYH"></div>
       </div>
       <div class="toolbar" style="margin-bottom:10px;">
         <span></span>
@@ -1249,15 +1365,25 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       <div id="${mountId}-enabled"></div>
     `;
 
-    loadData('naken-consorcio-datos', {edificio:'', barrio:''}).then(cfg=>{
-      document.getElementById('cfg-edificio').value = cfg.edificio || '';
-      document.getElementById('cfg-barrio').value = cfg.barrio || '';
+    const cfgFields = {
+      'cfg-adm-nombre':'administradorNombre', 'cfg-adm-cuit':'administradorCuit',
+      'cfg-adm-domicilio':'administradorDomicilio', 'cfg-adm-tel':'administradorTel',
+      'cfg-adm-fiscal':'administradorFiscal', 'cfg-adm-redes':'administradorRedes',
+      'cfg-edificio':'edificio', 'cfg-barrio':'barrio',
+      'cfg-cons-cuit':'consorcioCuit', 'cfg-cons-convenio':'consorcioConvenio'
+    };
+
+    loadData('naken-consorcio-datos', {}).then(cfg=>{
+      Object.entries(cfgFields).forEach(([id,key])=>{
+        document.getElementById(id).value = cfg[key] || '';
+      });
     });
     document.getElementById('cfg-save').addEventListener('click', ()=>{
-      saveData('naken-consorcio-datos', {
-        edificio: document.getElementById('cfg-edificio').value.trim(),
-        barrio: document.getElementById('cfg-barrio').value.trim()
-      }, mountId+'-cfg-status');
+      const data = {};
+      Object.entries(cfgFields).forEach(([id,key])=>{
+        data[key] = document.getElementById(id).value.trim();
+      });
+      saveData('naken-consorcio-datos', data, mountId+'-cfg-status');
     });
 
     async function refreshLists(){
@@ -1714,11 +1840,15 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
   function renderAll(){
     mountLedger('expensas-mount', 'naken-expensas', [
       {key:'periodo', label:'Período', placeholder:'Julio 2026'},
+      {key:'venc1', label:'1er vencimiento', placeholder:'10/07/2026'},
+      {key:'venc2', label:'2do vencimiento', placeholder:'20/07/2026'},
       {key:'ordinarias', label:'Ordinarias ($)', numeric:true, placeholder:'0'},
       {key:'extraordinarias', label:'Extraordinarias ($)', numeric:true, placeholder:'0'},
       {key:'total', label:'Total ($)', numeric:true, placeholder:'0'},
       {key:'estado', label:'Estado', placeholder:'Publicada'},
     ], {emptyText:'Todavía no se publicaron liquidaciones.'});
+
+    mountFormaPago('formapago-mount');
 
     mountTickets('reclamos-mount', 'naken-reclamos', {
       newLabel:'Nuevo reclamo, pedido o consulta',
@@ -1805,6 +1935,19 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     mountReserva('reserva-mount', 'naken-reserva');
 
     mountConciliaciones('conciliaciones-mount', 'naken-conciliaciones');
+
+    mountLedger('polizas-mount', 'naken-polizas', [
+      {key:'proveedor', label:'Proveedor', placeholder:''},
+      {key:'numeroPoliza', label:'N° de póliza', placeholder:''},
+      {key:'descripcion', label:'Descripción', placeholder:'Ej: Incendio, RC, ABE'},
+      {key:'fechaVencimiento', label:'Vencimiento', placeholder:'DD/MM/AAAA'},
+    ], {emptyText:'Sin pólizas cargadas.'});
+
+    mountLedger('depositos-mount', 'naken-depositos-no-identificados', [
+      {key:'fecha', label:'Fecha', placeholder:'DD/MM/AAAA'},
+      {key:'concepto', label:'Concepto', placeholder:''},
+      {key:'importe', label:'Importe ($)', numeric:true, placeholder:'0'},
+    ], {emptyText:'No hay depósitos sin identificar.'});
 
     mountLedger('honorarios-mount', 'naken-honorarios', [
       {key:'profesional', label:'Profesional', placeholder:'Nombre'},
