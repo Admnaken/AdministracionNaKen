@@ -189,6 +189,28 @@
   .config-row input{width:100%;border:1px solid var(--line);border-radius:5px;padding:10px 11px;font-family:'Inter',sans-serif;font-size:13.5px;background:#fff;}
   .subhead{font-family:'Zilla Slab',serif;font-size:16px;margin:26px 0 10px;}
 
+  /* Recibo de sueldo */
+  .recibo{background:#fff;border:1px solid var(--ink);padding:22px 24px;font-size:12.5px;max-width:640px;}
+  .recibo .recibo-head{display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:10px;}
+  .recibo .recibo-head b{font-family:'Zilla Slab',serif;font-size:15px;}
+  .recibo table{width:100%;border-collapse:collapse;margin-top:8px;}
+  .recibo table td{padding:4px 6px;border-bottom:1px solid var(--line-soft);}
+  .recibo table td:last-child{text-align:right;font-family:'IBM Plex Mono',monospace;}
+  .recibo .recibo-total{font-weight:600;border-top:2px solid var(--ink);background:var(--paper-deep);}
+  .recibo .recibo-cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px;}
+  .recibo .recibo-cols h4{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 4px;}
+  @media print{
+    body *{visibility:hidden;}
+    .recibo, .recibo *{visibility:visible;}
+    .recibo{position:absolute;top:0;left:0;border:none;}
+  }
+
+  .field-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px;}
+  .field-grid label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px;}
+  .field-grid input, .field-grid select{width:100%;border:1px solid var(--line);border-radius:5px;padding:9px 10px;font-family:'Inter',sans-serif;font-size:13.5px;background:#fff;}
+  .field-grid input:focus, .field-grid select:focus{outline:none;border-color:var(--navy);}
+  @media (max-width:700px){.field-grid{grid-template-columns:1fr 1fr;}}
+
   @media (max-width:860px){
     .app{flex-direction:column;}
     .sidebar{width:100%;flex-direction:row;overflow-x:auto;padding:12px;}
@@ -227,12 +249,14 @@
       <button class="navbtn" data-panel="movimientos">Movimientos bancarios</button>
       <button class="navbtn" data-panel="reserva">Fondo de reserva</button>
       <button class="navbtn" data-panel="honorarios">Honorarios</button>
+      <button class="navbtn" data-panel="conciliaciones">Conciliación bancaria</button>
     </div>
 
     <div class="navgroup">
       <div class="group-label">Herramientas del administrador</div>
       <button class="navbtn admin-only" data-panel="asistencia">Registro de asamblea</button>
       <button class="navbtn admin-only" data-panel="usuarios">Usuarios y accesos</button>
+      <button class="navbtn admin-only" data-panel="liquidaciones">Liquidación de sueldos</button>
     </div>
 
     <div class="navgroup">
@@ -349,6 +373,16 @@
         <div id="honorarios-mount"></div>
       </section>
 
+      <!-- CONCILIACIÓN BANCARIA -->
+      <section class="panel" id="panel-conciliaciones">
+        <div class="panel-head">
+          <span class="eyebrow">Transparencia</span>
+          <h2>Conciliación bancaria</h2>
+          <p class="panel-note">Partiendo del saldo según el mayor contable, se suman/restan las diferencias contra el extracto del banco. El mes en vigencia queda destacado arriba.</p>
+        </div>
+        <div id="conciliaciones-mount"></div>
+      </section>
+
       <!-- REGISTRO DE ASAMBLEA -->
       <section class="panel" id="panel-asistencia">
         <div class="panel-head">
@@ -367,6 +401,16 @@
           <p class="panel-note">Datos generales del consorcio, solicitudes de acceso de propietarios y habilitación de cuentas.</p>
         </div>
         <div id="usuarios-mount"></div>
+      </section>
+
+      <!-- LIQUIDACIÓN DE SUELDOS -->
+      <section class="panel" id="panel-liquidaciones">
+        <div class="panel-head">
+          <span class="eyebrow">Herramientas del administrador</span>
+          <h2>Liquidación de sueldos</h2>
+          <p class="panel-note">Liquidación mensual por empleado: básico, horas extra, aportes y contribuciones. Genera el recibo listo para entregar.</p>
+        </div>
+        <div id="liquidaciones-mount"></div>
       </section>
 
       <!-- PERSONAL -->
@@ -1300,6 +1344,372 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     refreshLists();
   }
 
+  /* ---------- Conciliación bancaria ---------- */
+  function mountConciliaciones(mountId, storageKey){
+    const mount = document.getElementById(mountId);
+    const statusId = mountId+'-status';
+    let rows = [];
+
+    function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); }
+
+    mount.innerHTML = `
+      <div id="${mountId}-kpi" class="kpi-row"></div>
+      <table class="ledger">
+        <thead><tr>
+          <th>Período</th>
+          <th>Saldo s/Mayor</th>
+          <th>Dif. transitorias (+)</th>
+          <th>Dif. transitorias (−)</th>
+          <th>Dif. permanentes (+)</th>
+          <th>Dif. permanentes (−)</th>
+          <th>Saldo s/Extracto (calc.)</th>
+          ${role==='admin' ? '<th class="row-del"></th>' : ''}
+        </tr></thead>
+        <tbody id="${mountId}-body"></tbody>
+      </table>
+      <div class="toolbar">
+        ${role==='admin' ? `<button class="btn" id="${mountId}-add">+ Agregar período</button>` : '<span></span>'}
+        <div style="display:flex;align-items:center;gap:12px;">
+          ${statusEl(statusId)}
+          ${role==='admin' ? `<button class="btn primary" id="${mountId}-save">Guardar cambios</button>` : ''}
+        </div>
+      </div>
+      <p class="panel-note" style="margin-top:14px;">
+        <b>Cómo leerlo:</b> partiendo del saldo según el Mayor contable, se suman las diferencias que aumentan el saldo bancario y se restan las que lo disminuyen, agrupadas en transitorias (se resuelven solas con el tiempo) y permanentes (requieren un asiento de ajuste). El resultado debería coincidir con el saldo del extracto bancario del banco.
+      </p>
+    `;
+
+    const body = document.getElementById(mountId+'-body');
+    const fields = ['periodo','saldoMayor','transMas','transMenos','permMas','permMenos'];
+
+    function readRows(){
+      const out = [];
+      body.querySelectorAll('tr[data-row]').forEach(tr=>{
+        const row = {};
+        fields.forEach(f=>{
+          const input = tr.querySelector(`[data-field="${f}"]`);
+          row[f] = input ? input.value : '';
+        });
+        out.push(row);
+      });
+      return out;
+    }
+
+    function calcSaldoExtracto(row){
+      return num(row.saldoMayor) + num(row.transMas) - num(row.transMenos) + num(row.permMas) - num(row.permMenos);
+    }
+
+    function updateKpi(){
+      const kpi = document.getElementById(mountId+'-kpi');
+      if(rows.length===0){
+        kpi.innerHTML = `<div class="kpi"><div class="label">Mes en vigencia</div><div class="value" style="font-size:14px;">Sin datos</div></div>`;
+        return;
+      }
+      const last = rows[rows.length-1];
+      kpi.innerHTML = `
+        <div class="kpi highlight">
+          <div class="label">Mes en vigencia</div>
+          <div class="value">${escapeHtml(last.periodo||'—')}</div>
+        </div>
+        <div class="kpi highlight">
+          <div class="label">Saldo s/Extracto (calculado)</div>
+          <div class="value">${fmt(calcSaldoExtracto(last))}</div>
+        </div>
+      `;
+    }
+
+    function render(){
+      body.innerHTML = '';
+      if(rows.length===0){
+        body.innerHTML = `<tr><td colspan="7"><div class="empty">Todavía no se cargó ninguna conciliación.</div></td></tr>`;
+        updateKpi();
+        return;
+      }
+      rows.forEach(row=>{
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-row','1');
+        const disabled = role==='admin' ? '' : 'disabled';
+        tr.innerHTML = `
+          <td><input type="text" data-field="periodo" value="${escapeHtml(row.periodo)}" placeholder="Julio 2026" ${disabled}></td>
+          <td class="num"><input type="text" data-field="saldoMayor" value="${escapeHtml(row.saldoMayor)}" placeholder="0" ${disabled}></td>
+          <td class="num"><input type="text" data-field="transMas" value="${escapeHtml(row.transMas)}" placeholder="0" ${disabled}></td>
+          <td class="num"><input type="text" data-field="transMenos" value="${escapeHtml(row.transMenos)}" placeholder="0" ${disabled}></td>
+          <td class="num"><input type="text" data-field="permMas" value="${escapeHtml(row.permMas)}" placeholder="0" ${disabled}></td>
+          <td class="num"><input type="text" data-field="permMenos" value="${escapeHtml(row.permMenos)}" placeholder="0" ${disabled}></td>
+          <td class="num"><input type="text" value="${fmt(calcSaldoExtracto(row))}" disabled></td>
+          ${role==='admin' ? `<td class="row-del"><button data-action="delete" title="Eliminar">✕</button></td>` : ''}
+        `;
+        body.appendChild(tr);
+      });
+      updateKpi();
+    }
+
+    let saveTimer;
+    function scheduleSave(){
+      if(role!=='admin') return;
+      setStatus(statusId,'saving');
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(()=>{ rows = readRows(); updateKpi(); saveData(storageKey, rows, statusId); }, 600);
+    }
+
+    if(role==='admin'){
+      body.addEventListener('input', e=>{
+        if(e.target.closest('tr')) {
+          const tr = e.target.closest('tr');
+          const calcCell = tr.children[6].querySelector('input');
+          const row = {};
+          fields.forEach(f=>{ const inp = tr.querySelector(`[data-field="${f}"]`); row[f]=inp?inp.value:''; });
+          calcCell.value = fmt(calcSaldoExtracto(row));
+        }
+        scheduleSave();
+      });
+      body.addEventListener('click', e=>{
+        const b = e.target.closest('[data-action="delete"]');
+        if(b){ rows = readRows(); rows.splice([...body.children].indexOf(b.closest('tr')),1); render(); scheduleSave(); }
+      });
+      document.getElementById(mountId+'-add').addEventListener('click', ()=>{
+        rows = readRows();
+        rows.push({periodo:'', saldoMayor:'', transMas:'', transMenos:'', permMas:'', permMenos:''});
+        render();
+        scheduleSave();
+        body.lastElementChild.querySelector('input').focus();
+      });
+      document.getElementById(mountId+'-save').addEventListener('click', ()=>{
+        rows = readRows(); updateKpi(); saveData(storageKey, rows, statusId);
+      });
+    }
+
+    loadData(storageKey, []).then(d=>{ rows = d; render(); });
+  }
+
+  /* ---------- Liquidación de sueldos ---------- */
+  function mountLiquidaciones(mountId, storageKey){
+    const mount = document.getElementById(mountId);
+    const statusId = mountId+'-status';
+    let liquidaciones = [];
+    let empleados = [];
+    let consorcioDatos = {edificio:'', barrio:''};
+
+    function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); }
+    function pct(n){ return n.toLocaleString('es-AR',{maximumFractionDigits:2}) + '%'; }
+
+    mount.innerHTML = `
+      <div class="new-ticket" style="background:#fff;">
+        <h3>Nueva liquidación mensual</h3>
+        <div class="field-grid">
+          <div>
+            <label>Empleado</label>
+            <select id="${mountId}-empleado"></select>
+          </div>
+          <div>
+            <label>Período</label>
+            <input type="text" id="${mountId}-periodo" placeholder="Julio 2026">
+          </div>
+          <div>
+            <label>Básico ($)</label>
+            <input type="text" id="${mountId}-basico" placeholder="0">
+          </div>
+          <div>
+            <label>Horas extra 50% (cant.)</label>
+            <input type="text" id="${mountId}-hs50" placeholder="0">
+          </div>
+          <div>
+            <label>Horas extra 100% (cant.)</label>
+            <input type="text" id="${mountId}-hs100" placeholder="0">
+          </div>
+          <div>
+            <label>Otro concepto remunerativo ($)</label>
+            <input type="text" id="${mountId}-otros" placeholder="0">
+          </div>
+          <div>
+            <label>Sindicato (%)</label>
+            <input type="text" id="${mountId}-sindicato" value="2">
+          </div>
+          <div>
+            <label>Aportes (%)</label>
+            <input type="text" id="${mountId}-aportes" value="17">
+          </div>
+          <div>
+            <label>Contribuciones (%)</label>
+            <input type="text" id="${mountId}-contrib" value="24">
+          </div>
+          <div>
+            <label>ART fijo ($)</label>
+            <input type="text" id="${mountId}-artfijo" value="40">
+          </div>
+          <div>
+            <label>ART variable (%)</label>
+            <input type="text" id="${mountId}-artpct" value="1">
+          </div>
+          <div>
+            <label>Seguro de vida ($)</label>
+            <input type="text" id="${mountId}-seguro" value="24,35">
+          </div>
+        </div>
+        <p class="panel-note" style="margin:0 0 10px;">El valor hora se estima como Básico ÷ 200. Horas extra al 50% y 100% se calculan sobre ese valor, según art. 201 LCT. Los porcentajes vienen precargados con valores de referencia — ajustalos según la escala y ART vigentes al momento de liquidar.</p>
+        <div class="toolbar">
+          <span></span>
+          <div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}<button class="btn primary" id="${mountId}-calc">Calcular y guardar</button></div>
+        </div>
+      </div>
+
+      <div class="subhead">Historial de liquidaciones</div>
+      <div class="cards" id="${mountId}-list"></div>
+    `;
+
+    const empleadoSelect = document.getElementById(mountId+'-empleado');
+    const listEl = document.getElementById(mountId+'-list');
+
+    function computeRecord(base){
+      const basico = num(base.basico);
+      const valorHora = basico / 200;
+      const hs50Monto = num(base.hs50) * valorHora * 1.5;
+      const hs100Monto = num(base.hs100) * valorHora * 2;
+      const otrosMonto = num(base.otros);
+      const sueldoBruto = basico + hs50Monto + hs100Monto + otrosMonto;
+      const aportesMonto = sueldoBruto * (num(base.aportesPct)/100);
+      const sindicatoMonto = sueldoBruto * (num(base.sindicatoPct)/100);
+      const sueldoNeto = sueldoBruto - aportesMonto - sindicatoMonto;
+      const contribucionesMonto = sueldoBruto * (num(base.contribPct)/100);
+      const artMonto = num(base.artFijo) + sueldoBruto * (num(base.artPct)/100);
+      const seguroVidaMonto = num(base.seguroVida);
+      const totalCargas = aportesMonto + contribucionesMonto + artMonto + seguroVidaMonto;
+      return { ...base, valorHora, hs50Monto, hs100Monto, sueldoBruto, aportesMonto, sindicatoMonto, sueldoNeto, contribucionesMonto, artMonto, seguroVidaMonto, totalCargas };
+    }
+
+    function recibHtml(r){
+      return `
+        <div class="recibo">
+          <div class="recibo-head">
+            <div>
+              <b>${escapeHtml(consorcioDatos.edificio || 'Consorcio de Propietarios')}</b><br>
+              ${escapeHtml(consorcioDatos.barrio || '')}
+            </div>
+            <div style="text-align:right;">
+              Recibo de haberes<br>Período: <b>${escapeHtml(r.periodo)}</b>
+            </div>
+          </div>
+          <div><b>${escapeHtml(r.empleadoNombre)}</b> — CUIL ${escapeHtml(r.empleadoCuil)}</div>
+          <div style="color:var(--muted);">Categoría: ${escapeHtml(r.empleadoCategoria)} · Fecha de ingreso: ${escapeHtml(r.empleadoFechaIngreso)}</div>
+
+          <div class="recibo-cols">
+            <div>
+              <h4>Haberes</h4>
+              <table>
+                <tr><td>Básico</td><td>${fmt(num(r.basico))}</td></tr>
+                <tr><td>Horas extra 50% (${escapeHtml(r.hs50)} hs)</td><td>${fmt(r.hs50Monto)}</td></tr>
+                <tr><td>Horas extra 100% (${escapeHtml(r.hs100)} hs)</td><td>${fmt(r.hs100Monto)}</td></tr>
+                ${num(r.otros)>0 ? `<tr><td>Otro concepto</td><td>${fmt(num(r.otros))}</td></tr>` : ''}
+                <tr class="recibo-total"><td>Sueldo bruto</td><td>${fmt(r.sueldoBruto)}</td></tr>
+              </table>
+              <h4 style="margin-top:14px;">Descuentos</h4>
+              <table>
+                <tr><td>Aportes (${escapeHtml(r.aportesPct)}%)</td><td>−${fmt(r.aportesMonto)}</td></tr>
+                <tr><td>Sindicato (${escapeHtml(r.sindicatoPct)}%)</td><td>−${fmt(r.sindicatoMonto)}</td></tr>
+                <tr class="recibo-total"><td>Sueldo neto a cobrar</td><td>${fmt(r.sueldoNeto)}</td></tr>
+              </table>
+            </div>
+            <div>
+              <h4>Cargas del empleador (no se descuentan)</h4>
+              <table>
+                <tr><td>Contribuciones (${escapeHtml(r.contribPct)}%)</td><td>${fmt(r.contribucionesMonto)}</td></tr>
+                <tr><td>ART</td><td>${fmt(r.artMonto)}</td></tr>
+                <tr><td>Seguro de vida</td><td>${fmt(r.seguroVidaMonto)}</td></tr>
+                <tr class="recibo-total"><td>Total cargas F.931</td><td>${fmt(r.totalCargas)}</td></tr>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderList(){
+      listEl.innerHTML = '';
+      if(liquidaciones.length===0){
+        listEl.innerHTML = `<div class="empty">Todavía no se generó ninguna liquidación.</div>`;
+        return;
+      }
+      liquidaciones.slice().reverse().forEach(r=>{
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <div class="card-top">
+            <div>
+              <b>${escapeHtml(r.empleadoNombre)}</b>
+              <div class="card-meta">${escapeHtml(r.periodo)} · Neto: ${fmt(r.sueldoNeto)}</div>
+            </div>
+            <button class="btn ghost" data-action="toggle" data-id="${r.id}">Ver recibo</button>
+          </div>
+          <div id="recibo-${r.id}" style="display:none;margin-top:12px;"></div>
+        `;
+        listEl.appendChild(card);
+      });
+      listEl.querySelectorAll('[data-action="toggle"]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const r = liquidaciones.find(x=>x.id===btn.dataset.id);
+          const box = document.getElementById('recibo-'+btn.dataset.id);
+          if(box.style.display==='none'){
+            box.innerHTML = recibHtml(r) + `<div style="margin-top:10px;"><button class="btn" data-print="${r.id}">Imprimir / Guardar PDF</button></div>`;
+            box.style.display = 'block';
+            btn.textContent = 'Ocultar recibo';
+            box.querySelector('[data-print]').addEventListener('click', ()=>window.print());
+          } else {
+            box.style.display = 'none';
+            btn.textContent = 'Ver recibo';
+          }
+        });
+      });
+    }
+
+    function refreshEmpleadoSelect(){
+      empleadoSelect.innerHTML = empleados.length===0
+        ? `<option value="">— Cargá empleados en "Personal del edificio" primero —</option>`
+        : empleados.map((e,i)=>`<option value="${i}">${escapeHtml(e.nombreCompleto||'(sin nombre)')}</option>`).join('');
+    }
+
+    document.getElementById(mountId+'-calc').addEventListener('click', ()=>{
+      const idx = empleadoSelect.value;
+      const emp = empleados[idx];
+      if(!emp || !emp.nombreCompleto){
+        setStatus(statusId,'error');
+        return;
+      }
+      const base = {
+        id: uid(),
+        empleadoNombre: emp.nombreCompleto, empleadoCuil: emp.cuil, empleadoCategoria: emp.categoria, empleadoFechaIngreso: emp.fechaIngreso,
+        periodo: document.getElementById(mountId+'-periodo').value,
+        basico: document.getElementById(mountId+'-basico').value,
+        hs50: document.getElementById(mountId+'-hs50').value || '0',
+        hs100: document.getElementById(mountId+'-hs100').value || '0',
+        otros: document.getElementById(mountId+'-otros').value || '0',
+        sindicatoPct: document.getElementById(mountId+'-sindicato').value,
+        aportesPct: document.getElementById(mountId+'-aportes').value,
+        contribPct: document.getElementById(mountId+'-contrib').value,
+        artFijo: document.getElementById(mountId+'-artfijo').value,
+        artPct: document.getElementById(mountId+'-artpct').value,
+        seguroVida: document.getElementById(mountId+'-seguro').value
+      };
+      const record = computeRecord(base);
+      liquidaciones.push(record);
+      renderList();
+      saveData(storageKey, liquidaciones, statusId);
+    });
+
+    Promise.all([
+      loadData('naken-empleados', []),
+      loadData('naken-consorcio-datos', {edificio:'', barrio:''}),
+      loadData(storageKey, [])
+    ]).then(([emp, cfg, liq])=>{
+      empleados = emp;
+      consorcioDatos = cfg;
+      liquidaciones = liq;
+      refreshEmpleadoSelect();
+      renderList();
+    });
+  }
+
   /* ---------- Render all modules for current role ---------- */
   function renderAll(){
     mountLedger('expensas-mount', 'naken-expensas', [
@@ -1394,6 +1804,8 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
 
     mountReserva('reserva-mount', 'naken-reserva');
 
+    mountConciliaciones('conciliaciones-mount', 'naken-conciliaciones');
+
     mountLedger('honorarios-mount', 'naken-honorarios', [
       {key:'profesional', label:'Profesional', placeholder:'Nombre'},
       {key:'rol', label:'Rol', placeholder:'Administrador / Abogado / Contador / Técnico'},
@@ -1442,6 +1854,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
 
     mountAsistencia('asistencia-mount', 'naken-asamblea-asistencia');
     if(role==='admin') mountUsuarios('usuarios-mount');
+    if(role==='admin') mountLiquidaciones('liquidaciones-mount', 'naken-liquidaciones-sueldo');
 
     mountManual('manual-mount', 'naken-manual',
 `Esta administración se compromete a:
