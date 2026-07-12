@@ -810,6 +810,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
   const gateScreen = document.getElementById('gate-screen');
   const mainContent = document.getElementById('main-content');
   const profileBanner = document.getElementById('profile-banner');
+  const adminToggleBtn = document.querySelector('.roleswitch button[data-role="admin"]');
   let adminAuthenticated = false;
 
   function goToDefaultPanel(){
@@ -898,11 +899,13 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       gateScreen.style.display = 'none';
       mainContent.style.display = 'block';
       profileBanner.style.display = 'none';
+      adminToggleBtn.style.display = '';
       renderAll();
     } else if(currentUser){
       whoami.textContent = 'Sesión de propietario iniciada';
       gateScreen.style.display = 'none';
       mainContent.style.display = 'block';
+      adminToggleBtn.style.display = 'none';
       renderProfileBanner();
       renderAll();
     } else {
@@ -910,12 +913,19 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       mainContent.style.display = 'none';
       profileBanner.style.display = 'none';
       gateScreen.style.display = 'block';
+      adminToggleBtn.style.display = '';
       renderGate();
     }
   }
 
   roleButtons.forEach(btn=>{
-    btn.addEventListener('click', ()=> applyRole(btn.dataset.role));
+    btn.addEventListener('click', ()=>{
+      if(btn.dataset.role==='admin' && !adminAuthenticated){
+        requestAdminAccess();
+      } else {
+        applyRole(btn.dataset.role);
+      }
+    });
   });
 
   navButtons.forEach(btn=>{
@@ -1000,6 +1010,8 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
         msg.innerHTML = `<div class="gate-msg pending">Tu solicitud todavía no fue habilitada por la administración.</div>`;
         return;
       }
+      match.ultimoIngreso = new Date().toLocaleString('es-AR');
+      await saveData('naken-usuarios', usuarios);
       currentUser = match;
       applyRole('propietario');
     });
@@ -1718,16 +1730,30 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       const enabledEl = document.getElementById(mountId+'-enabled');
       enabledEl.innerHTML = enabled.length===0
         ? `<div class="empty">Todavía no hay propietarios habilitados.</div>`
-        : `<table class="ledger"><thead><tr><th>Nombre</th><th>Unidad</th><th>Usuario</th><th>Porcentual</th><th class="row-del"></th></tr></thead><tbody>` +
+        : `<table class="ledger"><thead><tr><th>Nombre</th><th>Unidad</th><th>Usuario</th><th>Porcentual</th><th>Último ingreso</th><th></th><th class="row-del"></th></tr></thead><tbody>` +
           enabled.map(u=>`
             <tr>
               <td><input type="text" value="${escapeHtml(u.nombreCompleto)}" data-id="${u.id}" data-f="nombreCompleto"></td>
               <td><input type="text" value="${escapeHtml(u.unidad)}" data-id="${u.id}" data-f="unidad"></td>
               <td><input type="text" value="${escapeHtml(u.username)}" disabled></td>
               <td class="num"><input type="text" value="${escapeHtml(u.porcentual)}" data-id="${u.id}" data-f="porcentual"></td>
+              <td><input type="text" value="${escapeHtml(u.ultimoIngreso||'Nunca')}" disabled></td>
+              <td><button class="btn ghost" data-action="reset-pw" data-id="${u.id}" style="white-space:nowrap;">Restablecer clave</button></td>
               <td class="row-del"><button data-action="deshabilitar" data-id="${u.id}" title="Deshabilitar acceso">✕</button></td>
             </tr>
           `).join('') + `</tbody></table>`;
+
+      enabledEl.querySelectorAll('[data-action="reset-pw"]').forEach(b=>{
+        b.addEventListener('click', async ()=>{
+          const nueva = prompt('Nueva contraseña para este propietario:');
+          if(!nueva) return;
+          const usuarios = await loadData('naken-usuarios', []);
+          const u = usuarios.find(x=>x.id===b.dataset.id);
+          if(u) u.password = nueva;
+          await saveData('naken-usuarios', usuarios);
+          alert('Contraseña actualizada. Pasásela al propietario por un canal seguro.');
+        });
+      });
 
       pendingEl.querySelectorAll('[data-action="habilitar"]').forEach(b=>{
         b.addEventListener('click', async ()=>{
