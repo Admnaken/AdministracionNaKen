@@ -224,6 +224,18 @@
   .dash-card canvas{max-height:260px;}
   @media (max-width:800px){.dash-grid{grid-template-columns:1fr;}}
 
+  /* Calculadora de honorarios */
+  .score-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid var(--line-soft);}
+  .score-row:last-child{border-bottom:none;}
+  .score-row span{font-size:13.5px;flex:1;}
+  .score-row select{width:170px;border:1px solid var(--line);border-radius:5px;padding:7px 9px;font-family:'Inter',sans-serif;font-size:13px;background:#fff;}
+  .tier-result{margin-top:16px;padding:16px 18px;border-radius:8px;text-align:center;}
+  .tier-result .score-num{font-family:'Zilla Slab',serif;font-size:28px;font-weight:700;}
+  .tier-result .score-label{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;margin-top:4px;}
+  .tier-bajo{background:#E4F3EA;color:var(--navy-deep);}
+  .tier-medio{background:#FDF0DC;color:#8A5A0F;}
+  .tier-alto{background:#FBE2E2;color:#A03A3A;}
+
   @media (max-width:860px){
     .app{flex-direction:column;}
     .sidebar{width:100%;flex-direction:row;overflow-x:auto;padding:12px;}
@@ -277,6 +289,7 @@
       <button class="navbtn admin-only" data-panel="asistencia">Registro de asamblea</button>
       <button class="navbtn admin-only" data-panel="usuarios">Usuarios y accesos</button>
       <button class="navbtn admin-only" data-panel="liquidaciones">Liquidación de sueldos</button>
+      <button class="navbtn admin-only" data-panel="calchonorarios">Calculadora de honorarios</button>
     </div>
 
     <div class="navgroup">
@@ -488,6 +501,16 @@
         <div id="liquidaciones-mount"></div>
       </section>
 
+      <!-- CALCULADORA DE HONORARIOS -->
+      <section class="panel" id="panel-calchonorarios">
+        <div class="panel-head">
+          <span class="eyebrow">Herramientas del administrador</span>
+          <h2>Calculadora de honorarios</h2>
+          <p class="panel-note">Para usar cuando alguien te pide presupuesto: primero puntuás la complejidad del edificio, después calculás el honorario de referencia (tabla CAPHAI) y por último ves cuántos consorcios así necesitás para tu objetivo de ingresos.</p>
+        </div>
+        <div id="calchonorarios-mount"></div>
+      </section>
+
       <!-- PERSONAL -->
       <section class="panel" id="panel-personal">
         <div class="panel-head">
@@ -660,6 +683,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     asistencia: '<rect x="6" y="4" width="12" height="17" rx="2"></rect><rect x="9" y="2.5" width="6" height="3" rx="1"></rect><polyline points="9 13 11 15 15 10.5"></polyline>',
     usuarios: '<circle cx="8" cy="15" r="4"></circle><line x1="11" y1="12" x2="20" y2="3"></line><line x1="16" y1="7" x2="19" y2="10"></line><line x1="13" y1="10" x2="16" y2="13"></line>',
     liquidaciones: '<path d="M3 7h15a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path><path d="M3 7l2-3h11l2 3"></path><circle cx="16" cy="13.5" r="1.5"></circle>',
+    calchonorarios: '<rect x="5" y="2.5" width="14" height="19" rx="2"></rect><line x1="8" y1="6.5" x2="16" y2="6.5"></line><circle cx="8.5" cy="11" r="1.1" fill="currentColor" stroke="none"></circle><circle cx="12" cy="11" r="1.1" fill="currentColor" stroke="none"></circle><circle cx="15.5" cy="11" r="1.1" fill="currentColor" stroke="none"></circle><circle cx="8.5" cy="14.5" r="1.1" fill="currentColor" stroke="none"></circle><circle cx="12" cy="14.5" r="1.1" fill="currentColor" stroke="none"></circle><circle cx="15.5" cy="14.5" r="1.1" fill="currentColor" stroke="none"></circle><circle cx="8.5" cy="18" r="1.1" fill="currentColor" stroke="none"></circle><rect x="11" y="17" width="5.5" height="2.2" rx="0.5" fill="currentColor" stroke="none"></rect>',
     personal: '<rect x="5" y="3" width="14" height="18" rx="2"></rect><circle cx="12" cy="10" r="2.5"></circle><path d="M8 17c0-2 1.8-3.3 4-3.3s4 1.3 4 3.3"></path>',
     manual: '<path d="M12 6c-1.8-1.3-4.3-2-7-2v14c2.7 0 5.2.7 7 2 1.8-1.3 4.3-2 7-2V4c-2.7 0-5.2.7-7 2z"></path><line x1="12" y1="6" x2="12" y2="20"></line>',
     remocion: '<circle cx="10" cy="8" r="4"></circle><path d="M3 20c0-3.9 3.1-7 7-7s7 3.1 7 7"></path><line x1="17" y1="10" x2="21" y2="14"></line><line x1="21" y1="10" x2="17" y2="14"></line>'
@@ -670,7 +694,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     facturas:'#7FCBFF', asamblea:'#FF7FA8', deudas:'#FFB37F', juicios:'#E0A8FF',
     movimientos:'#8FA8FF', conciliaciones:'#FFAF8F', segurosdepositos:'#8FE0FF',
     proveedores:'#FFD1A8', reserva:'#D1A8FF', honorarios:'#FFE08F', asistencia:'#A8C8FF',
-    usuarios:'#FFA8C8', liquidaciones:'#C8A8FF', personal:'#A8FFE0', manual:'#FFC8A8', remocion:'#D8A8FF'
+    usuarios:'#FFA8C8', liquidaciones:'#C8A8FF', personal:'#A8FFE0', manual:'#FFC8A8', remocion:'#D8A8FF', calchonorarios:'#B8E0A8'
   };
   const ICON_ACTIVE_COLOR = '#CFFF3D';
 
@@ -1028,6 +1052,182 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     doc.save(`Expensas-${(expensa.periodo||'periodo').replace(/\s+/g,'-')}.pdf`);
   }
 
+  /* ---------- Calculadora de honorarios (puntaje de complejidad + tabla CAPHAI) ---------- */
+  const CAPHAI_TABLE = {
+    'D': { label:'Clase D — viviendas sociales (FONAVI, BHN, etc.)', minimo:450000, r21_40:20800, r41_50:17500, r51_60:15600, r61_70:14400, r71_80:12800, r81_100:10900, r101:9500 },
+    'C': { label:'Clase C — servicios comunes', minimo:555000, r21_40:25600, r41_50:21100, r51_60:18600, r61_70:16700, r71_80:15200, r81_100:13700, r101:10900 },
+    'B': { label:'Clase B — servicios comunes y/o centrales', minimo:680000, r21_40:27300, r41_50:25900, r51_60:22800, r61_70:21500, r71_80:18500, r81_100:16800, r101:13700 },
+    'A': { label:'Clase A — confort (hasta 2 amenities)', minimo:897000, r21_40:28400, r41_50:26900, r51_60:25600, r61_70:23700, r71_80:22800, r81_100:21100, r101:18400 },
+    'A1': { label:'Clase A1 — súper confort (3+ amenities)', minimo:1112000, r21_40:31200, r41_50:28400, r51_60:26600, r61_70:25700, r71_80:23900, r81_100:22800, r101:19300 },
+    'A2': { label:'Clase A2 — complejos/torres (200+ UF)', minimo:5500000, flat:true },
+  };
+  function calcCaphai(clase, ufEfectivas){
+    const t = CAPHAI_TABLE[clase];
+    if(t.flat) return t.minimo;
+    if(ufEfectivas <= 20) return t.minimo;
+    let total = t.minimo, restante = ufEfectivas - 20;
+    const brackets = [ {w:20,r:t.r21_40}, {w:10,r:t.r41_50}, {w:10,r:t.r51_60}, {w:10,r:t.r61_70}, {w:10,r:t.r71_80}, {w:20,r:t.r81_100}, {w:Infinity,r:t.r101} ];
+    for(const b of brackets){
+      if(restante<=0) break;
+      const take = Math.min(restante, b.w);
+      total += take*b.r;
+      restante -= take;
+    }
+    return total;
+  }
+
+  function mountCalcHonorarios(mountId){
+    const mount = document.getElementById(mountId);
+    const statusId = mountId+'-status';
+    const preguntas = [
+      { key:'uf', label:'Unidades funcionales', opts:['Hasta 20 (1)','21 a 50 (2)','Más de 50 (3)'] },
+      { key:'personal', label:'Personal en relación de dependencia', opts:['Sin personal / part-time (1)','1 encargado full-time (2)','2 o más empleados (3)'] },
+      { key:'antiguedad', label:'Antigüedad del edificio', opts:['Menos de 15 años (1)','15 a 40 años (2)','Más de 40 años (3)'] },
+      { key:'documentacion', label:'Documentación de la gestión anterior', opts:['Ordenada, sin deudas (1)','Parcialmente ordenada (2)','Desordenada, con juicios (3)'] },
+      { key:'morosidad', label:'Morosidad general', opts:['Menos del 10% (1)','10% a 25% (2)','Más del 25% (3)'] },
+      { key:'amenities', label:'Amenities / servicios centrales', opts:['Ninguno (1)','1 a 2 (2)','3 o más (3)'] },
+      { key:'conflictividad', label:'Conflictividad entre vecinos', opts:['Baja (1)','Media (2)','Alta (3)'] },
+    ];
+
+    mount.innerHTML = `
+      <div class="infoblock">
+        <h3>1. Puntaje de complejidad del edificio</h3>
+        ${preguntas.map(p=>`
+          <div class="score-row">
+            <span>${p.label}</span>
+            <select id="score-${p.key}">
+              ${p.opts.map((o,i)=>`<option value="${i+1}">${o}</option>`).join('')}
+            </select>
+          </div>
+        `).join('')}
+        <div class="tier-result tier-bajo" id="tier-box">
+          <div class="score-num" id="tier-score">7</div>
+          <div class="score-label" id="tier-label">Buen candidato para arrancar</div>
+        </div>
+      </div>
+
+      <div class="infoblock">
+        <h3>2. Honorario de referencia (tabla CAPHAI, junio-julio 2026)</h3>
+        <div class="config-row">
+          <div><label>Clase de edificio</label>
+            <select id="caphai-clase">
+              ${Object.entries(CAPHAI_TABLE).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}
+            </select>
+          </div>
+          <div><label>Unidades funcionales</label><input type="text" id="caphai-uf" placeholder="20"></div>
+          <div><label>Unidades complementarias (cocheras, etc.)</label><input type="text" id="caphai-uc" placeholder="0"></div>
+          <div><label>Descuento de entrada (%)</label><input type="text" id="caphai-descuento" value="25"></div>
+        </div>
+        <div class="kpi-row" id="caphai-kpi"></div>
+        <p class="panel-note" style="margin:10px 0 0;">Las unidades complementarias cuentan como 50% de una unidad funcional, según el criterio de CAPHAI.</p>
+      </div>
+
+      <div class="infoblock">
+        <h3>3. ¿Cuántos consorcios así necesitás?</h3>
+        <div class="config-row" style="grid-template-columns:1fr;">
+          <div><label>Tu objetivo de ingreso mensual ($)</label><input type="text" id="ingreso-objetivo" value="2500000"></div>
+        </div>
+        <div class="kpi-row" id="simulador-kpi"></div>
+      </div>
+
+      <div class="infoblock">
+        <h3>Guardar esta cotización</h3>
+        <div class="config-row">
+          <div><label>Nombre del consorcio / prospecto</label><input type="text" id="cot-nombre" placeholder="Ej: Edificio Av. Corrientes 1234"></div>
+          <div><label>Fecha</label><input type="text" id="cot-fecha" placeholder="DD/MM/AAAA"></div>
+        </div>
+        <div class="toolbar"><span></span><div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}<button class="btn primary" id="cot-guardar">Guardar cotización</button></div></div>
+      </div>
+
+      <div class="subhead">Historial de cotizaciones</div>
+      <div id="cot-historial"></div>
+    `;
+
+    function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function fmt(n){ return '$ ' + Math.round(n).toLocaleString('es-AR'); }
+
+    let ultimoResultado = null;
+
+    function recalcular(){
+      // 1. Puntaje
+      let total = 0;
+      preguntas.forEach(p=>{ total += parseInt(document.getElementById('score-'+p.key).value); });
+      const box = document.getElementById('tier-box');
+      const scoreEl = document.getElementById('tier-score');
+      const labelEl = document.getElementById('tier-label');
+      scoreEl.textContent = total;
+      box.className = 'tier-result';
+      let tierTexto = '';
+      if(total<=11){ box.classList.add('tier-bajo'); tierTexto = 'Buen candidato para arrancar'; }
+      else if(total<=16){ box.classList.add('tier-medio'); tierTexto = 'Manejable, pero exige más horas semanales'; }
+      else { box.classList.add('tier-alto'); tierTexto = 'Alto riesgo/complejidad para un primer consorcio'; }
+      labelEl.textContent = tierTexto;
+
+      // 2. CAPHAI
+      const clase = document.getElementById('caphai-clase').value;
+      const uf = num(document.getElementById('caphai-uf').value);
+      const uc = num(document.getElementById('caphai-uc').value);
+      const descuentoPct = num(document.getElementById('caphai-descuento').value);
+      const ufEfectivas = uf + uc*0.5;
+      const honorarioPleno = calcCaphai(clase, ufEfectivas);
+      const honorarioEntrada = honorarioPleno * (1 - descuentoPct/100);
+
+      document.getElementById('caphai-kpi').innerHTML = `
+        <div class="kpi"><div class="label">UF efectivas</div><div class="value">${ufEfectivas}</div></div>
+        <div class="kpi highlight"><div class="label">Honorario CAPHAI pleno</div><div class="value">${fmt(honorarioPleno)}</div></div>
+        <div class="kpi highlight"><div class="label">Honorario de entrada (con descuento)</div><div class="value">${fmt(honorarioEntrada)}</div></div>
+      `;
+
+      // 3. Simulador
+      const objetivo = num(document.getElementById('ingreso-objetivo').value);
+      const consorciosEntrada = honorarioEntrada>0 ? Math.ceil(objetivo/honorarioEntrada) : 0;
+      const consorciosPleno = honorarioPleno>0 ? Math.ceil(objetivo/honorarioPleno) : 0;
+      document.getElementById('simulador-kpi').innerHTML = `
+        <div class="kpi highlight"><div class="label">Consorcios a tarifa de entrada</div><div class="value">${consorciosEntrada}</div></div>
+        <div class="kpi highlight"><div class="label">Consorcios a tarifa CAPHAI plena</div><div class="value">${consorciosPleno}</div></div>
+      `;
+
+      ultimoResultado = { total, tierTexto, clase, uf, uc, descuentoPct, honorarioPleno, honorarioEntrada, objetivo, consorciosEntrada, consorciosPleno };
+    }
+
+    mount.querySelectorAll('select, input').forEach(el=>{
+      if(el.id==='cot-nombre' || el.id==='cot-fecha') return;
+      el.addEventListener('input', recalcular);
+      el.addEventListener('change', recalcular);
+    });
+    recalcular();
+
+    async function renderHistorial(){
+      const historial = await loadData('naken-cotizaciones-honorarios', []);
+      const el = document.getElementById('cot-historial');
+      el.innerHTML = historial.length===0
+        ? `<div class="empty">Sin cotizaciones guardadas.</div>`
+        : `<table class="ledger"><thead><tr><th>Consorcio</th><th>Fecha</th><th>Puntaje</th><th>Nivel</th><th>Honorario entrada</th><th>Honorario pleno</th></tr></thead><tbody>` +
+          historial.slice().reverse().map(c=>`
+            <tr>
+              <td><input type="text" value="${escapeHtml(c.nombre)}" disabled></td>
+              <td><input type="text" value="${escapeHtml(c.fecha)}" disabled></td>
+              <td class="num"><input type="text" value="${c.total}" disabled></td>
+              <td><input type="text" value="${escapeHtml(c.tierTexto)}" disabled></td>
+              <td class="num"><input type="text" value="${fmt(c.honorarioEntrada)}" disabled></td>
+              <td class="num"><input type="text" value="${fmt(c.honorarioPleno)}" disabled></td>
+            </tr>
+          `).join('') + `</tbody></table>`;
+    }
+    renderHistorial();
+
+    document.getElementById('cot-guardar').addEventListener('click', async ()=>{
+      const nombre = document.getElementById('cot-nombre').value.trim();
+      if(!nombre){ alert('Cargá el nombre del consorcio o prospecto.'); return; }
+      const historial = await loadData('naken-cotizaciones-honorarios', []);
+      historial.push({ nombre, fecha: document.getElementById('cot-fecha').value.trim(), ...ultimoResultado });
+      await saveData('naken-cotizaciones-honorarios', historial, statusId);
+      document.getElementById('cot-nombre').value = '';
+      document.getElementById('cot-fecha').value = '';
+      renderHistorial();
+    });
+  }
+
   /* ---------- Role, auth & navigation ---------- */
   let role = 'admin';
   let currentUser = null; // logged-in propietario record, or null
@@ -1038,6 +1238,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
   const gateScreen = document.getElementById('gate-screen');
   const mainContent = document.getElementById('main-content');
   const profileBanner = document.getElementById('profile-banner');
+  const sidebarEl = document.querySelector('.sidebar');
   const adminToggleBtn = document.querySelector('.roleswitch button[data-role="admin"]');
   let adminAuthenticated = false;
 
@@ -1055,6 +1256,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
   }
 
   async function requestAdminAccess(){
+    sidebarEl.style.display = 'none';
     mainContent.style.display = 'none';
     profileBanner.style.display = 'none';
     gateScreen.style.display = 'block';
@@ -1129,12 +1331,14 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       mainContent.style.display = 'block';
       profileBanner.style.display = 'none';
       adminToggleBtn.style.display = '';
+      sidebarEl.style.display = '';
       renderAll();
     } else if(currentUser){
       whoami.textContent = 'Sesión de propietario iniciada';
       gateScreen.style.display = 'none';
       mainContent.style.display = 'block';
       adminToggleBtn.style.display = 'none';
+      sidebarEl.style.display = '';
       renderProfileBanner();
       renderAll();
     } else {
@@ -1143,6 +1347,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       profileBanner.style.display = 'none';
       gateScreen.style.display = 'block';
       adminToggleBtn.style.display = '';
+      sidebarEl.style.display = 'none';
       renderGate();
     }
   }
@@ -2570,6 +2775,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     mountAsistencia('asistencia-mount', 'naken-asamblea-asistencia');
     if(role==='admin') mountUsuarios('usuarios-mount');
     if(role==='admin') mountLiquidaciones('liquidaciones-mount', 'naken-liquidaciones-sueldo');
+    if(role==='admin') mountCalcHonorarios('calchonorarios-mount');
 
     mountManual('manual-mount', 'naken-manual',
 `Esta administración se compromete a:
