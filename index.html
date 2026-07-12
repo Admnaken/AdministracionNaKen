@@ -255,7 +255,7 @@
       <button class="navbtn" data-panel="formapago">Forma de pago</button>
       <button class="navbtn" data-panel="reclamos">Reclamos y consultas</button>
       <button class="navbtn" data-panel="facturas">Facturas del mes</button>
-      <button class="navbtn" data-panel="asamblea">Asamblea virtual</button>
+      <button class="navbtn" data-panel="asamblea">Pre-Asamblea</button>
     </div>
 
     <div class="navgroup">
@@ -310,8 +310,9 @@
         <div id="resumen-kpi" class="kpi-row"></div>
         <div class="dash-grid">
           <div class="dash-card">
-            <h3>Gastos del mes por categoría</h3>
+            <h3>¿En qué se usa el dinero del consorcio?</h3>
             <canvas id="chart-gastos"></canvas>
+            <p id="chart-gastos-caption" style="font-size:12px;color:var(--muted);text-align:center;margin:10px 0 0;line-height:1.5;"></p>
           </div>
           <div class="dash-card">
             <h3>Expensas por período</h3>
@@ -361,12 +362,12 @@
         <div id="facturas-mount"></div>
       </section>
 
-      <!-- ASAMBLEA VIRTUAL -->
+      <!-- PRE-ASAMBLEA -->
       <section class="panel" id="panel-asamblea">
         <div class="panel-head">
           <span class="eyebrow">Consorcistas</span>
-          <h2>Asamblea virtual</h2>
-          <p class="panel-note">Comunicados de la administración e información de procedimientos. Los propietarios pueden dejar preguntas puntuales.</p>
+          <h2>Pre-Asamblea</h2>
+          <p class="panel-note">Antes de votar un gasto extraordinario o un aumento fuerte, usá este espacio para explicar el porqué y buscar alternativas entre todos. La previsibilidad ayuda a que cada propietario pueda planificar su economía.</p>
         </div>
         <div id="asamblea-mount"></div>
       </section>
@@ -661,6 +662,15 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     remocion: '<circle cx="10" cy="8" r="4"></circle><path d="M3 20c0-3.9 3.1-7 7-7s7 3.1 7 7"></path><line x1="17" y1="10" x2="21" y2="14"></line><line x1="21" y1="10" x2="17" y2="14"></line>'
   };
 
+  const ICON_COLORS = {
+    resumen:'#7FB8FF', expensas:'#FFD166', formapago:'#FF9F7F', reclamos:'#C792EA',
+    facturas:'#7FCBFF', asamblea:'#FF7FA8', deudas:'#FFB37F', juicios:'#E0A8FF',
+    movimientos:'#8FA8FF', conciliaciones:'#FFAF8F', segurosdepositos:'#8FE0FF',
+    proveedores:'#FFD1A8', reserva:'#D1A8FF', honorarios:'#FFE08F', asistencia:'#A8C8FF',
+    usuarios:'#FFA8C8', liquidaciones:'#C8A8FF', personal:'#A8FFE0', manual:'#FFC8A8', remocion:'#D8A8FF'
+  };
+  const ICON_ACTIVE_COLOR = '#CFFF3D';
+
   document.querySelectorAll('.navbtn[data-panel]').forEach(btn=>{
     const key = btn.dataset.panel;
     if(!NAV_ICONS[key]) return;
@@ -669,8 +679,17 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     svg.setAttribute('class','nav-icon');
     svg.setAttribute('viewBox','0 0 24 24');
     svg.innerHTML = NAV_ICONS[key];
+    svg.style.stroke = btn.classList.contains('active') ? ICON_ACTIVE_COLOR : (ICON_COLORS[key]||'currentColor');
     btn.insertBefore(svg, btn.firstChild);
   });
+
+  function updateNavIconColors(){
+    document.querySelectorAll('.navbtn[data-panel]').forEach(btn=>{
+      const svg = btn.querySelector('svg.nav-icon');
+      if(!svg) return;
+      svg.style.stroke = btn.classList.contains('active') ? ICON_ACTIVE_COLOR : (ICON_COLORS[btn.dataset.panel]||'currentColor');
+    });
+  }
 
   function parseFechaDDMMAAAA(str){
     if(!str) return null;
@@ -730,12 +749,13 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
   /* ---------- Resumen (dashboard con gráficos) ---------- */
   let chartGastos = null, chartExpensas = null;
   async function mountResumen(mountId_unused){
-    const [facturas, expensas, deudas, reserva, reclamos] = await Promise.all([
+    const [facturas, expensas, deudas, reserva, reclamos, liquidaciones] = await Promise.all([
       loadData('naken-facturas', []),
       loadData('naken-expensas', []),
       loadData('naken-deudas', []),
       loadData('naken-reserva', []),
-      loadData('naken-reclamos', [])
+      loadData('naken-reclamos', []),
+      loadData('naken-liquidaciones-sueldo', [])
     ]);
 
     function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
@@ -753,27 +773,58 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       <div class="kpi"><div class="label">Última expensa publicada</div><div class="value" style="font-size:16px;">${ultimaExpensa ? escapeHtml(ultimaExpensa.periodo||'—') : 'Sin datos'}</div></div>
     `;
 
-    // Gastos por categoría (torta)
-    const porCategoria = {};
+    // En qué se usa el dinero: Sueldo / Servicios / Mantenimiento / Fondo de Reserva / Otros
+    const buckets = { 'Sueldo del personal':0, 'Servicios':0, 'Mantenimiento':0, 'Fondo de reserva':0, 'Otros gastos':0 };
+    liquidaciones.forEach(l=>{ buckets['Sueldo del personal'] += num(l.totalCargas) + num(l.sueldoNeto); });
     facturas.forEach(f=>{
-      const cat = f.categoria || 'Sin categoría';
-      porCategoria[cat] = (porCategoria[cat]||0) + num(f.monto);
+      const c = (f.categoria||'').toLowerCase();
+      const monto = num(f.monto);
+      if(/servicio/.test(c)) buckets['Servicios'] += monto;
+      else if(/manten/.test(c)) buckets['Mantenimiento'] += monto;
+      else buckets['Otros gastos'] += monto;
     });
-    const catLabels = Object.keys(porCategoria);
-    const catValues = Object.values(porCategoria);
-    const palette = ['#0E7A56','#E8952C','#5B8DB8','#B85B8D','#8DB85B','#B8935B','#5BAEB8','#9A6FB0'];
+    reserva.forEach(r=>{ buckets['Fondo de reserva'] += num(r.monto); });
+
+    const bucketColors = { 'Sueldo del personal':'#0E7A56', 'Servicios':'#5B8DB8', 'Mantenimiento':'#E8952C', 'Fondo de reserva':'#8D5BB8', 'Otros gastos':'#9AA39C' };
+    const entries = Object.entries(buckets).filter(([,v])=>v>0);
+    const total = entries.reduce((s,[,v])=>s+v,0);
+    const catLabels = entries.map(([k])=>k);
+    const catValues = entries.map(([,v])=>v);
+    const catColors = entries.map(([k])=>bucketColors[k]);
 
     if(chartGastos) chartGastos.destroy();
     const ctx1 = document.getElementById('chart-gastos');
+    const captionEl = document.getElementById('chart-gastos-caption');
     if(ctx1 && window.Chart){
       if(catLabels.length===0){
         ctx1.getContext('2d').clearRect(0,0,ctx1.width,ctx1.height);
+        if(captionEl) captionEl.textContent = 'Todavía no hay datos cargados este período.';
       } else {
         chartGastos = new Chart(ctx1, {
           type: 'pie',
-          data: { labels: catLabels, datasets: [{ data: catValues, backgroundColor: palette }] },
-          options: { plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
+          data: { labels: catLabels, datasets: [{ data: catValues, backgroundColor: catColors, borderWidth: 2, borderColor: '#fff' }] },
+          options: {
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: {
+                  font: { size: 12, weight: '600' },
+                  padding: 14,
+                  generateLabels: (chart)=> chart.data.labels.map((label,i)=>{
+                    const pct = Math.round(chart.data.datasets[0].data[i]/total*100);
+                    return {
+                      text: `${label} — ${pct}%`,
+                      fillStyle: chart.data.datasets[0].backgroundColor[i],
+                      strokeStyle: '#fff', lineWidth: 1, index: i
+                    };
+                  })
+                }
+              },
+              tooltip: { callbacks: { label: (ctx)=> `${ctx.label}: ${fmt(ctx.parsed)} (${Math.round(ctx.parsed/total*100)}%)` } }
+            }
+          }
         });
+        if(captionEl) captionEl.textContent = 'Así se sostiene la seguridad, el mantenimiento y el funcionamiento del edificio donde vivís.';
       }
     }
 
@@ -818,6 +869,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     navButtons.forEach(b=>b.classList.remove('active'));
     document.getElementById('panel-resumen').classList.add('active');
     document.querySelector('.navbtn[data-panel="resumen"]').classList.add('active');
+    updateNavIconColors();
   }
 
   function validAdminCode(code){
@@ -934,6 +986,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       btn.classList.add('active');
       panels.forEach(p=>p.classList.remove('active'));
       document.getElementById('panel-'+btn.dataset.panel).classList.add('active');
+      updateNavIconColors();
     });
   });
 
@@ -2219,25 +2272,26 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     }
     mountLedger('facturas-mount', 'naken-facturas', facturaColumns, {emptyText:'Todavía no se cargaron facturas este mes.'});
 
-    // Asamblea virtual: comunicados (admin) + preguntas (ticket-style)
+    // Pre-Asamblea: explicaciones/propuestas (admin) + preguntas y alternativas (propietarios)
     document.getElementById('asamblea-mount').innerHTML = `
-      <h3 style="font-family:'Zilla Slab',serif;font-size:16px;margin:0 0 10px;">Comunicados</h3>
+      <h3 style="font-family:'Zilla Slab',serif;font-size:16px;margin:0 0 10px;">Explicaciones y propuestas</h3>
       <div id="asamblea-comunicados"></div>
-      <h3 style="font-family:'Zilla Slab',serif;font-size:16px;margin:26px 0 10px;">Preguntas de propietarios</h3>
+      <h3 style="font-family:'Zilla Slab',serif;font-size:16px;margin:26px 0 10px;">Preguntas y alternativas de los propietarios</h3>
       <div id="asamblea-preguntas"></div>
     `;
     mountLedger('asamblea-comunicados', 'naken-asamblea-comunicados', [
       {key:'fecha', label:'Fecha', placeholder:'DD/MM/AAAA'},
-      {key:'titulo', label:'Título', placeholder:'Ej: Corte de agua programado'},
-      {key:'contenido', label:'Contenido', type:'textarea', placeholder:'Detalle del comunicado o procedimiento'},
-    ], {emptyText:'Sin comunicados publicados.'});
+      {key:'tema', label:'Tema', placeholder:'Ej: Aumento de expensas / Reparación ascensor'},
+      {key:'titulo', label:'Título', placeholder:'Ej: Por qué se necesita este gasto'},
+      {key:'contenido', label:'Explicación', type:'textarea', placeholder:'Explicá el motivo del gasto o aumento, el costo estimado y qué alternativas se evaluaron'},
+    ], {emptyText:'Todavía no hay explicaciones publicadas.'});
     mountTickets('asamblea-preguntas', 'naken-asamblea-preguntas', {
-      newLabel:'Hacer una pregunta',
-      tipos:['Procedimiento','Información general','Otra'],
-      contentLabel:'Pregunta',
-      placeholder:'¿Qué querés consultarle a la administración?',
-      submitLabel:'Enviar pregunta',
-      emptyText:'No hay preguntas cargadas.'
+      newLabel:'Hacer una pregunta o proponer una alternativa',
+      tipos:['Pregunta sobre un gasto','Alternativa propuesta','Otra consulta'],
+      contentLabel:'Detalle',
+      placeholder:'¿Qué querés consultar, o qué alternativa te gustaría proponer?',
+      submitLabel:'Enviar',
+      emptyText:'No hay preguntas ni propuestas cargadas.'
     });
 
     mountLedger('deudas-mount', 'naken-deudas', [
