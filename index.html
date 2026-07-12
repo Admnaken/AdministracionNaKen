@@ -236,6 +236,8 @@
   :focus-visible{outline:2px solid var(--navy);outline-offset:2px;}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 </head>
 <body>
 
@@ -329,6 +331,7 @@
           <p class="panel-note">Resumen mensual de expensas ordinarias y extraordinarias. Los propietarios pueden consultar y descargar cualquier período publicado.</p>
         </div>
         <div id="expensas-mount"></div>
+        <div id="expensas-pdf-mount"></div>
       </section>
 
       <!-- FORMA DE PAGO -->
@@ -356,7 +359,7 @@
         <div class="panel-head">
           <span class="eyebrow">Consorcistas</span>
           <h2>Facturas y comprobantes por mes</h2>
-          <p class="panel-note">Cada gasto respaldado con su comprobante. Es la base de datos a la que apunta el QR de la liquidación de expensas.</p>
+          <p class="panel-note">Cada gasto respaldado con su comprobante. Es la base de datos a la que apunta el QR de la liquidación de expensas. Para adjuntar el escaneo: subilo a una carpeta de Google Drive con tu cuenta, hacé clic derecho → "Obtener enlace" → asegurate que diga "Cualquier usuario con el enlace" → pegalo en "Link del comprobante".</p>
         </div>
         <div id="facturas-link-mount"></div>
         <div id="facturas-mount"></div>
@@ -851,6 +854,180 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     }
   }
 
+  /* ---------- Descarga de PDF de expensas (Modelo Único, Ley 941 art. 10) ---------- */
+  async function mountExpensasPdf(mountId){
+    const mount = document.getElementById(mountId);
+    if(role!=='propietario' || !currentUser){
+      mount.innerHTML = '';
+      return;
+    }
+    const expensas = await loadData('naken-expensas', []);
+    if(expensas.length===0){
+      mount.innerHTML = `<p class="panel-note">Todavía no hay ninguna liquidación publicada para descargar.</p>`;
+      return;
+    }
+    mount.innerHTML = `
+      <div class="infoblock">
+        <h3>Descargar tu expensa en PDF</h3>
+        <div class="config-row" style="grid-template-columns:2fr 1fr;align-items:end;">
+          <div><label>Período</label>
+            <select id="${mountId}-select">
+              ${expensas.slice().reverse().map((e,i)=>`<option value="${expensas.length-1-i}">${escapeHtml(e.periodo||'(sin período)')}</option>`).join('')}
+            </select>
+          </div>
+          <button class="btn primary" id="${mountId}-download">Descargar PDF</button>
+        </div>
+        <p class="panel-note" style="margin:10px 0 0;">El PDF sigue el formato del Modelo Único de Liquidación de Expensas (Manual de Buenas Prácticas Consorciales, Ley 941 art. 10).</p>
+      </div>
+    `;
+    document.getElementById(mountId+'-download').addEventListener('click', async ()=>{
+      const idx = parseInt(document.getElementById(mountId+'-select').value);
+      await generarPdfExpensa(expensas[idx]);
+    });
+  }
+
+  async function generarPdfExpensa(expensa){
+    if(!window.jspdf){ alert('No se pudo cargar el generador de PDF. Revisá tu conexión e intentá de nuevo.'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); }
+    const mismos = (a,b)=> (a||'').toString().trim().toLowerCase() === (b||'').toString().trim().toLowerCase();
+
+    const [cfg, formaPago, facturas, liquidaciones, deudas, reserva, polizas, juicios] = await Promise.all([
+      loadData('naken-consorcio-datos', {}),
+      loadData('naken-forma-pago', {}),
+      loadData('naken-facturas', []),
+      loadData('naken-liquidaciones-sueldo', []),
+      loadData('naken-deudas', []),
+      loadData('naken-reserva', []),
+      loadData('naken-polizas', []),
+      loadData('naken-juicios', [])
+    ]);
+
+    const facturasPeriodo = facturas.filter(f=>mismos(f.mes, expensa.periodo));
+    const facturasUsar = facturasPeriodo.length ? facturasPeriodo : facturas;
+    const liqPeriodo = liquidaciones.filter(l=>mismos(l.periodo, expensa.periodo));
+    const liqUsar = liqPeriodo.length ? liqPeriodo : liquidaciones;
+    const reservaTotal = reserva.reduce((s,r)=>s+num(r.monto),0);
+    const totalExpensa = num(expensa.total) || (num(expensa.ordinarias)+num(expensa.extraordinarias));
+    const tuParte = currentUser.porcentual ? totalExpensa * (num(currentUser.porcentual)/100) : null;
+
+    let y = 16;
+    doc.setFont('helvetica','bold'); doc.setFontSize(16);
+    doc.text('MIS EXPENSAS', 14, y);
+    doc.setFontSize(10); doc.setFont('helvetica','normal');
+    doc.text(`Período: ${expensa.periodo||'—'}`, 140, y-4);
+    doc.text(`1er venc: ${expensa.venc1||'—'}   2do venc: ${expensa.venc2||'—'}`, 140, y+1);
+    y += 10;
+
+    doc.autoTable({
+      startY: y,
+      theme: 'plain',
+      styles: { fontSize: 9, cellPadding: 2 },
+      body: [
+        [
+          { content: `ADMINISTRACIÓN\n${cfg.administradorNombre||'—'}\nCUIT: ${cfg.administradorCuit||'—'}\n${cfg.administradorDomicilio||''}\n${cfg.administradorTel||''}`, styles:{fillColor:[240,244,241]} },
+          { content: `CONSORCIO\n${cfg.edificio||'—'}\n${cfg.barrio||''}\nCUIT: ${cfg.consorcioCuit||'—'}\nConvenio: ${cfg.consorcioConvenio||'—'}`, styles:{fillColor:[240,244,241]} }
+        ]
+      ]
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('FORMA DE PAGO', 14, y); y+=4;
+    doc.autoTable({
+      startY: y, theme: 'grid', styles:{fontSize:9},
+      body: [
+        ['Empresa de cobranzas', formaPago.empresaCobranzas||'—'],
+        ['CBU', formaPago.cbu||'—'],
+        ['Alias', formaPago.alias||'—'],
+        ['Banco / Sucursal', `${formaPago.banco||''} ${formaPago.sucursal||''}`],
+        ['Titular / CUIT', formaPago.titularCuit||'—'],
+      ]
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('GASTOS DEL PERÍODO (Conf. Art. 10 inc. e y f Ley 941)', 14, y); y+=4;
+    doc.autoTable({
+      startY: y, theme: 'striped', styles:{fontSize:8.5}, headStyles:{fillColor:[14,122,86]},
+      head: [['Rubro / Categoría','Proveedor','Importe']],
+      body: facturasUsar.length ? facturasUsar.map(f=>[f.categoria||'—', f.proveedor||'—', fmt(num(f.monto))]) : [['Sin gastos cargados','','']],
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    if(y > 240){ doc.addPage(); y = 16; }
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('REMUNERACIONES AL PERSONAL Y CARGAS SOCIALES (Conf. Art. 10 inc. d Ley 941)', 14, y); y+=4;
+    doc.autoTable({
+      startY: y, theme: 'striped', styles:{fontSize:8.5}, headStyles:{fillColor:[14,122,86]},
+      head: [['Empleado','Básico','Aportes','Contribuciones','Neto']],
+      body: liqUsar.length ? liqUsar.map(l=>[l.empleadoNombre||'—', fmt(num(l.basico)), fmt(num(l.aportesMonto)), fmt(num(l.contribucionesMonto)), fmt(num(l.sueldoNeto))]) : [['Sin liquidaciones cargadas este período','','','','']],
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    if(y > 230) { doc.addPage(); y = 16; }
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('TOTAL DE LA EXPENSA', 14, y); y+=4;
+    doc.autoTable({
+      startY: y, theme: 'grid', styles:{fontSize:9.5},
+      body: [
+        ['Expensas ordinarias', fmt(num(expensa.ordinarias))],
+        ['Expensas extraordinarias', fmt(num(expensa.extraordinarias))],
+        [{content:'TOTAL DEL PERÍODO', styles:{fontStyle:'bold'}}, {content:fmt(totalExpensa), styles:{fontStyle:'bold'}}],
+      ]
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('TU UNIDAD', 14, y); y+=4;
+    doc.autoTable({
+      startY: y, theme: 'grid', styles:{fontSize:9.5},
+      body: [
+        ['Propietario', currentUser.nombreCompleto||'—'],
+        ['Unidad funcional', currentUser.unidad||'—'],
+        ['Porcentual', currentUser.porcentual ? currentUser.porcentual+'%' : '—'],
+        [{content:'MONTO A PAGAR', styles:{fontStyle:'bold'}}, {content: tuParte!==null ? fmt(tuParte) : 'Cargá tu porcentual con la administración', styles:{fontStyle:'bold'}}],
+      ]
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    if(y > 210) { doc.addPage(); y = 16; }
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('FONDO DE RESERVA', 14, y); y+=4;
+    doc.autoTable({ startY: y, theme:'grid', styles:{fontSize:9.5}, body:[['Saldo acumulado', fmt(reservaTotal)]] });
+    y = doc.lastAutoTable.finalY + 8;
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('PROPIETARIOS CON SALDO DEUDOR', 14, y); y+=4;
+    doc.autoTable({
+      startY: y, theme:'striped', styles:{fontSize:8.5}, headStyles:{fillColor:[14,122,86]},
+      head: [['Unidad','Meses adeudados','Importe']],
+      body: deudas.length ? deudas.map(d=>[d.unidad||'—', d.meses||'—', fmt(num(d.monto))]) : [['Sin deudores registrados','','']],
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    if(y > 220) { doc.addPage(); y = 16; }
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('PÓLIZAS VIGENTES', 14, y); y+=4;
+    doc.autoTable({
+      startY: y, theme:'striped', styles:{fontSize:8.5}, headStyles:{fillColor:[14,122,86]},
+      head: [['Proveedor','N° póliza','Descripción','Vencimiento']],
+      body: polizas.length ? polizas.map(p=>[p.proveedor||'—', p.numeroPoliza||'—', p.descripcion||'—', p.fechaVencimiento||'—']) : [['Sin pólizas cargadas','','','']],
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    if(y > 220) { doc.addPage(); y = 16; }
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('JUICIOS', 14, y); y+=4;
+    doc.autoTable({
+      startY: y, theme:'striped', styles:{fontSize:8.5}, headStyles:{fillColor:[14,122,86]},
+      head: [['Carátula','Tipo','Expediente','Estado']],
+      body: juicios.length ? juicios.map(j=>[j.caratula||'—', j.tipo||'—', j.expediente||'—', j.estado||'—']) : [['Sin juicios registrados','','','']],
+    });
+
+    const pageCount = doc.internal.getNumberOfPages();
+    for(let p=1;p<=pageCount;p++){
+      doc.setPage(p);
+      doc.setFontSize(7.5); doc.setTextColor(120);
+      doc.text(`Administración NAKEN — Modelo Único de Liquidación de Expensas (Ley 941, art. 10) — página ${p} de ${pageCount}`, 14, 289);
+    }
+
+    doc.save(`Expensas-${(expensa.periodo||'periodo').replace(/\s+/g,'-')}.pdf`);
+  }
+
   /* ---------- Role, auth & navigation ---------- */
   let role = 'admin';
   let currentUser = null; // logged-in propietario record, or null
@@ -1179,6 +1356,10 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
         const tr = document.createElement('tr');
         tr.innerHTML = columns.map(c=>{
           if(c.computed){
+            if(c.isLink){
+              const url = c.computed(row);
+              return `<td>${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="btn ghost" style="display:inline-block;padding:6px 10px;font-size:11px;text-decoration:none;">Ver ↗</a>` : `<span style="color:var(--muted);font-size:12px;">Sin comprobante</span>`}</td>`;
+            }
             const val = escapeHtml(c.computed(row));
             return `<td class="num"><input type="text" value="${val}" disabled></td>`;
           }
@@ -2232,6 +2413,8 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       {key:'estado', label:'Estado', placeholder:'Publicada'},
     ], {emptyText:'Todavía no se publicaron liquidaciones.'});
 
+    mountExpensasPdf('expensas-pdf-mount');
+
     mountFormaPago('formapago-mount');
 
     mountTickets('reclamos-mount', 'naken-reclamos', {
@@ -2257,6 +2440,8 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       {key:'proveedor', label:'Proveedor', placeholder:''},
       {key:'monto', label:'Monto ($)', numeric:true, placeholder:'0'},
       {key:'descripcion', label:'Descripción', type:'textarea', placeholder:'Detalle del gasto'},
+      {key:'comprobante', label:'Link del comprobante', placeholder:'Pegá acá el link de Drive'},
+      {key:'verComprobante', label:'Comprobante', computed:(row)=>row.comprobante, isLink:true},
     ];
     if(role==='propietario' && currentUser && currentUser.porcentual){
       facturaColumns.push({
