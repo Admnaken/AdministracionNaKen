@@ -620,7 +620,7 @@
       y ponelo en APPS_SCRIPT_TOKEN — tiene que ser IGUAL al que pongas
       dentro del script de Google (variable SECRET).
    ===================================================================== */
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzpFDP9Uv3ZR9PyytZNIP4_1s6cLYU-i10Dd8X5Po6wCGQra0Fphq8YF3PmZWK4swiedQ/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxV7Pg4JN6D6ifLF80z7aa9nf9qho31AxTyg0XtNtDyRX8Ux-zQ_6ZpUJNahPe5BRKbKg/exec';
 const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
 
 (function(){
@@ -668,6 +668,36 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       const data = await res.json();
       return { keys: data.keys || [], prefix, shared:false };
     }
+  };
+
+  // Sube un archivo (foto/audio/video) a una carpeta de Drive vía el mismo Apps Script,
+  // y devuelve la URL para ver el archivo. Pensado para clips cortos (~15 MB o menos).
+  window.uploadFileToDrive = function(file){
+    return new Promise((resolve, reject)=>{
+      if(!file){ reject(new Error('Sin archivo')); return; }
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+      reader.onload = async () => {
+        try{
+          const base64 = reader.result.split(',')[1];
+          const res = await fetch(APPS_SCRIPT_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({
+              action: 'uploadFile',
+              filename: file.name || ('evidencia-' + Date.now()),
+              mimeType: file.type || 'application/octet-stream',
+              data: base64,
+              token: APPS_SCRIPT_TOKEN
+            })
+          });
+          const data = await res.json();
+          if(data.ok && data.url) resolve(data.url);
+          else reject(new Error(data.error || 'No se pudo subir el archivo'));
+        }catch(err){ reject(err); }
+      };
+      reader.readAsDataURL(file);
+    });
   };
 })();
 </script>
@@ -1277,7 +1307,13 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
           <div><label>Unidad denunciante</label><input type="text" id="cf-denunciante" placeholder="Ej: 4° B" value="${role==='propietario' && currentUser ? escapeHtml(currentUser.unidad) : ''}"></div>
           <div><label>Unidad denunciada</label><input type="text" id="cf-denunciada" placeholder="Ej: 5° A"></div>
           <div><label>Fecha y hora del hecho</label><input type="text" id="cf-fechahecho" placeholder="DD/MM/AAAA HH:MM"></div>
-          <div style="grid-column:1/-1;"><label>Link a evidencia (foto/audio/video en Drive, opcional)</label><input type="text" id="cf-evidencia" placeholder="https://drive.google.com/..."></div>
+          <div style="grid-column:1/-1;">
+            <label>Evidencia (foto, audio o video)</label>
+            <input type="file" id="cf-evidencia-file" accept="image/*,video/*,audio/*" style="width:100%;border:1px solid var(--line);border-radius:5px;padding:8px 10px;font-size:13px;background:#fff;">
+            <div id="cf-evidencia-status" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin-top:5px;"></div>
+            <label style="margin-top:10px;">O pegá un link ya subido</label>
+            <input type="text" id="cf-evidencia" placeholder="https://drive.google.com/...">
+          </div>
         </div>
         <div id="cf-normativa-box" class="infoblock" style="margin-bottom:12px;"></div>
         <label class="card-field-label" style="display:block;margin-bottom:5px;">Descripción del hecho</label>
@@ -1301,6 +1337,29 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     }
     document.getElementById('cf-tipo').addEventListener('change', renderNormativa);
     renderNormativa();
+
+    document.getElementById('cf-evidencia-file').addEventListener('change', async (e)=>{
+      const file = e.target.files[0];
+      const statusEl2 = document.getElementById('cf-evidencia-status');
+      if(!file) return;
+      const sizeMB = (file.size/1024/1024).toFixed(1);
+      if(file.size > 20*1024*1024){
+        statusEl2.textContent = `Este archivo pesa ${sizeMB} MB — es probable que sea demasiado grande para subir directo. Probá acortar el video, o subilo vos mismo a Drive y pegá el link abajo.`;
+        statusEl2.style.color = 'var(--danger)';
+        return;
+      }
+      statusEl2.textContent = `Subiendo (${sizeMB} MB)... puede tardar unos segundos.`;
+      statusEl2.style.color = 'var(--brass)';
+      try{
+        const url = await window.uploadFileToDrive(file);
+        document.getElementById('cf-evidencia').value = url;
+        statusEl2.textContent = 'Listo — evidencia subida y cargada ✓';
+        statusEl2.style.color = 'var(--ok)';
+      }catch(err){
+        statusEl2.textContent = 'No se pudo subir. Probá con el link manual de Drive, o intentá de nuevo.';
+        statusEl2.style.color = 'var(--danger)';
+      }
+    });
 
     document.getElementById('cf-submit').addEventListener('click', async ()=>{
       const denunciante = document.getElementById('cf-denunciante').value.trim();
@@ -1331,6 +1390,8 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       document.getElementById('cf-denunciada').value = '';
       document.getElementById('cf-fechahecho').value = '';
       document.getElementById('cf-evidencia').value = '';
+      document.getElementById('cf-evidencia-file').value = '';
+      document.getElementById('cf-evidencia-status').textContent = '';
       document.getElementById('cf-descripcion').value = '';
       renderList();
     });
