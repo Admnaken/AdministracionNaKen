@@ -1306,7 +1306,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
           </div>
           <div><label>Unidad denunciante</label><input type="text" id="cf-denunciante" placeholder="Ej: 4° B" value="${role==='propietario' && currentUser ? escapeHtml(currentUser.unidad) : ''}"></div>
           <div><label>Unidad denunciada</label><input type="text" id="cf-denunciada" placeholder="Ej: 5° A"></div>
-          <div><label>Fecha y hora del hecho</label><input type="text" id="cf-fechahecho" placeholder="DD/MM/AAAA HH:MM"></div>
+          <div><label>Fecha y hora del hecho</label><input type="datetime-local" id="cf-fechahecho"></div>
           <div style="grid-column:1/-1;">
             <label>Evidencia (foto, audio o video)</label>
             <input type="file" id="cf-evidencia-file" accept="image/*,video/*,audio/*" style="width:100%;border:1px solid var(--line);border-radius:5px;padding:8px 10px;font-size:13px;background:#fff;">
@@ -1356,7 +1356,8 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
         statusEl2.textContent = 'Listo — evidencia subida y cargada ✓';
         statusEl2.style.color = 'var(--ok)';
       }catch(err){
-        statusEl2.textContent = 'No se pudo subir. Probá con el link manual de Drive, o intentá de nuevo.';
+        console.error('Error al subir evidencia:', err);
+        statusEl2.textContent = 'No se pudo subir. Detalle: ' + (err && err.message ? err.message : 'error desconocido') + ' — probá con el link manual de Drive.';
         statusEl2.style.color = 'var(--danger)';
       }
     });
@@ -1375,7 +1376,12 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
         tipo: document.getElementById('cf-tipo').value,
         unidadDenunciante: denunciante,
         unidadDenunciada: denunciada,
-        fechaHecho: document.getElementById('cf-fechahecho').value.trim(),
+        fechaHecho: (()=>{
+          const raw = document.getElementById('cf-fechahecho').value;
+          if(!raw) return '';
+          const d = new Date(raw);
+          return isNaN(d.getTime()) ? raw : d.toLocaleString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+        })(),
         evidencia: document.getElementById('cf-evidencia').value.trim(),
         descripcion: document.getElementById('cf-descripcion').value.trim(),
         estado: 'Pendiente',
