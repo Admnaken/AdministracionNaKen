@@ -117,6 +117,8 @@
   .badge.pendiente{background:#F3E6C8;color:#7A5A0F;}
   .badge.proceso{background:#DCEEE5;color:var(--navy-deep);}
   .badge.resuelto{background:#DEEBE0;color:var(--ok);}
+  .badge.escalado{background:#F6DADA;color:#A03A3A;}
+  .badge.acuerdo{background:#E4DCF6;color:#5B3A9E;}
   .card textarea, .card input, .card select{
     width:100%;border:1px solid var(--line);border-radius:4px;padding:8px 9px;font-family:'Inter',sans-serif;
     font-size:13.5px;color:var(--ink);margin-top:4px;background:var(--paper);
@@ -270,6 +272,7 @@
       <button class="navbtn" data-panel="reclamos">Reclamos y consultas</button>
       <button class="navbtn" data-panel="facturas">Facturas del mes</button>
       <button class="navbtn" data-panel="asamblea">Pre-Asamblea</button>
+      <button class="navbtn" data-panel="conflictos">Conflictos entre vecinos</button>
     </div>
 
     <div class="navgroup">
@@ -383,6 +386,16 @@
           <p class="panel-note">Antes de votar un gasto extraordinario o un aumento fuerte, usá este espacio para explicar el porqué y buscar alternativas entre todos. La previsibilidad ayuda a que cada propietario pueda planificar su economía.</p>
         </div>
         <div id="asamblea-mount"></div>
+      </section>
+
+      <!-- CONFLICTOS ENTRE VECINOS -->
+      <section class="panel" id="panel-conflictos">
+        <div class="panel-head">
+          <span class="eyebrow">Consorcistas</span>
+          <h2>Conflictos entre vecinos</h2>
+          <p class="panel-note">Un espacio formal para canalizar reclamos entre unidades (ruidos, filtraciones, mascotas, espacios comunes, convivencia) antes de que escalen. Cada caso muestra el marco legal general aplicable y queda documentado con fecha y evidencia.</p>
+        </div>
+        <div id="conflictos-mount"></div>
       </section>
 
       <!-- DEUDAS -->
@@ -669,6 +682,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     reclamos: '<path d="M4 5h16v11H8l-4 4V5z"></path>',
     facturas: '<path d="M7 3h7l4 4v14H7z"></path><path d="M14 3v4h4"></path><line x1="9" y1="12" x2="15" y2="12"></line><line x1="9" y1="16" x2="15" y2="16"></line>',
     asamblea: '<circle cx="9" cy="8" r="3"></circle><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"></path><circle cx="17" cy="9" r="2.3"></circle><path d="M15.5 14.2c2.6.4 4.5 2.7 4.5 5.8"></path>',
+    conflictos: '<circle cx="7" cy="8" r="3"></circle><circle cx="17" cy="8" r="3"></circle><path d="M2.5 20c0-3.3 2-5.5 4.5-5.5s4.5 2.2 4.5 5.5"></path><path d="M12.5 20c0-3.3 2-5.5 4.5-5.5s4.5 2.2 4.5 5.5"></path><path d="M10 11l4-2M10 9l4 2"></path>',
     deudas: '<circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="13"></line><circle cx="12" cy="16.3" r="0.7" fill="currentColor" stroke="none"></circle>',
     juicios: '<line x1="12" y1="3" x2="12" y2="21"></line><line x1="5" y1="7" x2="19" y2="7"></line><path d="M5 7l-3 6a3 3 0 0 0 6 0z"></path><path d="M19 7l-3 6a3 3 0 0 0 6 0z"></path><line x1="8" y1="21" x2="16" y2="21"></line>',
     movimientos: '<polyline points="17 3 21 7 17 11"></polyline><line x1="21" y1="7" x2="3" y2="7"></line><polyline points="7 13 3 17 7 21"></polyline><line x1="3" y1="17" x2="21" y2="17"></line>',
@@ -688,7 +702,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
 
   const ICON_COLORS = {
     resumen:'#7FB8FF', expensas:'#FFD166', formapago:'#FF9F7F', reclamos:'#C792EA',
-    facturas:'#7FCBFF', asamblea:'#FF7FA8', deudas:'#FFB37F', juicios:'#E0A8FF',
+    facturas:'#7FCBFF', asamblea:'#FF7FA8', conflictos:'#F0A0A0', deudas:'#FFB37F', juicios:'#E0A8FF',
     movimientos:'#8FA8FF', conciliaciones:'#FFAF8F', segurosdepositos:'#8FE0FF',
     proveedores:'#FFD1A8', reserva:'#D1A8FF', honorarios:'#FFE08F', asistencia:'#A8C8FF',
     usuarios:'#FFA8C8', liquidaciones:'#C8A8FF', personal:'#A8FFE0', manual:'#FFC8A8', remocion:'#D8A8FF', calchonorarios:'#B8E0A8'
@@ -1223,6 +1237,226 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       document.getElementById('cot-fecha').value = '';
       renderHistorial();
     });
+  }
+
+  /* ---------- Conflictos entre vecinos (triage + normativa + mediación + acuerdo) ---------- */
+  const MARCO_NORMATIVO = {
+    'Ruidos molestos': 'El art. 2047 inc. b) del Código Civil y Comercial prohíbe a propietarios y ocupantes "perturbar la tranquilidad de los demás de cualquier manera que exceda la normal tolerancia". El criterio general (art. 1973 CCyC) es que la molestia se evalúa según el lugar, el uso habitual del inmueble y el horario — las actividades domésticas comunes en horario diurno suelen tolerarse más que el ruido nocturno o reiterado.',
+    'Filtraciones / humedad': 'El art. 2046 inc. e) CCyC obliga a todo propietario a permitir el acceso a su unidad para reparar cosas y partes comunes. Como criterio general, el consorcio responde por el arreglo de las instalaciones comunes (cañerías generales, terrazas, etc.); la responsabilidad por el daño puntual dentro de una unidad depende de si el origen está en una parte común o en una instalación privativa de esa u otra unidad.',
+    'Mascotas': 'La tenencia de mascotas está permitida salvo prohibición expresa en el reglamento de propiedad horizontal. De todas formas, el dueño del animal responde por el ruido excesivo o la falta de higiene en espacios comunes bajo el mismo criterio de "normal tolerancia" (art. 2047 inc. b) y 1973 CCyC), además de las normas locales de tenencia responsable que puedan aplicar.',
+    'Uso de espacios comunes': 'El art. 2047 inc. a) CCyC prohíbe destinar unidades o partes comunes a usos contrarios a los previstos en el reglamento de propiedad horizontal. Ningún propietario puede apropiarse en forma exclusiva de un espacio común sin la autorización correspondiente de la asamblea.',
+    'Convivencia general': 'El art. 2046 CCyC enumera las obligaciones generales del propietario (cumplir el reglamento, no perturbar, permitir el acceso para reparaciones, etc.). El reglamento de copropiedad de cada edificio puede prever además sanciones específicas ante incumplimientos reiterados.',
+    'Otro': 'Este caso no encuadra en una categoría estándar. Revisá el reglamento de copropiedad de tu edificio y, si el conflicto persiste, consultá con un abogado especializado en propiedad horizontal.'
+  };
+  const CONFLICTO_TIPOS = Object.keys(MARCO_NORMATIVO);
+
+  function mountConflictos(mountId){
+    const mount = document.getElementById(mountId);
+    const statusId = mountId+'-status';
+
+    mount.innerHTML = `
+      <div class="new-ticket">
+        <h3>Cargar un caso nuevo</h3>
+        <div class="field-grid">
+          <div>
+            <label>Tipo de conflicto</label>
+            <select id="cf-tipo">${CONFLICTO_TIPOS.map(t=>`<option>${t}</option>`).join('')}</select>
+          </div>
+          <div><label>Unidad denunciante</label><input type="text" id="cf-denunciante" placeholder="Ej: 4° B" value="${role==='propietario' && currentUser ? escapeHtml(currentUser.unidad) : ''}"></div>
+          <div><label>Unidad denunciada</label><input type="text" id="cf-denunciada" placeholder="Ej: 5° A"></div>
+          <div><label>Fecha y hora del hecho</label><input type="text" id="cf-fechahecho" placeholder="DD/MM/AAAA HH:MM"></div>
+          <div style="grid-column:1/-1;"><label>Link a evidencia (foto/audio/video en Drive, opcional)</label><input type="text" id="cf-evidencia" placeholder="https://drive.google.com/..."></div>
+        </div>
+        <div id="cf-normativa-box" class="infoblock" style="margin-bottom:12px;"></div>
+        <label class="card-field-label" style="display:block;margin-bottom:5px;">Descripción del hecho</label>
+        <textarea id="cf-descripcion" rows="3" style="width:100%;border:1px solid var(--line);border-radius:5px;padding:9px 10px;font-family:'Inter',sans-serif;font-size:13.5px;"></textarea>
+        <div class="toolbar" style="margin-top:12px;">
+          <span></span>
+          <div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}<button class="btn primary" id="cf-submit">Cargar caso</button></div>
+        </div>
+      </div>
+      <div class="subhead">Casos</div>
+      <div class="cards" id="cf-list"></div>
+    `;
+
+    function renderNormativa(){
+      const tipo = document.getElementById('cf-tipo').value;
+      document.getElementById('cf-normativa-box').innerHTML = `
+        <h3>Marco legal general — ${escapeHtml(tipo)}</h3>
+        <p>${escapeHtml(MARCO_NORMATIVO[tipo])}</p>
+        <p class="disclaimer">Esto es información general, no un dictamen sobre tu caso puntual — no reemplaza el asesoramiento de un abogado.</p>
+      `;
+    }
+    document.getElementById('cf-tipo').addEventListener('change', renderNormativa);
+    renderNormativa();
+
+    document.getElementById('cf-submit').addEventListener('click', async ()=>{
+      const denunciante = document.getElementById('cf-denunciante').value.trim();
+      const denunciada = document.getElementById('cf-denunciada').value.trim();
+      if(!denunciante || !denunciada){
+        setStatus(statusId,'error');
+        return;
+      }
+      const casos = await loadData('naken-conflictos', []);
+      casos.push({
+        id: uid(),
+        fecha: new Date().toLocaleDateString('es-AR'),
+        tipo: document.getElementById('cf-tipo').value,
+        unidadDenunciante: denunciante,
+        unidadDenunciada: denunciada,
+        fechaHecho: document.getElementById('cf-fechahecho').value.trim(),
+        evidencia: document.getElementById('cf-evidencia').value.trim(),
+        descripcion: document.getElementById('cf-descripcion').value.trim(),
+        estado: 'Pendiente',
+        notificacion: '',
+        mediacionLink: '',
+        mediacionFecha: '',
+        acuerdoTexto: '',
+        aceptoDenunciante: '',
+        aceptoDenunciado: ''
+      });
+      await saveData('naken-conflictos', casos, statusId);
+      document.getElementById('cf-denunciada').value = '';
+      document.getElementById('cf-fechahecho').value = '';
+      document.getElementById('cf-evidencia').value = '';
+      document.getElementById('cf-descripcion').value = '';
+      renderList();
+    });
+
+    function badgeClass(estado){
+      if(estado==='Resuelto' || estado==='Acuerdo firmado') return 'resuelto';
+      if(estado==='Escalado') return 'escalado';
+      if(estado==='Acuerdo propuesto') return 'acuerdo';
+      if(estado==='Notificado' || estado==='En mediación') return 'proceso';
+      return 'pendiente';
+    }
+
+    function plantillaNotificacion(c){
+      return `Estimado/a vecino/a de la unidad ${c.unidadDenunciada}:\n\nSe registró una incidencia por "${c.tipo}" el ${c.fechaHecho||'(fecha no especificada)'}. Adjuntamos el marco normativo que aplica a este tipo de situación, para que puedan resolverlo entre ustedes o, de ser necesario, avanzar a una instancia de mediación con la administración:\n\n${MARCO_NORMATIVO[c.tipo]}\n\nQuedamos a disposición para coordinar una conversación si lo consideran necesario.`;
+    }
+
+    async function renderList(){
+      const casos = await loadData('naken-conflictos', []);
+      const listEl = document.getElementById('cf-list');
+      const visibles = role==='admin'
+        ? casos
+        : casos.filter(c => currentUser && (c.unidadDenunciante===currentUser.unidad || c.unidadDenunciada===currentUser.unidad));
+
+      if(visibles.length===0){
+        listEl.innerHTML = `<div class="empty">No hay casos cargados${role!=='admin' ? ' que te involucren' : ''}.</div>`;
+        return;
+      }
+
+      listEl.innerHTML = '';
+      visibles.slice().reverse().forEach(c=>{
+        const reincidencias = casos.filter(x=>x.unidadDenunciada===c.unidadDenunciada && x.tipo===c.tipo).length;
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <div class="card-top">
+            <div>
+              <b>${escapeHtml(c.tipo)}</b>
+              <div class="card-meta">${escapeHtml(c.fecha)} · Denuncia: unidad ${escapeHtml(c.unidadDenunciante)} → unidad ${escapeHtml(c.unidadDenunciada)}
+              ${reincidencias>1 ? ` · <span style="color:var(--danger);font-weight:600;">Reincidencia (${reincidencias}° caso de este tipo)</span>` : ''}</div>
+            </div>
+            <span class="badge ${badgeClass(c.estado)}">${escapeHtml(c.estado)}</span>
+          </div>
+          <div style="font-size:13.5px;margin:6px 0;">${escapeHtml(c.descripcion || '(sin descripción)')}</div>
+          ${c.fechaHecho ? `<div class="card-meta">Hecho ocurrido: ${escapeHtml(c.fechaHecho)}</div>` : ''}
+          ${c.evidencia ? `<a href="${escapeHtml(c.evidencia)}" target="_blank" rel="noopener" class="btn ghost" style="display:inline-block;margin-top:6px;text-decoration:none;font-size:11px;padding:6px 10px;">Ver evidencia ↗</a>` : ''}
+
+          <details style="margin-top:10px;">
+            <summary style="cursor:pointer;font-size:12px;color:var(--navy);">Ver marco legal aplicable</summary>
+            <p style="font-size:12.5px;margin-top:6px;">${escapeHtml(MARCO_NORMATIVO[c.tipo])}</p>
+          </details>
+
+          ${role==='admin' ? `
+            <span class="card-field-label">Estado del caso</span>
+            <select class="cf-field" data-id="${c.id}" data-f="estado">
+              ${['Pendiente','Notificado','En mediación','Acuerdo propuesto','Acuerdo firmado','Resuelto','Escalado'].map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join('')}
+            </select>
+
+            <span class="card-field-label">Texto de notificación (editable)</span>
+            <textarea class="cf-field" data-id="${c.id}" data-f="notificacion" rows="4">${escapeHtml(c.notificacion || plantillaNotificacion(c))}</textarea>
+            <div class="toolbar" style="margin:6px 0;"><span></span><button class="btn ghost" data-action="copiar" data-copy="notif-${c.id}" style="font-size:11px;">Copiar texto</button></div>
+
+            <span class="card-field-label">Link de mediación virtual (Meet/Zoom)</span>
+            <input type="text" class="cf-field" data-id="${c.id}" data-f="mediacionLink" value="${escapeHtml(c.mediacionLink)}" placeholder="https://meet.google.com/...">
+            <span class="card-field-label">Fecha propuesta de mediación</span>
+            <input type="text" class="cf-field" data-id="${c.id}" data-f="mediacionFecha" value="${escapeHtml(c.mediacionFecha)}" placeholder="DD/MM/AAAA HH:MM">
+
+            <span class="card-field-label">Términos del acuerdo</span>
+            <textarea class="cf-field" data-id="${c.id}" data-f="acuerdoTexto" rows="3" placeholder="Ej: El propietario de la unidad 5°A se compromete a no usar el lavarropas después de las 22hs.">${escapeHtml(c.acuerdoTexto)}</textarea>
+          ` : `
+            ${c.estado==='Notificado' || c.estado==='En mediación' || c.estado==='Acuerdo propuesto' || c.estado==='Acuerdo firmado' ? `
+              <span class="card-field-label">Comunicación de la administración</span>
+              <div style="font-size:13px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.notificacion || plantillaNotificacion(c))}</div>
+            ` : ''}
+            ${c.mediacionLink ? `<div style="margin-top:8px;"><span class="card-field-label">Mediación</span><br>${escapeHtml(c.mediacionFecha)} — <a href="${escapeHtml(c.mediacionLink)}" target="_blank" rel="noopener">Unirme ↗</a></div>` : ''}
+            ${c.acuerdoTexto ? `
+              <span class="card-field-label">Términos del acuerdo propuesto</span>
+              <div style="font-size:13px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.acuerdoTexto)}</div>
+            ` : ''}
+          `}
+
+          ${role==='propietario' && currentUser && c.acuerdoTexto && (c.estado==='Acuerdo propuesto' || c.estado==='Acuerdo firmado') ? renderAceptacion(c) : ''}
+        `;
+        listEl.appendChild(card);
+      });
+
+      if(role==='admin'){
+        listEl.querySelectorAll('.cf-field').forEach(f=>{
+          f.addEventListener('change', persistField);
+          if(f.tagName==='TEXTAREA') f.addEventListener('blur', persistField);
+        });
+        listEl.querySelectorAll('[data-action="copiar"]').forEach(b=>{
+          b.addEventListener('click', ()=>{
+            const id = b.dataset.copy.replace('notif-','');
+            const ta = listEl.querySelector(`textarea[data-id="${id}"][data-f="notificacion"]`);
+            navigator.clipboard.writeText(ta.value).then(()=>{ b.textContent='Copiado ✓'; setTimeout(()=>b.textContent='Copiar texto',1500); });
+          });
+        });
+      }
+      if(role==='propietario'){
+        listEl.querySelectorAll('[data-action="aceptar"]').forEach(b=>{
+          b.addEventListener('click', async ()=>{
+            const casos2 = await loadData('naken-conflictos', []);
+            const caso = casos2.find(x=>x.id===b.dataset.id);
+            if(!caso) return;
+            const sello = `${currentUser.nombreCompleto} (unidad ${currentUser.unidad}) — ${new Date().toLocaleString('es-AR')}`;
+            if(b.dataset.side==='denunciante') caso.aceptoDenunciante = sello;
+            else caso.aceptoDenunciado = sello;
+            await saveData('naken-conflictos', casos2);
+            renderList();
+          });
+        });
+      }
+    }
+
+    function renderAceptacion(c){
+      const esDenunciante = currentUser.unidad === c.unidadDenunciante;
+      const esDenunciado = currentUser.unidad === c.unidadDenunciada;
+      let html = `<span class="card-field-label">Aceptación del acuerdo</span><div style="font-size:12.5px;margin-top:4px;">`;
+      html += `<div>Denunciante: ${c.aceptoDenunciante ? '✅ '+escapeHtml(c.aceptoDenunciante) : '— pendiente —'}</div>`;
+      html += `<div>Denunciado: ${c.aceptoDenunciado ? '✅ '+escapeHtml(c.aceptoDenunciado) : '— pendiente —'}</div>`;
+      html += `</div>`;
+      if(esDenunciante && !c.aceptoDenunciante){
+        html += `<button class="btn primary" data-action="aceptar" data-id="${c.id}" data-side="denunciante" style="margin-top:8px;">Aceptar acuerdo (como denunciante)</button>`;
+      }
+      if(esDenunciado && !c.aceptoDenunciado){
+        html += `<button class="btn primary" data-action="aceptar" data-id="${c.id}" data-side="denunciado" style="margin-top:8px;">Aceptar acuerdo (como denunciado)</button>`;
+      }
+      return html;
+    }
+
+    async function persistField(e){
+      const casos = await loadData('naken-conflictos', []);
+      const caso = casos.find(x=>x.id===e.target.dataset.id);
+      if(caso) caso[e.target.dataset.f] = e.target.value;
+      await saveData('naken-conflictos', casos, statusId);
+    }
+
+    renderList();
   }
 
   /* ---------- Role, auth & navigation ---------- */
@@ -2684,6 +2918,8 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       submitLabel:'Enviar',
       emptyText:'No hay preguntas ni propuestas cargadas.'
     });
+
+    mountConflictos('conflictos-mount');
 
     mountLedger('deudas-mount', 'naken-deudas', [
       {key:'unidad', label:'Unidad', placeholder:'4° B'},
