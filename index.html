@@ -282,6 +282,7 @@
       <button class="navbtn" data-panel="movimientos">Movimientos bancarios</button>
       <button class="navbtn" data-panel="reserva">Fondo de reserva</button>
       <button class="navbtn" data-panel="honorarios">Honorarios</button>
+      <button class="navbtn" data-panel="prorrateo">Estado de cuenta y prorrateo</button>
       <button class="navbtn" data-panel="conciliaciones">Conciliación bancaria</button>
       <button class="navbtn" data-panel="segurosdepositos">Seguros y depósitos</button>
       <button class="navbtn" data-panel="proveedores">Proveedores y servicios</button>
@@ -446,6 +447,16 @@
           <p class="panel-note">Honorarios del administrador y de profesionales contratados (abogado, contador, técnicos), por período.</p>
         </div>
         <div id="honorarios-mount"></div>
+      </section>
+
+      <!-- ESTADO DE CUENTA Y PRORRATEO -->
+      <section class="panel" id="panel-prorrateo">
+        <div class="panel-head">
+          <span class="eyebrow">Transparencia</span>
+          <h2>Estado de cuenta y prorrateo</h2>
+          <p class="panel-note">El detalle de cómo se reparte la expensa entre todas las unidades cada período — saldo anterior, pago, deuda, intereses y el total a cada vencimiento (Conf. Art. 10 inc. c y j Ley 941).</p>
+        </div>
+        <div id="prorrateo-mount"></div>
       </section>
 
       <!-- CONCILIACIÓN BANCARIA -->
@@ -721,6 +732,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     proveedores: '<path d="M14.5 6.5a4 4 0 0 1-5.3 4.9L4 16.6V20h3.4l5.2-5.2a4 4 0 0 1 4.9-5.3l-2.7 2.7-1.9-1.9z"></path>',
     reserva: '<rect x="4" y="8" width="16" height="12" rx="2"></rect><circle cx="12" cy="14" r="2.5"></circle><line x1="8" y1="8" x2="8" y2="5"></line><line x1="16" y1="8" x2="16" y2="5"></line>',
     honorarios: '<circle cx="12" cy="12" r="9"></circle><line x1="12" y1="7" x2="12" y2="17"></line><path d="M15 9.5c0-1.4-1.3-2.5-3-2.5s-3 1-3 2.3c0 1.2 1 1.8 3 2.2s3 1 3 2.2c0 1.3-1.3 2.3-3 2.3s-3-1.1-3-2.5"></path>',
+    prorrateo: '<rect x="3" y="4" width="18" height="16" rx="1.5"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="9" x2="9" y2="20"></line><line x1="15" y1="9" x2="15" y2="20"></line>',
     asistencia: '<rect x="6" y="4" width="12" height="17" rx="2"></rect><rect x="9" y="2.5" width="6" height="3" rx="1"></rect><polyline points="9 13 11 15 15 10.5"></polyline>',
     usuarios: '<circle cx="8" cy="15" r="4"></circle><line x1="11" y1="12" x2="20" y2="3"></line><line x1="16" y1="7" x2="19" y2="10"></line><line x1="13" y1="10" x2="16" y2="13"></line>',
     liquidaciones: '<path d="M3 7h15a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"></path><path d="M3 7l2-3h11l2 3"></path><circle cx="16" cy="13.5" r="1.5"></circle>',
@@ -734,7 +746,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     resumen:'#7FB8FF', expensas:'#FFD166', formapago:'#FF9F7F', reclamos:'#C792EA',
     facturas:'#7FCBFF', asamblea:'#FF7FA8', conflictos:'#F0A0A0', deudas:'#FFB37F', juicios:'#E0A8FF',
     movimientos:'#8FA8FF', conciliaciones:'#FFAF8F', segurosdepositos:'#8FE0FF',
-    proveedores:'#FFD1A8', reserva:'#D1A8FF', honorarios:'#FFE08F', asistencia:'#A8C8FF',
+    proveedores:'#FFD1A8', reserva:'#D1A8FF', honorarios:'#FFE08F', prorrateo:'#B8D8A8', asistencia:'#A8C8FF',
     usuarios:'#FFA8C8', liquidaciones:'#C8A8FF', personal:'#A8FFE0', manual:'#FFC8A8', remocion:'#D8A8FF', calchonorarios:'#B8E0A8'
   };
   const ICON_ACTIVE_COLOR = '#CFFF3D';
@@ -1297,6 +1309,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     const statusId = mountId+'-status';
 
     mount.innerHTML = `
+      <div id="cf-reglamento-links" class="config-row" style="margin-bottom:16px;"></div>
       <div class="new-ticket">
         <h3>Cargar un caso nuevo</h3>
         <div class="field-grid">
@@ -1306,7 +1319,15 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
           </div>
           <div><label>Unidad denunciante</label><input type="text" id="cf-denunciante" placeholder="Ej: 4° B" value="${role==='propietario' && currentUser ? escapeHtml(currentUser.unidad) : ''}"></div>
           <div><label>Unidad denunciada</label><input type="text" id="cf-denunciada" placeholder="Ej: 5° A"></div>
-          <div><label>Fecha y hora del hecho</label><input type="datetime-local" id="cf-fechahecho"></div>
+          <div>
+            <label>Fecha y hora del hecho</label>
+            <input type="datetime-local" id="cf-fechahecho">
+            <div class="toolbar" style="margin-top:6px;">
+              <span></span>
+              <button class="btn ghost" id="cf-fecha-confirmar" type="button" style="font-size:11px;padding:6px 10px;">Confirmar</button>
+            </div>
+            <div id="cf-fecha-confirmada" style="font-size:11.5px;color:var(--ok);font-family:'IBM Plex Mono',monospace;margin-top:2px;"></div>
+          </div>
           <div style="grid-column:1/-1;">
             <label>Evidencia (foto, audio o video)</label>
             <input type="file" id="cf-evidencia-file" accept="image/*,video/*,audio/*" style="width:100%;border:1px solid var(--line);border-radius:5px;padding:8px 10px;font-size:13px;background:#fff;">
@@ -1337,6 +1358,34 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     }
     document.getElementById('cf-tipo').addEventListener('change', renderNormativa);
     renderNormativa();
+
+    Promise.all([
+      loadData('naken-reglamento-link', ''),
+      loadData('naken-interno-link', '')
+    ]).then(([reglamento, interno])=>{
+      const box = document.getElementById('cf-reglamento-links');
+      const items = [];
+      if(reglamento) items.push(`<a href="${escapeHtml(reglamento)}" target="_blank" rel="noopener" class="btn ghost" style="text-decoration:none;">Ver Reglamento de Copropiedad ↗</a>`);
+      if(interno) items.push(`<a href="${escapeHtml(interno)}" target="_blank" rel="noopener" class="btn ghost" style="text-decoration:none;">Ver Manual interno ↗</a>`);
+      if(items.length===0){
+        box.innerHTML = `<p class="panel-note" style="margin:0;">Todavía no cargaste el Reglamento de Copropiedad ni un manual interno — podés hacerlo desde "Documentos y buenas prácticas" para tenerlo a mano acá al resolver cada caso.</p>`;
+      } else {
+        box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;">${items.join('')}</div>`;
+      }
+    });
+
+    document.getElementById('cf-fecha-confirmar').addEventListener('click', ()=>{
+      const raw = document.getElementById('cf-fechahecho').value;
+      const conf = document.getElementById('cf-fecha-confirmada');
+      if(!raw){
+        conf.style.color = 'var(--danger)';
+        conf.textContent = 'Elegí una fecha y hora primero.';
+        return;
+      }
+      const d = new Date(raw);
+      conf.style.color = 'var(--ok)';
+      conf.textContent = '✓ Registrado: ' + d.toLocaleString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    });
 
     document.getElementById('cf-evidencia-file').addEventListener('change', async (e)=>{
       const file = e.target.files[0];
@@ -1395,6 +1444,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       await saveData('naken-conflictos', casos, statusId);
       document.getElementById('cf-denunciada').value = '';
       document.getElementById('cf-fechahecho').value = '';
+      document.getElementById('cf-fecha-confirmada').textContent = '';
       document.getElementById('cf-evidencia').value = '';
       document.getElementById('cf-evidencia-file').value = '';
       document.getElementById('cf-evidencia-status').textContent = '';
@@ -1814,6 +1864,8 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     const statusId = mountId+'-status';
     let rows = [];
 
+    const editableCols = columns.filter(c=>!c.computed);
+
     mount.innerHTML = `
       <table class="ledger">
         <thead><tr>
@@ -1823,12 +1875,21 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
         <tbody id="${mountId}-body"></tbody>
       </table>
       <div class="toolbar">
-        ${role==='admin' ? `<button class="btn" id="${mountId}-add">+ Agregar</button>` : '<span></span>'}
+        ${role==='admin' ? `<div style="display:flex;gap:8px;"><button class="btn" id="${mountId}-add">+ Agregar</button><button class="btn ghost" id="${mountId}-bulk-toggle">Importar varias filas</button></div>` : '<span></span>'}
         <div style="display:flex;align-items:center;gap:12px;">
           ${statusEl(statusId)}
           ${role==='admin' ? `<button class="btn primary" id="${mountId}-save">Guardar cambios</button>` : ''}
         </div>
       </div>
+      ${role==='admin' ? `
+      <div id="${mountId}-bulk-box" style="display:none;margin-top:12px;padding:14px 16px;border:1px dashed var(--line);border-radius:6px;background:var(--paper-deep);">
+        <p class="panel-note" style="margin:0 0 8px;">Pegá varias filas a la vez — una por línea, con los valores separados por <b>tabulación</b> (como al copiar celdas de Excel/Sheets) o por coma, en este orden: <b>${editableCols.map(c=>c.label).join(' · ')}</b></p>
+        <textarea id="${mountId}-bulk-textarea" rows="5" style="width:100%;border:1px solid var(--line);border-radius:5px;padding:9px 10px;font-family:'IBM Plex Mono',monospace;font-size:12px;"></textarea>
+        <div class="toolbar" style="margin-top:8px;">
+          <span id="${mountId}-bulk-preview" style="font-size:12px;color:var(--muted);"></span>
+          <button class="btn primary" id="${mountId}-bulk-process">Agregar estas filas</button>
+        </div>
+      </div>` : ''}
     `;
 
     const body = document.getElementById(mountId+'-body');
@@ -1899,6 +1960,42 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       });
       document.getElementById(mountId+'-save').addEventListener('click', ()=>{
         rows = readRows(); saveData(storageKey, rows, statusId);
+      });
+
+      const bulkToggle = document.getElementById(mountId+'-bulk-toggle');
+      const bulkBox = document.getElementById(mountId+'-bulk-box');
+      const bulkTextarea = document.getElementById(mountId+'-bulk-textarea');
+      const bulkPreview = document.getElementById(mountId+'-bulk-preview');
+
+      bulkToggle.addEventListener('click', ()=>{
+        bulkBox.style.display = bulkBox.style.display==='none' ? 'block' : 'none';
+        if(bulkBox.style.display==='block') bulkTextarea.focus();
+      });
+
+      function parseBulkText(text){
+        return text.split('\n').map(l=>l.trim()).filter(l=>l.length>0).map(line=>{
+          const parts = line.includes('\t') ? line.split('\t') : line.split(',');
+          const row = {};
+          editableCols.forEach((c,i)=>{ row[c.key] = (parts[i]||'').trim(); });
+          return row;
+        });
+      }
+
+      bulkTextarea.addEventListener('input', ()=>{
+        const parsed = parseBulkText(bulkTextarea.value);
+        bulkPreview.textContent = parsed.length>0 ? `${parsed.length} fila${parsed.length===1?'':'s'} lista${parsed.length===1?'':'s'} para agregar` : '';
+      });
+
+      document.getElementById(mountId+'-bulk-process').addEventListener('click', ()=>{
+        const parsed = parseBulkText(bulkTextarea.value);
+        if(parsed.length===0) return;
+        rows = readRows();
+        rows.push(...parsed);
+        render();
+        scheduleSave();
+        bulkTextarea.value = '';
+        bulkPreview.textContent = '';
+        bulkBox.style.display = 'none';
       });
     }
 
@@ -3048,6 +3145,24 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
       {key:'periodo', label:'Período', placeholder:'Julio 2026'},
       {key:'monto', label:'Monto ($)', numeric:true, placeholder:'0'},
     ], {emptyText:'Sin honorarios cargados.'});
+
+    mountLedger('prorrateo-mount', 'naken-prorrateo', [
+      {key:'periodo', label:'Período', placeholder:'Junio 2026'},
+      {key:'uf', label:'UF', placeholder:'1'},
+      {key:'unidad', label:'Piso/Dpto', placeholder:'1 C'},
+      {key:'propietario', label:'Propietario', placeholder:''},
+      {key:'saldoAnterior', label:'Saldo ant. ($)', numeric:true, placeholder:'0'},
+      {key:'pago', label:'Pago ($)', numeric:true, placeholder:'0'},
+      {key:'deuda', label:'Deuda ($)', numeric:true, placeholder:'0'},
+      {key:'intereses', label:'Intereses ($)', numeric:true, placeholder:'0'},
+      {key:'pctExpA', label:'% Exp A', placeholder:'3.32'},
+      {key:'expA', label:'Exp A ($)', numeric:true, placeholder:'0'},
+      {key:'pctExpB', label:'% Exp B', placeholder:'0'},
+      {key:'expB', label:'Exp B ($)', numeric:true, placeholder:'0'},
+      {key:'redondeo', label:'Redondeo ($)', numeric:true, placeholder:'0'},
+      {key:'total1vto', label:'Total 1er vto. ($)', numeric:true, placeholder:'0'},
+      {key:'total2vto', label:'Total 2do vto. ($)', numeric:true, placeholder:'0'},
+    ], {emptyText:'Todavía no se cargó el prorrateo de ningún período.'});
 
     mountLinkField('arca-link-mount', 'naken-arca-link', {
       title: 'Aportes en Línea — ARCA (ex AFIP)',
