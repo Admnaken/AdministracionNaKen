@@ -917,13 +917,14 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
   /* ---------- Resumen (dashboard con gráficos) ---------- */
   let chartGastos = null, chartExpensas = null;
   async function mountResumen(mountId_unused){
-    const [facturas, expensas, deudas, reserva, reclamos, liquidaciones] = await Promise.all([
+    const [facturas, expensas, deudas, reserva, reclamos, liquidaciones, pagosInformados] = await Promise.all([
       loadData('naken-facturas', []),
       loadData('naken-expensas', []),
       loadData('naken-deudas', []),
       loadData('naken-reserva', []),
       loadData('naken-reclamos', []),
-      loadData('naken-liquidaciones-sueldo', [])
+      loadData('naken-liquidaciones-sueldo', []),
+      loadData('naken-pagos-informados', [])
     ]);
 
     function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
@@ -932,12 +933,14 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     const deudaTotal = deudas.reduce((s,r)=>s+num(r.monto),0);
     const reservaTotal = reserva.reduce((s,r)=>s+num(r.monto),0);
     const reclamosPendientes = reclamos.filter(r=>r.estado==='Pendiente'||r.estado==='En proceso').length;
+    const pagosPendientes = pagosInformados.filter(p=>p.estado==='Pendiente de verificar').length;
     const ultimaExpensa = expensas.length ? expensas[expensas.length-1] : null;
 
     document.getElementById('resumen-kpi').innerHTML = `
       <div class="kpi highlight"><div class="label">Fondo de reserva</div><div class="value">${fmt(reservaTotal)}</div></div>
       <div class="kpi highlight"><div class="label">Deuda total del consorcio</div><div class="value">${fmt(deudaTotal)}</div></div>
       <div class="kpi"><div class="label">Reclamos abiertos</div><div class="value">${reclamosPendientes}</div></div>
+      ${role==='admin' ? `<div class="kpi ${pagosPendientes>0?'highlight':''}"><div class="label">Pagos por verificar</div><div class="value">${pagosPendientes}</div></div>` : ''}
       <div class="kpi"><div class="label">Última expensa publicada</div><div class="value" style="font-size:16px;">${ultimaExpensa ? escapeHtml(ultimaExpensa.periodo||'—') : 'Sin datos'}</div></div>
     `;
 
@@ -2278,7 +2281,7 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
     const statusId = mountId+'-status';
     const fields = ['empresaCobranzas','notasCobranzas','cbu','alias','banco','sucursal','titularCuit'];
 
-    mount.innerHTML = `<div id="${mountId}-contact"></div><div id="${mountId}-pago"></div>`;
+    mount.innerHTML = `<div id="${mountId}-contact"></div><div id="${mountId}-pago"></div><div id="${mountId}-comprobantes"></div>`;
 
     loadData('naken-consorcio-datos', {}).then(cfg=>{
       document.getElementById(mountId+'-contact').innerHTML = `
@@ -2355,6 +2358,147 @@ const APPS_SCRIPT_TOKEN = '2UsTGfTJDHbrTdCmPsjcKIzOcUNq3IZGBloBVsPU';
         `;
       });
     }
+
+    mountComprobantesPago(mountId+'-comprobantes');
+  }
+
+  /* ---------- Comprobantes de pago informados por propietarios ---------- */
+  function mountComprobantesPago(mountId){
+    const mount = document.getElementById(mountId);
+    const statusId = mountId+'-status';
+
+    function badgeClass(estado){
+      if(estado==='Verificado') return 'resuelto';
+      if(estado==='Observado') return 'escalado';
+      return 'pendiente';
+    }
+
+    async function renderLista(){
+      const pagos = await loadData('naken-pagos-informados', []);
+      const visibles = role==='admin' ? pagos : pagos.filter(p=>currentUser && p.unidad===currentUser.unidad);
+      const listEl = document.getElementById(mountId+'-lista');
+      if(!listEl) return;
+      if(visibles.length===0){
+        listEl.innerHTML = `<div class="empty">${role==='admin' ? 'Todavía no hay pagos informados.' : 'Todavía no informaste ningún pago.'}</div>`;
+        return;
+      }
+      listEl.innerHTML = '';
+      visibles.slice().reverse().forEach(p=>{
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.innerHTML = `
+          <div class="card-top">
+            <div>
+              <b>${escapeHtml(p.fecha)} — ${fmtMonto(p.monto)}</b>
+              <div class="card-meta">Unidad ${escapeHtml(p.unidad)}${role==='admin' ? ' · '+escapeHtml(p.propietario||'') : ''} · Período: ${escapeHtml(p.periodo||'—')}</div>
+            </div>
+            <span class="badge ${badgeClass(p.estado)}">${escapeHtml(p.estado)}</span>
+          </div>
+          ${p.comprobante ? `<a href="${escapeHtml(p.comprobante)}" target="_blank" rel="noopener" class="btn ghost" style="display:inline-block;margin-top:6px;text-decoration:none;font-size:11px;padding:6px 10px;">Ver comprobante ↗</a>` : `<div class="empty" style="padding:6px 0 0;">Sin comprobante adjunto</div>`}
+          ${role==='admin' ? `
+            <span class="card-field-label">Estado</span>
+            <select class="cp-field" data-id="${p.id}" data-f="estado">
+              ${['Pendiente de verificar','Verificado','Observado'].map(e=>`<option ${p.estado===e?'selected':''}>${e}</option>`).join('')}
+            </select>
+          ` : (p.notaAdmin ? `<div class="card-meta" style="margin-top:6px;">Nota de la administración: ${escapeHtml(p.notaAdmin)}</div>` : '')}
+        `;
+        listEl.appendChild(card);
+      });
+      if(role==='admin'){
+        listEl.querySelectorAll('.cp-field').forEach(f=>{
+          f.addEventListener('change', async ()=>{
+            const pagos2 = await loadData('naken-pagos-informados', []);
+            const p = pagos2.find(x=>x.id===f.dataset.id);
+            if(p) p[f.dataset.f] = f.value;
+            await saveData('naken-pagos-informados', pagos2, statusId);
+          });
+        });
+      }
+    }
+
+    function fmtMonto(v){
+      const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.'));
+      return isNaN(n) ? '—' : '$ ' + n.toLocaleString('es-AR');
+    }
+
+    if(role==='propietario' && currentUser){
+      mount.innerHTML = `
+        <div class="new-ticket">
+          <h3>Informar un pago</h3>
+          <div class="field-grid">
+            <div><label>Fecha del pago</label><input type="date" id="cp-fecha"></div>
+            <div><label>Monto ($)</label><input type="text" id="cp-monto" placeholder="0"></div>
+            <div><label>Período al que corresponde</label><input type="text" id="cp-periodo" placeholder="Ej: Julio 2026"></div>
+          </div>
+          <label>Comprobante (foto o PDF)</label>
+          <input type="file" id="cp-file" accept="image/*,application/pdf" style="width:100%;border:1px solid var(--line);border-radius:5px;padding:8px 10px;font-size:13px;background:#fff;">
+          <div id="cp-file-status" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin-top:5px;"></div>
+          <input type="hidden" id="cp-comprobante-link">
+          <div class="toolbar" style="margin-top:10px;">
+            <span></span>
+            <div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}<button class="btn primary" id="cp-submit">Enviar</button></div>
+          </div>
+        </div>
+        <div class="subhead">Tus pagos informados</div>
+        <div class="cards" id="${mountId}-lista"></div>
+      `;
+
+      document.getElementById('cp-file').addEventListener('change', async (e)=>{
+        const file = e.target.files[0];
+        const st = document.getElementById('cp-file-status');
+        if(!file) return;
+        const sizeMB = (file.size/1024/1024).toFixed(1);
+        if(file.size > 20*1024*1024){
+          st.textContent = `Este archivo pesa ${sizeMB} MB, es demasiado grande para subir directo.`;
+          st.style.color = 'var(--danger)';
+          return;
+        }
+        st.textContent = `Subiendo (${sizeMB} MB)...`;
+        st.style.color = 'var(--brass)';
+        try{
+          const url = await window.uploadFileToDrive(file);
+          document.getElementById('cp-comprobante-link').value = url;
+          st.textContent = 'Comprobante subido ✓';
+          st.style.color = 'var(--ok)';
+        }catch(err){
+          st.textContent = 'No se pudo subir: ' + (err && err.message ? err.message : 'error desconocido');
+          st.style.color = 'var(--danger)';
+        }
+      });
+
+      document.getElementById('cp-submit').addEventListener('click', async ()=>{
+        const fecha = document.getElementById('cp-fecha').value;
+        const monto = document.getElementById('cp-monto').value.trim();
+        const periodo = document.getElementById('cp-periodo').value.trim();
+        const comprobante = document.getElementById('cp-comprobante-link').value;
+        if(!fecha || !monto){ setStatus(statusId,'error'); return; }
+        const pagos = await loadData('naken-pagos-informados', []);
+        pagos.push({
+          id: uid(),
+          unidad: currentUser.unidad,
+          propietario: currentUser.nombreCompleto,
+          fecha: new Date(fecha).toLocaleDateString('es-AR'),
+          monto, periodo, comprobante,
+          estado: 'Pendiente de verificar',
+          notaAdmin: ''
+        });
+        await saveData('naken-pagos-informados', pagos, statusId);
+        document.getElementById('cp-fecha').value = '';
+        document.getElementById('cp-monto').value = '';
+        document.getElementById('cp-periodo').value = '';
+        document.getElementById('cp-comprobante-link').value = '';
+        document.getElementById('cp-file').value = '';
+        document.getElementById('cp-file-status').textContent = '';
+        renderLista();
+      });
+    } else {
+      mount.innerHTML = `
+        <div class="subhead">Pagos informados por propietarios</div>
+        <div class="cards" id="${mountId}-lista"></div>
+      `;
+    }
+
+    renderLista();
   }
 
   /* ---------- Fondo de reserva (with running total) ---------- */
