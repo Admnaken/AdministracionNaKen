@@ -728,7 +728,7 @@
       y ponelo en APPS_SCRIPT_TOKEN — tiene que ser IGUAL al que pongas
       dentro del script de Google (variable SECRET).
    ===================================================================== */
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx2BrPAsK2tjXINB6AF9mhJL4AAv77Es8OEsFiEI-tMdKm-Qcnfjx7ejTuNXKBeF6nL/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzBFjAvk3l9M7F-5iIqsFw_MBTXFpXAHbPu_rtabVvM3CU2qILF9pvhVa1IN1feu3jv5Q/exec';
 const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
 (function(){
@@ -1792,6 +1792,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         </div>
       `;
       document.getElementById('admin-setup-submit').addEventListener('click', async ()=>{
+        const btn = document.getElementById('admin-setup-submit');
         const user = document.getElementById('admin-setup-user').value.trim();
         const p1 = document.getElementById('admin-setup-pass').value;
         const p2 = document.getElementById('admin-setup-pass2').value;
@@ -1800,10 +1801,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         if(!user){ msg.innerHTML = `<div class="gate-msg error">Ingresá un usuario.</div>`; return; }
         if(p1 !== p2){ msg.innerHTML = `<div class="gate-msg error">Las claves no coinciden.</div>`; return; }
         if(!validAdminCode(p1)){ msg.innerHTML = `<div class="gate-msg error">Tiene que tener 6 caracteres, con al menos una letra, un número y un símbolo especial.</div>`; return; }
-        await saveData('naken-admin-username', user);
-        await saveData('naken-admin-code', p1);
-        adminAuthenticated = true;
-        applyRole('admin');
+        await withLoading(btn, 'Guardando…', async ()=>{
+          await saveData('naken-admin-username', user);
+          await saveData('naken-admin-code', p1);
+          adminAuthenticated = true;
+          applyRole('admin');
+        });
       });
       return;
     }
@@ -1864,6 +1867,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     });
 
     document.getElementById('login-submit').addEventListener('click', async ()=>{
+      const btn = document.getElementById('login-submit');
       const username = document.getElementById('login-username').value.trim();
       const password = document.getElementById('login-password').value;
       const msg = document.getElementById('login-msg');
@@ -1879,23 +1883,26 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         return;
       }
 
-      const usuarios = await loadData('naken-usuarios', []);
-      const match = usuarios.find(u=>u.username===username && u.password===password);
-      if(!match){
-        msg.innerHTML = `<div class="gate-msg error">Usuario o contraseña incorrectos.</div>`;
-        return;
-      }
-      if(match.estado !== 'habilitado'){
-        msg.innerHTML = `<div class="gate-msg pending">Tu solicitud todavía no fue habilitada por la administración.</div>`;
-        return;
-      }
-      match.ultimoIngreso = new Date().toLocaleString('es-AR');
-      await saveData('naken-usuarios', usuarios);
-      currentUser = match;
-      applyRole('propietario');
+      await withLoading(btn, 'Verificando…', async ()=>{
+        const usuarios = await loadData('naken-usuarios', []);
+        const match = usuarios.find(u=>u.username===username && u.password===password);
+        if(!match){
+          msg.innerHTML = `<div class="gate-msg error">Usuario o contraseña incorrectos.</div>`;
+          return;
+        }
+        if(match.estado !== 'habilitado'){
+          msg.innerHTML = `<div class="gate-msg pending">Tu solicitud todavía no fue habilitada por la administración.</div>`;
+          return;
+        }
+        match.ultimoIngreso = new Date().toLocaleString('es-AR');
+        await saveData('naken-usuarios', usuarios);
+        currentUser = match;
+        applyRole('propietario');
+      });
     });
 
     document.getElementById('req-submit').addEventListener('click', async ()=>{
+      const btn = document.getElementById('req-submit');
       const consorcioSel = document.getElementById('req-consorcio').value;
       const consorcioNuevo = document.getElementById('req-consorcio-nuevo').value.trim();
       const nombreCompleto = document.getElementById('req-nombre').value.trim();
@@ -1921,25 +1928,28 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         msg.innerHTML = `<div class="gate-msg error">La contraseña tiene que ser de 5 dígitos numéricos.</div>`;
         return;
       }
-      const usuarios = await loadData('naken-usuarios', []);
-      if(usuarios.find(u=>u.username===username)){
-        msg.innerHTML = `<div class="gate-msg error">Ese usuario ya existe, elegí otro.</div>`;
-        return;
-      }
 
-      const consorcio = consorcioSel==='__nuevo__' ? consorcioNuevo : consorcioSel;
-      if(consorcioSel==='__nuevo__'){ await addEdificioSiNoExiste(consorcio); }
+      await withLoading(btn, 'Enviando…', async ()=>{
+        const usuarios = await loadData('naken-usuarios', []);
+        if(usuarios.find(u=>u.username===username)){
+          msg.innerHTML = `<div class="gate-msg error">Ese usuario ya existe, elegí otro.</div>`;
+          return;
+        }
 
-      usuarios.push({id:uid(), consorcio, nombreCompleto, unidad, username, password, porcentual:'', estado:'pendiente'});
-      await saveData('naken-usuarios', usuarios);
-      msg.innerHTML = `<div class="gate-msg ok">Solicitud enviada. Vas a poder ingresar cuando la administración la habilite.</div>`;
-      document.getElementById('req-consorcio').value='';
-      document.getElementById('req-consorcio-nuevo').value='';
-      document.getElementById('req-consorcio-nuevo-wrap').style.display='none';
-      document.getElementById('req-nombre').value='';
-      document.getElementById('req-unidad').value='';
-      document.getElementById('req-username').value='';
-      document.getElementById('req-password').value='';
+        const consorcio = consorcioSel==='__nuevo__' ? consorcioNuevo : consorcioSel;
+        if(consorcioSel==='__nuevo__'){ await addEdificioSiNoExiste(consorcio); }
+
+        usuarios.push({id:uid(), consorcio, nombreCompleto, unidad, username, password, porcentual:'', estado:'pendiente'});
+        await saveData('naken-usuarios', usuarios);
+        msg.innerHTML = `<div class="gate-msg ok">Solicitud enviada. Vas a poder ingresar cuando la administración la habilite.</div>`;
+        document.getElementById('req-consorcio').value='';
+        document.getElementById('req-consorcio-nuevo').value='';
+        document.getElementById('req-consorcio-nuevo-wrap').style.display='none';
+        document.getElementById('req-nombre').value='';
+        document.getElementById('req-unidad').value='';
+        document.getElementById('req-username').value='';
+        document.getElementById('req-password').value='';
+      });
     });
   }
 
@@ -2015,6 +2025,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     return d.innerHTML;
   }
   function uid(){ return Math.random().toString(36).slice(2,9); }
+
+  /** Deshabilita un botón, le cambia el texto mientras corre `fn` (evita doble clic / dobles envíos),
+   *  y lo vuelve a dejar como estaba al terminar (salvo que la pantalla ya se haya reemplazado). */
+  async function withLoading(btn, textoCargando, fn){
+    if(!btn || btn.disabled) return; // ya está corriendo, ignoramos el clic de más
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = textoCargando;
+    try{
+      await fn();
+    } finally {
+      if(document.body.contains(btn)){ btn.disabled = false; btn.textContent = original; }
+    }
+  }
 
   /* ---------- Edificios administrados (para el selector del alta de propietarios) ---------- */
   async function getEdificios(){
@@ -2989,12 +3013,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
       pendingEl.querySelectorAll('[data-action="habilitar"]').forEach(b=>{
         b.addEventListener('click', async ()=>{
-          const usuarios = await loadData('naken-usuarios', []);
-          const u = usuarios.find(x=>x.id===b.dataset.id);
-          const pctInput = pendingEl.querySelector(`.pct-input[data-id="${b.dataset.id}"]`);
-          if(u){ u.estado='habilitado'; u.porcentual = pctInput ? pctInput.value : ''; }
-          await saveData('naken-usuarios', usuarios);
-          refreshLists();
+          await withLoading(b, 'Habilitando…', async ()=>{
+            const usuarios = await loadData('naken-usuarios', []);
+            const u = usuarios.find(x=>x.id===b.dataset.id);
+            const pctInput = pendingEl.querySelector(`.pct-input[data-id="${b.dataset.id}"]`);
+            if(u){ u.estado='habilitado'; u.porcentual = pctInput ? pctInput.value : ''; }
+            await saveData('naken-usuarios', usuarios);
+            refreshLists();
+          });
         });
       });
       pendingEl.querySelectorAll('[data-action="rechazar"]').forEach(b=>{
@@ -3073,14 +3099,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
     }
     document.getElementById(mountId+'-edificio-add').addEventListener('click', async ()=>{
+      const btn = document.getElementById(mountId+'-edificio-add');
       const input = document.getElementById(mountId+'-edificio-nuevo');
       const nombre = input.value.trim();
       if(!nombre) return;
-      const lista = await getEdificios();
-      lista.push({id:uid(), nombre, estado:'activo', spreadsheetId:''});
-      await saveData('naken-edificios', lista);
-      input.value = '';
-      refreshEdificios();
+      await withLoading(btn, 'Agregando…', async ()=>{
+        const lista = await getEdificios();
+        lista.push({id:uid(), nombre, estado:'activo', spreadsheetId:''});
+        await saveData('naken-edificios', lista);
+        input.value = '';
+        refreshEdificios();
+      });
     });
     refreshEdificios();
 
