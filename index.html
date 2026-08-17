@@ -949,6 +949,7 @@
 
   <aside class="sidebar">
     <div id="consorcio-switcher" style="display:none;padding:10px 14px 6px;">
+      <button id="btn-back-overview" class="btn ghost" type="button" style="width:100%;margin-bottom:10px;font-size:11px;">← Todos los consorcios</button>
       <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Consorcio activo</label>
       <select id="consorcio-switcher-select" style="width:100%;margin-top:4px;padding:7px 8px;border-radius:8px;border:1px solid var(--line,#ccc);font-size:13px;"></select>
     </div>
@@ -1007,6 +1008,8 @@
     <div class="profile-banner" id="profile-banner" style="display:none;"></div>
 
     <div class="content" id="gate-screen" style="display:none;"></div>
+
+    <div class="content" id="admin-overview-screen" style="display:none;"></div>
 
     <div class="content" id="main-content">
 
@@ -1326,7 +1329,7 @@
       y ponelo en APPS_SCRIPT_TOKEN — tiene que ser IGUAL al que pongas
       dentro del script de Google (variable SECRET).
    ===================================================================== */
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzBFjAvk3l9M7F-5iIqsFw_MBTXFpXAHbPu_rtabVvM3CU2qILF9pvhVa1IN1feu3jv5Q/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbz_DwMM1tKF5QWi8OdEJJ9TvwWNUgixRrzBTBURXQcafOLlAIhS56nPlZGPzkcYHVtz6A/exec';
 const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
 (function(){
@@ -2334,6 +2337,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   const profileBanner = document.getElementById('profile-banner');
   const sidebarEl = document.querySelector('.sidebar');
   const globalLogoutBtn = document.getElementById('global-logout-btn');
+  const adminOverviewScreen = document.getElementById('admin-overview-screen');
   let adminAuthenticated = false;
 
   function hideSplash(){
@@ -2576,17 +2580,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     });
 
     if(role==='admin' && adminAuthenticated){
-      whoami.textContent = 'Viendo como Administrador — acceso completo';
       gateScreen.style.display = 'none';
-      mainContent.style.display = 'block';
       profileBanner.style.display = 'none';
-      sidebarEl.style.display = '';
       globalLogoutBtn.style.display = '';
-      document.getElementById('consorcio-switcher').style.display = 'block';
-      initConsorcioSwitcherAdmin();
+      mainContent.style.display = 'none';
+      sidebarEl.style.display = 'none';
+      document.getElementById('consorcio-switcher').style.display = 'none';
+      renderAdminOverview();
     } else if(role==='propietario' && currentUser){
       whoami.textContent = 'Sesión de propietario iniciada';
       gateScreen.style.display = 'none';
+      adminOverviewScreen.style.display = 'none';
       mainContent.style.display = 'block';
       sidebarEl.style.display = '';
       globalLogoutBtn.style.display = 'none';
@@ -2596,6 +2600,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     } else {
       whoami.textContent = 'Acceso';
       mainContent.style.display = 'none';
+      adminOverviewScreen.style.display = 'none';
       profileBanner.style.display = 'none';
       sidebarEl.style.display = 'none';
       globalLogoutBtn.style.display = 'none';
@@ -2605,8 +2610,169 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
   }
 
+  /* ---------- Panel general del administrador: todos los consorcios ---------- */
+  async function renderAdminOverview(){
+    whoami.textContent = 'Viendo como Administrador — panel general';
+    adminOverviewScreen.style.display = 'block';
+    adminOverviewScreen.innerHTML = `<div class="empty">Cargando consorcios…</div>`;
+
+    const [edificios, usuarios] = await Promise.all([
+      getEdificios(),
+      loadData('naken-usuarios', [])
+    ]);
+
+    const totalConsorcios = edificios.length;
+    const activos = edificios.filter(e=>e.estado==='activo').length;
+    const vinculados = edificios.filter(e=>!!e.spreadsheetId).length;
+    const totalUF = usuarios.filter(u=>u.estado==='habilitado').length;
+    const solicitudesPendientes = usuarios.filter(u=>u.estado==='pendiente').length;
+
+    const cardsHtml = edificios.length===0 ? `<div class="empty">Todavía no diste de alta ningún consorcio. Usá "+ Nuevo consorcio" para empezar.</div>` : edificios.map(e=>{
+      const propios = usuarios.filter(u => (u.consorcioId && u.consorcioId===e.id) || (!u.consorcioId && u.consorcio && u.consorcio.trim().toLowerCase()===e.nombre.trim().toLowerCase()));
+      const habilitados = propios.filter(u=>u.estado==='habilitado').length;
+      const pendientes = propios.filter(u=>u.estado==='pendiente').length;
+      const vinculado = !!e.spreadsheetId;
+      return `
+        <div class="dash-card" data-edificio-id="${e.id}" style="display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+            <h3 style="margin:0;">${escapeHtml(e.nombre)}</h3>
+            <span class="badge ${vinculado?'resuelto':'escalado'}">${vinculado?'Planilla vinculada':'Sin vincular'}</span>
+          </div>
+          <div class="card-meta" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+            <span>${habilitados} unidad${habilitados===1?'':'es'} habilitada${habilitados===1?'':'s'}</span>
+            ${pendientes>0 ? `<span class="badge pendiente" style="text-transform:none;">${pendientes} solicitud${pendientes===1?'':'es'} pendiente${pendientes===1?'':'s'}</span>` : ''}
+            <span class="badge ${e.estado==='activo'?'resuelto':(e.estado==='pendiente'?'pendiente':'escalado')}" style="text-transform:capitalize;">${escapeHtml(e.estado||'activo')}</span>
+          </div>
+          <div id="ov-fin-${e.id}">
+            ${vinculado
+              ? `<div class="kpi-row" style="margin:0;"><div class="kpi"><div class="label">Gastos del mes</div><div class="value" style="font-size:15px;">Cargando…</div></div></div>`
+              : `<p class="panel-note" style="margin:0;font-size:12.5px;">Vinculá la planilla (abajo) para ver acá el gasto total y la deuda de este consorcio.</p>`}
+          </div>
+          <div class="config-row" style="grid-template-columns:1fr 1fr;">
+            <div>
+              <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Nombre</label>
+              <input type="text" data-field="nombre" data-id="${e.id}" value="${escapeHtml(e.nombre)}">
+            </div>
+            <div>
+              <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Estado</label>
+              <select data-field="estado" data-id="${e.id}">
+                <option value="activo" ${e.estado==='activo'?'selected':''}>Activo</option>
+                <option value="pendiente" ${e.estado==='pendiente'?'selected':''}>Pendiente</option>
+                <option value="inactivo" ${e.estado==='inactivo'?'selected':''}>Inactivo</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">ID de la planilla de liquidación (Google Sheets)</label>
+            <input type="text" data-field="spreadsheetId" data-id="${e.id}" value="${escapeHtml(e.spreadsheetId||'')}" placeholder="Pegá acá el ID de la planilla de este consorcio">
+          </div>
+          <div class="toolbar" style="margin-top:2px;">
+            <button class="btn ghost" data-action="eliminar" data-id="${e.id}" type="button">Eliminar</button>
+            <div style="display:flex;align-items:center;gap:12px;">
+              ${statusEl('ov-status-'+e.id)}
+              <button class="btn primary" data-action="detalle" data-id="${e.id}" type="button">Ver detalle →</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    adminOverviewScreen.innerHTML = `
+      <div class="panel-head">
+        <div class="eyebrow">Panel general</div>
+        <h2>Todos los consorcios</h2>
+        <p class="panel-note">Vista general de los ${totalConsorcios} consorcio${totalConsorcios===1?'':'s'} dado${totalConsorcios===1?'':'s'} de alta. Entrá al detalle de cada uno para ver sus expensas, gastos y prorrateo.</p>
+      </div>
+      <div class="kpi-row" style="margin-bottom:22px;">
+        <div class="kpi highlight"><div class="label">Consorcios</div><div class="value">${totalConsorcios}</div></div>
+        <div class="kpi"><div class="label">Activos</div><div class="value">${activos}</div></div>
+        <div class="kpi"><div class="label">Con planilla vinculada</div><div class="value">${vinculados}</div></div>
+        <div class="kpi"><div class="label">Unidades habilitadas</div><div class="value">${totalUF}</div></div>
+        ${solicitudesPendientes>0 ? `<div class="kpi highlight"><div class="label">Solicitudes pendientes</div><div class="value">${solicitudesPendientes}</div></div>` : ''}
+      </div>
+      <div class="toolbar" style="margin-bottom:16px;">
+        <button class="btn primary" id="ov-nuevo-consorcio" type="button">+ Nuevo consorcio</button>
+        <span></span>
+      </div>
+      <div class="dash-grid">${cardsHtml}</div>
+    `;
+
+    document.getElementById('ov-nuevo-consorcio').addEventListener('click', async ()=>{
+      const nombre = prompt('Nombre del nuevo consorcio (ej: "Av. Corrientes 1234"):');
+      if(!nombre || !nombre.trim()) return;
+      await addEdificioSiNoExiste(nombre.trim());
+      renderAdminOverview();
+    });
+
+    adminOverviewScreen.querySelectorAll('[data-action="detalle"]').forEach(b=>{
+      b.addEventListener('click', ()=> enterConsorcioDetail(b.dataset.id));
+    });
+    adminOverviewScreen.querySelectorAll('[data-action="eliminar"]').forEach(b=>{
+      b.addEventListener('click', async ()=>{
+        if(!confirm('¿Eliminar este consorcio de la lista? Esto no borra su planilla de Google Sheets, solo lo saca de la aplicación.')) return;
+        const lista = await getEdificios();
+        const filtrada = lista.filter(x=>x.id!==b.dataset.id);
+        await saveData('naken-edificios', filtrada);
+        renderAdminOverview();
+      });
+    });
+
+    let ovSaveTimer;
+    adminOverviewScreen.querySelectorAll('.dash-card input[data-field], .dash-card select[data-field]').forEach(input=>{
+      input.addEventListener('input', ()=>{
+        const id = input.dataset.id;
+        const statusId = 'ov-status-'+id;
+        setStatus(statusId, 'saving');
+        clearTimeout(ovSaveTimer);
+        ovSaveTimer = setTimeout(async ()=>{
+          const lista = await getEdificios();
+          const card = adminOverviewScreen.querySelector(`.dash-card[data-edificio-id="${id}"]`);
+          const item = lista.find(x=>x.id===id);
+          if(!item || !card) return;
+          item.nombre = card.querySelector('[data-field="nombre"]').value.trim() || item.nombre;
+          item.estado = card.querySelector('[data-field="estado"]').value;
+          item.spreadsheetId = card.querySelector('[data-field="spreadsheetId"]').value.trim();
+          await saveData('naken-edificios', lista, statusId);
+        }, 700);
+      });
+    });
+
+    // Gastos y deuda en vivo: se piden en paralelo y cada tarjeta se completa sola a medida que responde,
+    // así no se hace esperar a los 15 consorcios para mostrar el primero.
+    const fmtOv = (v)=> '$ ' + (Number(v)||0).toLocaleString('es-AR',{maximumFractionDigits:0});
+    edificios.filter(e=>e.spreadsheetId).forEach(e=>{
+      fetchResumenConsorcio(e.spreadsheetId).then(data=>{
+        const mount = document.getElementById('ov-fin-'+e.id);
+        if(!mount) return; // la pantalla ya se cambió antes de que respondiera
+        if(!data){
+          mount.innerHTML = `<p class="panel-note" style="margin:0;font-size:12.5px;color:var(--danger,#A03A3A);">No se pudo leer la planilla de este consorcio. Revisá que el ID esté bien pegado y que la planilla esté compartida.</p>`;
+          return;
+        }
+        const totalGastos = data.totales ? data.totales.totalGeneralGastos : null;
+        mount.innerHTML = `
+          <div class="kpi-row" style="margin:0;">
+            <div class="kpi highlight"><div class="label">Gastos ${data.periodo ? 'del período '+escapeHtml(data.periodo) : 'del mes'}</div><div class="value" style="font-size:16px;">${totalGastos!==null ? fmtOv(totalGastos) : '—'}</div></div>
+            <div class="kpi ${data.deudaTotal>0?'highlight':''}"><div class="label">Deuda de las unidades</div><div class="value" style="font-size:16px;">${fmtOv(data.deudaTotal)}</div></div>
+          </div>
+        `;
+      }).catch(()=>{
+        const mount = document.getElementById('ov-fin-'+e.id);
+        if(mount) mount.innerHTML = `<p class="panel-note" style="margin:0;font-size:12.5px;color:var(--danger,#A03A3A);">No se pudo leer la planilla de este consorcio.</p>`;
+      });
+    });
+  }
+
+  function enterConsorcioDetail(consorcioId){
+    adminOverviewScreen.style.display = 'none';
+    mainContent.style.display = 'block';
+    sidebarEl.style.display = '';
+    document.getElementById('consorcio-switcher').style.display = 'block';
+    whoami.textContent = 'Viendo como Administrador — acceso completo';
+    initConsorcioSwitcherAdmin(consorcioId);
+  }
+
   /* ---------- Selector de consorcio activo para el administrador ---------- */
-  async function initConsorcioSwitcherAdmin(){
+  async function initConsorcioSwitcherAdmin(preferId){
     const sel = document.getElementById('consorcio-switcher-select');
     const edificios = await getEdificios();
 
@@ -2619,8 +2785,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     let saved = null;
     try{ saved = localStorage.getItem('naken-admin-active-consorcio'); }catch(e){}
+    const preferido = preferId && edificios.find(e=>e.id===preferId);
     const valido = saved && edificios.find(e=>e.id===saved);
-    const idInicial = valido ? saved : edificios[0].id;
+    const idInicial = preferido ? preferId : (valido ? saved : edificios[0].id);
 
     sel.innerHTML = edificios.map(e=>`<option value="${e.id}">${escapeHtml(e.nombre)}${e.estado==='pendiente' ? ' (nuevo)' : ''}</option>`).join('');
     sel.value = idInicial;
@@ -2652,6 +2819,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     applyRole('propietario');
   }
   globalLogoutBtn.addEventListener('click', logout);
+
+  const btnBackOverview = document.getElementById('btn-back-overview');
+  if(btnBackOverview){
+    btnBackOverview.addEventListener('click', ()=>{
+      document.getElementById('consorcio-switcher').style.display = 'none';
+      renderAdminOverview();
+    });
+  }
 
   async function renderProfileBanner(){
     const datos = await loadData('naken-consorcio-datos', {edificio:'', barrio:''});
@@ -2741,6 +2916,18 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   async function fetchLiquidacion(spreadsheetId, unidad, periodo){
     if(!spreadsheetId || !unidad) return null;
     const url = `${APPS_SCRIPT_URL}?action=liquidacion&spreadsheetId=${encodeURIComponent(spreadsheetId)}&unidad=${encodeURIComponent(unidad)}&periodo=${encodeURIComponent(periodo||'')}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
+    try{
+      const res = await fetch(url);
+      const data = await res.json();
+      return data && data.ok ? data : null;
+    }catch(e){
+      return null;
+    }
+  }
+  /* ---------- Resumen de gastos de UN consorcio entero, para las tarjetas del panel general del admin ---------- */
+  async function fetchResumenConsorcio(spreadsheetId, periodo){
+    if(!spreadsheetId) return null;
+    const url = `${APPS_SCRIPT_URL}?action=resumenConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&periodo=${encodeURIComponent(periodo||'')}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
     try{
       const res = await fetch(url);
       const data = await res.json();
