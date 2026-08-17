@@ -229,6 +229,7 @@
   }
 
   .content { padding: 32px; max-width: 980px; }
+  #admin-overview-screen { max-width: 1440px; }
   #gate-screen { margin: 0 auto; }
   .panel { display: none; }
   .panel.active {
@@ -804,6 +805,12 @@
   .dash-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  /* Panel general de consorcios: se acomoda solo según el ancho disponible (1, 2 o 3+ columnas) */
+  .dash-grid-overview {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
     gap: 20px;
   }
   .dash-card {
@@ -2694,7 +2701,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <button class="btn primary" id="ov-nuevo-consorcio" type="button">+ Nuevo consorcio</button>
         <span></span>
       </div>
-      <div class="dash-grid">${cardsHtml}</div>
+      <div class="dash-grid-overview">${cardsHtml}</div>
     `;
 
     document.getElementById('ov-nuevo-consorcio').addEventListener('click', async ()=>{
