@@ -1127,7 +1127,7 @@
         <div class="panel-head">
           <span class="eyebrow">Consorcistas</span>
           <h2>Conflictos entre vecinos</h2>
-          <p class="panel-note">Un espacio formal para canalizar reclamos entre unidades (ruidos, filtraciones, mascotas, espacios comunes, convivencia) antes de que escalen. Cada caso muestra el marco legal general aplicable y queda documentado con fecha y evidencia.</p>
+          <p class="panel-note" style="max-width:none;">Un espacio formal para canalizar reclamos entre unidades (ruidos, filtraciones, mascotas, espacios comunes, convivencia) antes de que escalen. Cada caso muestra el marco legal general aplicable y queda documentado con fecha y evidencia.</p>
         </div>
         <div id="conflictos-mount"></div>
       </section>
@@ -2141,7 +2141,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     return [];
   }
   function conflictoSig(c){
-    return [c.estado, c.notificacion||'', c.descargo||'', c.respuestaAdminDescargo||'', c.mediacionLink||'', c.acuerdoTexto||''].join('§');
+    return [c.estado, c.notificacion||'', c.descargo||'', c.respuestaAdminDescargo||'', c.mediacionLink||'', c.acuerdoTexto||'', c.decisionDenunciante||'', c.resultadoReunion||''].join('§');
   }
   async function refreshConflictosBadge(){
     try{
@@ -2432,7 +2432,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         descargo: '',
         descargoFecha: '',
         respuestaAdminDescargo: '',
-        respuestaAdminFecha: ''
+        respuestaAdminFecha: '',
+        decisionDenunciante: '',
+        decisionDenuncianteFecha: '',
+        resultadoReunion: '',
+        resultadoReunionFecha: ''
       });
       await saveData('naken-conflictos', casos, statusId);
       document.getElementById('cf-denunciada').value = '';
@@ -2450,8 +2454,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     function badgeClass(estado){
       if(estado==='Resuelto' || estado==='Acuerdo firmado') return 'resuelto';
       if(estado==='Escalado') return 'escalado';
-      if(estado==='Acuerdo propuesto') return 'acuerdo';
-      if(estado==='Notificado' || estado==='En mediación' || estado==='Descargo recibido') return 'proceso';
+      if(estado==='Acuerdo propuesto' || estado==='Conforme — a cerrar') return 'acuerdo';
+      if(estado==='Notificado' || estado==='En mediación' || estado==='Descargo recibido' || estado==='Respuesta enviada' || estado==='Solicita reunión por Zoom' || estado==='Reunión realizada') return 'proceso';
       return 'pendiente';
     }
 
@@ -2497,7 +2501,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           ${role==='admin' ? `
             <span class="card-field-label">Estado del caso</span>
             <select class="cf-field" data-id="${c.id}" data-f="estado">
-              ${['Pendiente','Notificado','Descargo recibido','En mediación','Acuerdo propuesto','Acuerdo firmado','Resuelto','Escalado'].map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join('')}
+              ${['Pendiente','Notificado','Descargo recibido','Respuesta enviada','Conforme — a cerrar','Solicita reunión por Zoom','Reunión realizada','En mediación','Acuerdo propuesto','Acuerdo firmado','Resuelto','Escalado'].map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join('')}
             </select>
 
             <span class="card-field-label">Texto de notificación (editable)</span>
@@ -2518,27 +2522,53 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
                 <div style="font-size:13.5px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.descargo)}</div>
               </div>
               <span class="card-field-label" style="margin-top:12px;">Tu respuesta al descargo</span>
-              <textarea class="cf-field" data-id="${c.id}" data-f="respuestaAdminDescargo" rows="4" placeholder="Explicá tu decisión: si se acepta el descargo, se propone un acuerdo, o se avanza a otra instancia.">${escapeHtml(c.respuestaAdminDescargo||'')}</textarea>
+              <textarea class="cf-field" data-id="${c.id}" data-f="respuestaAdminDescargo" rows="4" placeholder="Explicá tu decisión — esto se le muestra al denunciante para que diga si está de acuerdo o prefiere pasar a una reunión por Zoom.">${escapeHtml(c.respuestaAdminDescargo||'')}</textarea>
               <div class="toolbar" style="margin-top:6px;"><span></span><button class="btn primary" data-action="responder-descargo" data-id="${c.id}" style="font-size:12px;">Enviar respuesta</button></div>
             ` : `
               <p class="panel-note" style="margin-top:14px;font-size:12px;">Todavía no hay descargo de la unidad ${escapeHtml(c.unidadDenunciada)}. Va a poder escribirlo apenas el caso quede en estado "Notificado" o posterior.</p>
             `}
+
+            ${c.decisionDenunciante ? `
+              <div style="margin-top:16px;padding:12px 14px;background:${c.decisionDenunciante.includes('Zoom')?'#FBEFE3':'#EAF6EC'};border-left:3px solid ${c.decisionDenunciante.includes('Zoom')?'var(--gold)':'var(--ok)'};border-radius:4px;">
+                <span class="card-field-label">Decisión de la unidad ${escapeHtml(c.unidadDenunciante)} (denunciante)${c.decisionDenuncianteFecha ? ' — '+escapeHtml(c.decisionDenuncianteFecha) : ''}</span>
+                <div style="font-size:13.5px;margin-top:4px;">${escapeHtml(c.decisionDenunciante)}</div>
+              </div>
+              ${c.decisionDenunciante==='De acuerdo' && c.estado!=='Resuelto' ? `
+                <div class="toolbar" style="margin-top:8px;"><span></span><button class="btn primary" data-action="cerrar-caso" data-id="${c.id}" style="font-size:12px;">Cerrar caso</button></div>
+              ` : ''}
+            ` : (c.respuestaAdminDescargo ? `<p class="panel-note" style="margin-top:10px;font-size:12px;">Esperando que la unidad ${escapeHtml(c.unidadDenunciante)} diga si está de acuerdo o prefiere una reunión por Zoom.</p>` : '')}
+
+            ${c.decisionDenunciante && c.decisionDenunciante.includes('Zoom') ? `
+              <span class="card-field-label" style="margin-top:12px;">Reunión por Zoom (convocala acá)</span>
+              <input type="text" class="cf-field" data-id="${c.id}" data-f="mediacionLink" value="${escapeHtml(c.mediacionLink)}" placeholder="https://zoom.us/j/...">
+              <span class="card-field-label">Fecha y hora de la reunión</span>
+              <input type="text" class="cf-field" data-id="${c.id}" data-f="mediacionFecha" value="${escapeHtml(c.mediacionFecha)}" placeholder="DD/MM/AAAA HH:MM">
+
+              ${c.mediacionLink && c.mediacionFecha ? `
+                <span class="card-field-label" style="margin-top:12px;">Resultado de la reunión</span>
+                <p class="panel-note" style="margin:2px 0 6px;font-size:12px;">Se habilita una vez convocada la reunión. Al enviarlo, queda disponible para que ambas unidades lo vean y descarguen la planilla en PDF.</p>
+                <textarea id="cf-resultado-${c.id}" rows="4" style="width:100%;box-sizing:border-box;border:1px solid var(--line,#ccc);border-radius:5px;padding:9px 10px;font-family:'Inter',sans-serif;font-size:13.5px;" placeholder="Qué se acordó en la reunión...">${escapeHtml(c.resultadoReunion||'')}</textarea>
+                <div class="toolbar" style="margin-top:6px;"><span></span><button class="btn primary" data-action="cerrar-con-resultado" data-id="${c.id}" style="font-size:12px;">Guardar resultado y cerrar caso</button></div>
+                ${c.resultadoReunion ? `<div class="card-meta" style="margin-top:4px;">Guardado ${escapeHtml(c.resultadoReunionFecha||'')} — visible para ambas unidades.</div>` : ''}
+              ` : `
+                <p class="panel-note" style="margin-top:6px;font-size:12px;">Completá el link y la fecha de la reunión para habilitar el resultado.</p>
+              `}
+            ` : ''}
             <div class="toolbar" style="margin-top:16px;border-top:1px solid var(--gray-200);padding-top:12px;">
               <span></span>
               <button class="btn ghost" data-action="pdf-mediacion" data-id="${c.id}" style="font-size:12px;">Generar planilla de mediación (PDF) ↓</button>
             </div>
           ` : `
-            ${c.estado==='Notificado' || c.estado==='Descargo recibido' || c.estado==='En mediación' || c.estado==='Acuerdo propuesto' || c.estado==='Acuerdo firmado' ? `
+            ${c.estado==='Notificado' || c.estado==='Descargo recibido' || c.estado==='Respuesta enviada' || c.estado==='Conforme — a cerrar' || c.estado==='Solicita reunión por Zoom' || c.estado==='Reunión realizada' || c.estado==='En mediación' || c.estado==='Acuerdo propuesto' || c.estado==='Acuerdo firmado' || c.estado==='Resuelto' ? `
               <span class="card-field-label">Comunicación de la administración</span>
               <div style="font-size:13px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.notificacion || plantillaNotificacion(c))}</div>
             ` : ''}
-            ${c.mediacionLink ? `<div style="margin-top:8px;"><span class="card-field-label">Mediación</span><br>${escapeHtml(c.mediacionFecha)} — <a href="${escapeHtml(c.mediacionLink)}" target="_blank" rel="noopener">Unirme ↗</a></div>` : ''}
             ${c.acuerdoTexto ? `
               <span class="card-field-label">Términos del acuerdo propuesto</span>
               <div style="font-size:13px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.acuerdoTexto)}</div>
             ` : ''}
 
-            ${currentUser && currentUser.unidad===c.unidadDenunciada && (c.estado==='Notificado' || c.estado==='Descargo recibido' || c.estado==='En mediación' || c.estado==='Acuerdo propuesto' || c.estado==='Acuerdo firmado') ? `
+            ${currentUser && currentUser.unidad===c.unidadDenunciada && (c.estado==='Notificado' || c.estado==='Descargo recibido' || c.estado==='Respuesta enviada' || c.estado==='En mediación' || c.estado==='Acuerdo propuesto' || c.estado==='Acuerdo firmado') ? `
               <div style="margin-top:16px;padding:12px 14px;background:var(--paper,#faf8f3);border-left:3px solid var(--gold);border-radius:4px;">
                 <span class="card-field-label">Tu descargo</span>
                 <p class="panel-note" style="margin:4px 0 8px;">Se te notificó esta incidencia. Tenés derecho a explicar tu versión antes de que la administración avance con cualquier decisión — contá qué pasó, si no volverá a repetirse, o cualquier aclaración que consideres necesaria.</p>
@@ -2553,6 +2583,34 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
                   <textarea id="cf-descargo-${c.id}" rows="6" style="width:100%;box-sizing:border-box;border:1px solid var(--line,#ccc);border-radius:5px;padding:9px 10px;font-family:'Inter',sans-serif;font-size:13.5px;" placeholder="Escribí tu descargo acá…"></textarea>
                   <div class="toolbar" style="margin-top:8px;"><span></span><button class="btn primary" data-action="enviar-descargo" data-id="${c.id}" style="font-size:12px;">Enviar descargo</button></div>
                 `}
+              </div>
+            ` : ''}
+
+            ${currentUser && currentUser.unidad===c.unidadDenunciante && c.respuestaAdminDescargo && !c.decisionDenunciante ? `
+              <div style="margin-top:16px;padding:12px 14px;background:var(--paper,#faf8f3);border-left:3px solid var(--gold);border-radius:4px;">
+                ${!(c.estado==='Notificado' || c.estado==='Descargo recibido') ? `
+                  <span class="card-field-label">Respuesta de la administración</span>
+                  <div style="font-size:13.5px;white-space:pre-wrap;margin:4px 0 10px;">${escapeHtml(c.respuestaAdminDescargo)}</div>
+                ` : ''}
+                <span class="card-field-label">¿Estás de acuerdo con la respuesta de la administración?</span>
+                <div class="toolbar" style="margin-top:8px;gap:10px;"><span></span>
+                  <button class="btn ghost" data-action="decision-zoom" data-id="${c.id}" style="font-size:12px;">Prefiero una reunión por Zoom</button>
+                  <button class="btn primary" data-action="decision-acuerdo" data-id="${c.id}" style="font-size:12px;">Sí, estoy de acuerdo</button>
+                </div>
+              </div>
+            ` : ''}
+            ${c.decisionDenunciante ? `
+              <div class="card-meta" style="margin-top:8px;">Tu decisión: <b>${escapeHtml(c.decisionDenunciante)}</b>${c.decisionDenuncianteFecha ? ' — '+escapeHtml(c.decisionDenuncianteFecha) : ''}</div>
+            ` : ''}
+
+            ${c.mediacionLink ? `<div style="margin-top:8px;"><span class="card-field-label">Reunión por Zoom</span><br>${escapeHtml(c.mediacionFecha)} — <a href="${escapeHtml(c.mediacionLink)}" target="_blank" rel="noopener">Unirme ↗</a></div>` : ''}
+            ${c.resultadoReunion ? `
+              <span class="card-field-label" style="margin-top:8px;">Resultado de la reunión</span>
+              <div style="font-size:13px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.resultadoReunion)}</div>
+            ` : ''}
+            ${c.estado==='Resuelto' ? `
+              <div class="toolbar" style="margin-top:12px;border-top:1px solid var(--gray-200);padding-top:10px;"><span></span>
+                <button class="btn ghost" data-action="pdf-mediacion" data-id="${c.id}" style="font-size:12px;">Descargar planilla de mediación (PDF) ↓</button>
               </div>
             ` : ''}
           `}
@@ -2582,9 +2640,40 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             const ta = listEl.querySelector(`textarea[data-id="${caso.id}"][data-f="respuestaAdminDescargo"]`);
             caso.respuestaAdminDescargo = ta.value.trim();
             caso.respuestaAdminFecha = new Date().toLocaleDateString('es-AR');
+            if(caso.estado==='Descargo recibido' || caso.estado==='Notificado') caso.estado = 'Respuesta enviada';
             await saveData('naken-conflictos', casos2, statusId);
             flashButtonSuccess(b, '✓ Respuesta enviada');
             refreshConflictosBadge();
+            renderList();
+          });
+        });
+        listEl.querySelectorAll('[data-action="cerrar-caso"]').forEach(b=>{
+          b.addEventListener('click', async ()=>{
+            const casos2 = await loadData('naken-conflictos', []);
+            const caso = casos2.find(x=>x.id===b.dataset.id);
+            if(!caso) return;
+            caso.estado = 'Resuelto';
+            await saveData('naken-conflictos', casos2, statusId);
+            flashButtonSuccess(b, '✓ Caso cerrado');
+            refreshConflictosBadge();
+            renderList();
+          });
+        });
+        listEl.querySelectorAll('[data-action="cerrar-con-resultado"]').forEach(b=>{
+          b.addEventListener('click', async ()=>{
+            const ta = document.getElementById('cf-resultado-'+b.dataset.id);
+            const texto = ta ? ta.value.trim() : '';
+            if(!texto) return;
+            const casos2 = await loadData('naken-conflictos', []);
+            const caso = casos2.find(x=>x.id===b.dataset.id);
+            if(!caso) return;
+            caso.resultadoReunion = texto;
+            caso.resultadoReunionFecha = new Date().toLocaleDateString('es-AR');
+            caso.estado = 'Resuelto';
+            await saveData('naken-conflictos', casos2, statusId);
+            flashButtonSuccess(b, '✓ Guardado');
+            refreshConflictosBadge();
+            renderList();
           });
         });
         listEl.querySelectorAll('[data-action="pdf-mediacion"]').forEach(b=>{
@@ -2632,6 +2721,37 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             flashButtonSuccess(b, '✓ Descargo enviado');
             refreshConflictosBadge();
             renderList();
+          });
+        });
+        listEl.querySelectorAll('[data-action="decision-acuerdo"], [data-action="decision-zoom"]').forEach(b=>{
+          b.addEventListener('click', async ()=>{
+            const casos2 = await loadData('naken-conflictos', []);
+            const caso = casos2.find(x=>x.id===b.dataset.id);
+            if(!caso) return;
+            const esZoom = b.dataset.action==='decision-zoom';
+            caso.decisionDenunciante = esZoom ? 'Prefiere una reunión por Zoom' : 'De acuerdo';
+            caso.decisionDenuncianteFecha = new Date().toLocaleDateString('es-AR');
+            caso.estado = esZoom ? 'Solicita reunión por Zoom' : 'Conforme — a cerrar';
+            await saveData('naken-conflictos', casos2, statusId);
+            flashButtonSuccess(b, '✓ Enviado');
+            refreshConflictosBadge();
+            renderList();
+          });
+        });
+        listEl.querySelectorAll('[data-action="pdf-mediacion"]').forEach(b=>{
+          b.addEventListener('click', async ()=>{
+            const casos2 = await loadData('naken-conflictos', []);
+            const caso = casos2.find(x=>x.id===b.dataset.id);
+            if(!caso) return;
+            const original = b.textContent;
+            b.textContent = 'Generando…';
+            try{
+              await generarPdfMediacion(caso);
+            }catch(err){
+              console.error('Error al generar planilla de mediación:', err);
+              alert('No se pudo generar el PDF. Probá de nuevo.');
+            }
+            b.textContent = original;
           });
         });
       }
@@ -2840,16 +2960,23 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           return;
         }
         match.ultimoIngreso = new Date().toLocaleString('es-AR');
-        await saveData('naken-usuarios', usuarios);
 
         const edificios = await getEdificios();
-        const ed = match.consorcioId
-          ? edificios.find(e=>e.id===match.consorcioId)
-          : edificios.find(e=>e.nombre.trim().toLowerCase()===String(match.consorcio||'').trim().toLowerCase());
+        let ed = match.consorcioId ? edificios.find(e=>e.id===match.consorcioId) : null;
+        if(!ed){
+          ed = edificios.find(e=>e.nombre.trim().toLowerCase()===String(match.consorcio||'').trim().toLowerCase());
+        }
+        if(ed && match.consorcioId !== ed.id) match.consorcioId = ed.id; // auto-corrige referencias viejas/rotas
+        await saveData('naken-usuarios', usuarios);
+
         setActiveConsorcioId(ed ? ed.id : null);
         currentUser = match;
         currentUser.consorcioId = ed ? ed.id : (match.consorcioId || null);
         currentUser.consorcioSpreadsheetId = ed ? (ed.spreadsheetId || '') : '';
+        if(!ed){
+          msg.innerHTML = `<div class="gate-msg error">Tu usuario no está vinculado a ningún consorcio activo. Avisale a la administración para que lo revise antes de seguir.</div>`;
+          return;
+        }
         applyRole('propietario');
       });
     });
