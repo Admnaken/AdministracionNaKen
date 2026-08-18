@@ -3298,16 +3298,29 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
 
   async function renderProfileBanner(){
-    const datos = await loadData('naken-consorcio-datos', {edificio:'', barrio:''});
     profileBanner.style.display = 'flex';
     profileBanner.innerHTML = `
       <div class="who">
         <b>${escapeHtml(currentUser.nombreCompleto)}</b> — Unidad ${escapeHtml(currentUser.unidad)}
-        <div class="meta">${escapeHtml(datos.edificio || 'Edificio sin datos cargados')}${datos.barrio ? ' · '+escapeHtml(datos.barrio) : ''} · Porcentual: ${escapeHtml(currentUser.porcentual || '—')}%</div>
+        <div class="meta" id="profile-banner-meta">Cargando datos del consorcio…</div>
       </div>
       <button id="logout-btn">Cerrar sesión</button>
     `;
     document.getElementById('logout-btn').addEventListener('click', logout);
+
+    const [datos, edificios, liq] = await Promise.all([
+      loadData('naken-consorcio-datos', {edificio:'', barrio:''}),
+      getEdificios(),
+      currentUser.consorcioSpreadsheetId ? fetchLiquidacion(currentUser.consorcioSpreadsheetId, currentUser.unidad) : Promise.resolve(null)
+    ]);
+    const edificioActivo = edificios.find(e=>e.id===currentUser.consorcioId);
+    const nombreEdificio = datos.edificio || (edificioActivo ? edificioActivo.nombre : '') || 'Edificio sin datos cargados';
+    const pctEnVivo = liq && liq.unidad && liq.unidad.pctFondoA;
+    const porcentual = pctEnVivo || currentUser.porcentual || '—';
+    const metaEl = document.getElementById('profile-banner-meta');
+    if(metaEl){
+      metaEl.textContent = `${nombreEdificio}${datos.barrio ? ' · '+datos.barrio : ''} · Porcentual: ${porcentual}%`;
+    }
   }
 
   /* ---------- Helpers ---------- */
