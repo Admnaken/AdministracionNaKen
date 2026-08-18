@@ -2157,6 +2157,138 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     setNavBadge('nb-conflictos', 0);
   }
 
+  /** Arma la Planilla de Mediación Vecinal en PDF, con los datos ya cargados del caso — mismo criterio
+   *  que la plantilla Word que armó la administración: consorcio, partes, origen, instancias, resultado,
+   *  marco de buena fe y renglones de firma. */
+  async function generarPdfMediacion(c){
+    if(!window.jspdf){ alert('No se pudo cargar el generador de PDF. Revisá tu conexión e intentá de nuevo.'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const M = 14;
+    let y = 18;
+
+    const [edificios, usuarios] = await Promise.all([getEdificios(), loadData('naken-usuarios', [])]);
+    const consorcioId = getActiveConsorcioId();
+    const edificio = edificios.find(e=>e.id===consorcioId);
+    const nombreConsorcio = edificio ? edificio.nombre : '';
+    const usuariosConsorcio = usuarios.filter(u=>!consorcioId || u.consorcioId===consorcioId);
+    const buscarUsuario = (unidad)=> usuariosConsorcio.find(u=>(u.unidad||'').trim().toLowerCase()===(unidad||'').trim().toLowerCase());
+    const parteA = buscarUsuario(c.unidadDenunciante);
+    const parteB = buscarUsuario(c.unidadDenunciada);
+
+    function heading(texto){
+      if(y>270){ doc.addPage(); y=18; }
+      doc.setFillColor(27,42,61);
+      doc.rect(M, y, 182, 7, 'F');
+      doc.setTextColor(255,255,255);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(10);
+      doc.text(texto, M+3, y+5);
+      doc.setTextColor(20,20,20);
+      y += 12;
+    }
+    function parrafo(texto, opts={}){
+      doc.setFont('helvetica', opts.bold?'bold':'normal');
+      doc.setFontSize(opts.size||9.5);
+      const lineas = doc.splitTextToSize(texto||'—', 182);
+      if(y + lineas.length*4.6 > 285){ doc.addPage(); y=18; }
+      doc.text(lineas, M, y);
+      y += lineas.length*4.6 + 3;
+    }
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(13);
+    doc.text('ADMINISTRACIÓN NAKEN', M, y); y+=6;
+    doc.setFontSize(11);
+    doc.text('Planilla de Mediación Vecinal', M, y); y+=5;
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(9);
+    doc.text('Registro de conflicto entre copropietarios', M, y); y+=10;
+
+    heading('DATOS DEL CASO');
+    doc.autoTable({
+      startY: y, margin:{left:M,right:M}, theme:'grid', styles:{fontSize:9},
+      body: [
+        ['N° de caso', c.id, 'Fecha de apertura', c.fecha||'—'],
+        ['Estado del caso', c.estado||'—', 'Administrador / Mediador', 'Administración NAKEN'],
+      ]
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    heading('DATOS DEL CONSORCIO');
+    doc.autoTable({ startY:y, margin:{left:M,right:M}, theme:'grid', styles:{fontSize:9}, body:[['Consorcio', nombreConsorcio||'—']] });
+    y = doc.lastAutoTable.finalY + 8;
+
+    heading('PARTES INVOLUCRADAS');
+    doc.autoTable({
+      startY:y, margin:{left:M,right:M}, theme:'grid', styles:{fontSize:9},
+      head: [['', 'Parte A (denunciante)', 'Parte B (denunciada)']],
+      body: [
+        ['Nombre completo', (parteA&&parteA.nombreCompleto)||'—', (parteB&&parteB.nombreCompleto)||'—'],
+        ['Unidad funcional', c.unidadDenunciante||'—', c.unidadDenunciada||'—'],
+        ['Rol en el conflicto', 'Denunciante', 'Denunciada'],
+      ]
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    heading('ORIGEN DEL RECLAMO');
+    doc.autoTable({
+      startY:y, margin:{left:M,right:M}, theme:'grid', styles:{fontSize:9},
+      body: [
+        ['Fecha de inicio', c.fechaHecho||'—'],
+        ['Tipo de conflicto', c.tipo||'—'],
+        ['Unidad afectada', c.unidadDenunciada||'—'],
+      ]
+    });
+    y = doc.lastAutoTable.finalY + 8;
+    parrafo('Descripción detallada de los hechos:', {bold:true});
+    parrafo(c.descripcion || '(sin descripción cargada)');
+
+    heading('PROCESO DE MEDIACIÓN — REGISTRO DE INSTANCIAS');
+    const instancias = [];
+    if(c.notificacion) instancias.push(['Instancia 1 — Notificación', c.fecha||'—', 'Notificación formal a la unidad denunciada con el marco normativo aplicable.']);
+    if(c.descargo) instancias.push(['Instancia 2 — Descargo', c.descargoFecha||'—', c.descargo]);
+    if(c.respuestaAdminDescargo) instancias.push(['Instancia 3 — Respuesta de la administración', c.respuestaAdminFecha||'—', c.respuestaAdminDescargo]);
+    if(c.mediacionFecha || c.mediacionLink) instancias.push(['Instancia de mediación', c.mediacionFecha||'—', c.mediacionLink||'—']);
+    if(instancias.length===0){
+      parrafo('Todavía no se registraron instancias de mediación para este caso.');
+    } else {
+      doc.autoTable({
+        startY:y, margin:{left:M,right:M}, theme:'grid', styles:{fontSize:8.5, cellWidth:'wrap'},
+        head:[['Instancia','Fecha','Resumen']],
+        columnStyles:{0:{cellWidth:38},1:{cellWidth:26},2:{cellWidth:'auto'}},
+        body: instancias
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    }
+
+    heading('RESULTADO DEL PROCESO');
+    parrafo('Acuerdos y compromisos asumidos:', {bold:true});
+    parrafo(c.acuerdoTexto || '(sin acuerdo cargado todavía)');
+    parrafo(`Aceptación Parte A (denunciante): ${c.aceptoDenunciante || '— pendiente —'}`);
+    parrafo(`Aceptación Parte B (denunciada): ${c.aceptoDenunciado || '— pendiente —'}`);
+
+    heading('MARCO DE LA MEDIACIÓN — DECLARACIÓN DE BUENA FE Y NO ESCALAMIENTO');
+    parrafo('Las partes que suscriben la presente planilla declaran haber participado voluntariamente del proceso de mediación conducido por la administración del consorcio, con el objetivo de resolver el conflicto descripto por la vía del diálogo, evitando su escalada a instancias administrativas, judiciales o de convivencia que puedan afectar la paz social del edificio.', {size:8.5});
+    parrafo('Ambas partes se comprometen a respetar los acuerdos alcanzados y a informar a la administración cualquier reiteración de los hechos, antes de recurrir a otras vías. La presente planilla queda archivada en el legajo del consorcio como constancia del proceso llevado a cabo, y podrá ser exhibida como antecedente ante la reiteración del conflicto o la intervención de terceros (asamblea, asesoría legal, autoridad competente).', {size:8.5});
+
+    if(y>230){ doc.addPage(); y=18; }
+    heading('CONFORMIDAD — FIRMAS');
+    y += 18;
+    const cols = [M+4, M+68, M+136];
+    const labels = ['Parte A\n'+((parteA&&parteA.nombreCompleto)||''), 'Parte B\n'+((parteB&&parteB.nombreCompleto)||''), 'Administrador / Mediador\nAdministración NAKEN'];
+    cols.forEach((x,i)=>{
+      doc.line(x, y, x+52, y);
+      doc.setFontSize(8);
+      const lineas = labels[i].split('\n');
+      doc.text(lineas[0], x, y+5);
+      doc.text(lineas[1]||'', x, y+9);
+      doc.text('Aclaración y DNI:', x, y+14);
+    });
+
+    doc.save(`Mediacion_${c.id}_${(c.unidadDenunciada||'').replace(/[^a-zA-Z0-9]/g,'')}.pdf`);
+  }
+
   function mountConflictos(mountId){
     const mount = document.getElementById(mountId);
     const statusId = mountId+'-status';
@@ -2391,6 +2523,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             ` : `
               <p class="panel-note" style="margin-top:14px;font-size:12px;">Todavía no hay descargo de la unidad ${escapeHtml(c.unidadDenunciada)}. Va a poder escribirlo apenas el caso quede en estado "Notificado" o posterior.</p>
             `}
+            <div class="toolbar" style="margin-top:16px;border-top:1px solid var(--gray-200);padding-top:12px;">
+              <span></span>
+              <button class="btn ghost" data-action="pdf-mediacion" data-id="${c.id}" style="font-size:12px;">Generar planilla de mediación (PDF) ↓</button>
+            </div>
           ` : `
             ${c.estado==='Notificado' || c.estado==='Descargo recibido' || c.estado==='En mediación' || c.estado==='Acuerdo propuesto' || c.estado==='Acuerdo firmado' ? `
               <span class="card-field-label">Comunicación de la administración</span>
@@ -2449,6 +2585,22 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             await saveData('naken-conflictos', casos2, statusId);
             flashButtonSuccess(b, '✓ Respuesta enviada');
             refreshConflictosBadge();
+          });
+        });
+        listEl.querySelectorAll('[data-action="pdf-mediacion"]').forEach(b=>{
+          b.addEventListener('click', async ()=>{
+            const casos2 = await loadData('naken-conflictos', []);
+            const caso = casos2.find(x=>x.id===b.dataset.id);
+            if(!caso) return;
+            const original = b.textContent;
+            b.textContent = 'Generando…';
+            try{
+              await generarPdfMediacion(caso);
+            }catch(err){
+              console.error('Error al generar planilla de mediación:', err);
+              alert('No se pudo generar el PDF. Probá de nuevo.');
+            }
+            b.textContent = original;
           });
         });
       }
