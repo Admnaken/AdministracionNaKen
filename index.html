@@ -294,6 +294,7 @@
     resize: vertical;
     transition: var(--transition);
   }
+  .ledger td textarea { min-height: 76px; }
   .ledger td.num input { font-family: 'Inter', monospace; font-variant-numeric: tabular-nums; }
   .ledger td input:hover, .ledger td textarea:hover { border-color: var(--gray-200); }
   .ledger td input:focus, .ledger td textarea:focus {
@@ -437,6 +438,7 @@
     background: var(--white);
     transition: var(--transition);
   }
+  .card textarea { min-height: 90px; }
   .card textarea:focus, .card input:focus, .card select:focus {
     outline: none;
     border-color: var(--gold);
@@ -473,7 +475,7 @@
     gap: 10px;
     margin-bottom: 10px;
   }
-  .new-ticket textarea { grid-column: 1 / -1; min-height: 64px; }
+  .new-ticket textarea { grid-column: 1 / -1; min-height: 150px; }
 
   /* ---------- MANUAL ---------- */
   .manual textarea {
@@ -1047,7 +1049,7 @@
         <div class="panel-head">
           <span class="eyebrow">Consorcistas</span>
           <h2>Expensas por período</h2>
-          <p class="panel-note">Resumen mensual de expensas ordinarias y extraordinarias. Los propietarios pueden consultar y descargar cualquier período publicado.</p>
+          <p class="panel-note">Se lee en vivo de la planilla de liquidación del consorcio: gasto total del período, deuda y el detalle por unidad, apenas la administración la publica.</p>
         </div>
         <div id="expensas-mount"></div>
         <div id="expensas-pdf-mount"></div>
@@ -1078,9 +1080,8 @@
         <div class="panel-head">
           <span class="eyebrow">Consorcistas</span>
           <h2>Facturas y comprobantes por mes</h2>
-          <p class="panel-note">Cada gasto respaldado con su comprobante. Es la base de datos a la que apunta el QR de la liquidación de expensas. Para adjuntar el escaneo: subilo a una carpeta de Google Drive con tu cuenta, hacé clic derecho → "Obtener enlace" → asegurate que diga "Cualquier usuario con el enlace" → pegalo en "Link del comprobante".</p>
+          <p class="panel-note">Se lee en vivo de la planilla del consorcio, factura por factura. Elegí el período para ver los comprobantes de cualquier mes, no solo el más reciente.</p>
         </div>
-        <div id="facturas-link-mount"></div>
         <div id="facturas-mount"></div>
       </section>
 
@@ -1263,13 +1264,13 @@
         </div>
 
         <div class="infoblock">
-          <h3>Manual de Buenas Prácticas Consorciales — GCBA</h3>
+          <h3>Manual de Buenas Prácticas Consorciales</h3>
           <p>Documento oficial elaborado por el Gobierno de la Ciudad de Buenos Aires. Desde abril de 2025 es obligatorio ponerlo a disposición de los propietarios junto con la liquidación de expensas.</p>
-          <a class="btn primary" style="display:inline-block;margin-top:6px;text-decoration:none;" href="https://buenosaires.gob.ar/sites/default/files/2025-02/Manual%20buenas%20pr%C3%A1cticas%20consorciales_0.pdf" target="_blank" rel="noopener">Ver manual oficial (PDF) ↗</a>
+          <a class="btn primary" style="display:inline-block;margin-top:6px;text-decoration:none;" href="https://drive.google.com/file/d/15YpObiV70cVJFEQouyaAnSkljJ5ZzVwq/view?usp=drive_link" target="_blank" rel="noopener">Ver manual (PDF) ↗</a>
         </div>
 
-        <div id="reglamento-link-mount"></div>
-        <div id="interno-link-mount"></div>
+        <div class="subhead">Documentación del consorcio</div>
+        <div id="documentos-vivo-mount"></div>
 
         <div class="subhead">Nuestro compromiso como administración</div>
         <div id="manual-mount"></div>
@@ -1550,6 +1551,23 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             const u = liq.unidad;
             const fmtN = (v)=> '$ ' + (Number(v)||0).toLocaleString('es-AR',{maximumFractionDigits:0});
             const fmtF = (v)=> v ? new Date(v).toLocaleDateString('es-AR') : '—';
+            const gastos = liq.gastos || [];
+            const filasGastos = gastos.length===0 ? '' : `
+              <table class="ledger" style="margin-top:4px;">
+                <thead><tr><th>Rubro</th><th>Proveedor</th><th>Detalle</th><th>Importe</th><th>Comprobante</th></tr></thead>
+                <tbody>
+                  ${gastos.map(g=>`
+                    <tr>
+                      <td>${escapeHtml(g.rubro||'')}</td>
+                      <td>${escapeHtml(g.proveedor||'')}</td>
+                      <td>${escapeHtml(g.detalle||'')}</td>
+                      <td>${fmtN(g.importe)}</td>
+                      <td>${g.linkFactura ? `<a href="${escapeHtml(g.linkFactura)}" target="_blank" rel="noopener" class="btn ghost" style="display:inline-block;padding:5px 9px;font-size:11px;text-decoration:none;">Ver ↗</a>` : `<span style="color:var(--muted);font-size:12px;">Sin comprobante</span>`}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            `;
             miLiqMount.innerHTML = `
               <div class="dash-card" style="margin-bottom:22px;">
                 <h3 style="margin-top:0;">Tu liquidación — período ${escapeHtml(liq.periodo||'—')}</h3>
@@ -1562,6 +1580,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
                   <div class="kpi highlight"><div class="label">Total al 1er vencimiento (${fmtF(u.fechaPrimerVto)})</div><div class="value">${fmtN(u.totalPrimerVto)}</div></div>
                   <div class="kpi"><div class="label">Total al 2do vencimiento (${fmtF(u.fechaSegundoVto)})</div><div class="value">${fmtN(u.totalSegundoVto)}</div></div>
                 </div>
+                <div class="subhead" style="margin-top:18px;">Gastos que componen este período</div>
+                ${filasGastos || `<p class="panel-note" style="margin:6px 0 0;">Todavía no hay facturas cargadas para este período.</p>`}
+                <p class="panel-note" style="margin-top:10px;font-size:12px;">¿Buscás un mes anterior? Andá a la pestaña "Facturas y comprobantes" y elegí el período.</p>
               </div>
             `;
           }
@@ -2104,16 +2125,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     document.getElementById('cf-tipo').addEventListener('change', renderNormativa);
     renderNormativa();
 
-    Promise.all([
-      loadData('naken-reglamento-link', ''),
-      loadData('naken-interno-link', '')
-    ]).then(([reglamento, interno])=>{
+    getSpreadsheetIdActivo().then(spreadsheetId=>fetchDocumentosConsorcio(spreadsheetId)).then(data=>{
       const box = document.getElementById('cf-reglamento-links');
+      const documentos = (data && data.documentos) || [];
+      const buscar = (texto)=>{
+        const d = documentos.find(x=>(x.documento||'').toLowerCase().includes(texto));
+        return d ? d.link : '';
+      };
+      const reglamento = buscar('reglamento');
+      const interno = buscar('interno');
       const items = [];
       if(reglamento) items.push(`<a href="${escapeHtml(reglamento)}" target="_blank" rel="noopener" class="btn ghost" style="text-decoration:none;">Ver Reglamento de Copropiedad ↗</a>`);
       if(interno) items.push(`<a href="${escapeHtml(interno)}" target="_blank" rel="noopener" class="btn ghost" style="text-decoration:none;">Ver Manual interno ↗</a>`);
       if(items.length===0){
-        box.innerHTML = `<p class="panel-note" style="margin:0;">Todavía no cargaste el Reglamento de Copropiedad ni un manual interno — podés hacerlo desde "Documentos y buenas prácticas" para tenerlo a mano acá al resolver cada caso.</p>`;
+        box.innerHTML = `<p class="panel-note" style="margin:0;">Todavía no hay Reglamento de Copropiedad ni manual interno cargados en la hoja "DocumentosLegales_Ley941" de este consorcio — se agregan desde ahí para tenerlos a mano acá al resolver cada caso.</p>`;
       } else {
         box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;">${items.join('')}</div>`;
       }
@@ -2943,12 +2968,178 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return null;
     }
   }
+  /* ---------- Documentos y buenas prácticas: lee la hoja DocumentosLegales_Ley941 del consorcio ---------- */
+  async function fetchDocumentosConsorcio(spreadsheetId){
+    if(!spreadsheetId) return null;
+    const url = `${APPS_SCRIPT_URL}?action=documentosConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
+    try{
+      const res = await fetch(url);
+      const data = await res.json();
+      return data && data.ok ? data : null;
+    }catch(e){
+      return null;
+    }
+  }
   async function getSpreadsheetIdDelConsorcio(nombreConsorcio){
     if(!nombreConsorcio) return '';
     const edificios = await getEdificios();
     const e = edificios.find(x=>x.nombre.trim().toLowerCase() === nombreConsorcio.trim().toLowerCase());
     return e ? (e.spreadsheetId||'') : '';
   }
+  // Spreadsheet del consorcio que se está viendo ahora mismo: la unidad del propietario logueado,
+  // o el consorcio elegido en el switcher si es el administrador.
+  async function getSpreadsheetIdActivo(){
+    if(role==='propietario' && currentUser){
+      return getSpreadsheetIdDelConsorcio(currentUser.consorcio);
+    }
+    const id = getActiveConsorcioId();
+    if(!id) return '';
+    const edificios = await getEdificios();
+    const e = edificios.find(x=>x.id===id);
+    return e ? (e.spreadsheetId||'') : '';
+  }
+
+  /* ---------- Expensas por período: vista en vivo de Prorrateo_Mensual (ya no es carga manual) ---------- */
+  async function mountExpensasVivo(mountId){
+    const mount = document.getElementById(mountId);
+    if(!mount) return;
+    const spreadsheetId = await getSpreadsheetIdActivo();
+    if(!spreadsheetId){
+      mount.innerHTML = `<div class="empty">Este consorcio todavía no tiene la planilla de liquidación vinculada (se hace desde el panel general del administrador).</div>`;
+      return;
+    }
+    mount.innerHTML = `<div class="empty">Buscando el período publicado…</div>`;
+    const data = await fetchResumenConsorcio(spreadsheetId);
+    if(!data){
+      mount.innerHTML = `<div class="empty">No se pudo leer la planilla de este consorcio. Puede que el ID esté mal cargado o que la hoja "Prorrateo_Mensual" no tenga datos todavía.</div>`;
+      return;
+    }
+    const fmtN = (v)=> '$ ' + (Number(v)||0).toLocaleString('es-AR',{maximumFractionDigits:0});
+    const fmtF = (v)=> v ? new Date(v).toLocaleDateString('es-AR') : '—';
+    const unidades = data.unidades || [];
+
+    const filas = unidades.length===0 ? `<tr><td colspan="7" style="text-align:center;color:var(--muted);">Sin propietarios cargados para este período.</td></tr>` : unidades.map(u=>{
+      const esMiUnidad = role==='propietario' && currentUser && String(u.uf).trim()===String(currentUser.unidad).trim();
+      return `
+        <tr${esMiUnidad ? ' style="background:rgba(201,168,76,.12);font-weight:600;"' : ''}>
+          <td>${escapeHtml(String(u.uf||''))} ${escapeHtml(u.pisoDpto||'')}</td>
+          <td>${escapeHtml(u.propietario||'')}</td>
+          <td>${fmtN(u.deuda)}</td>
+          <td>${fmtN(u.importeFondoA)}</td>
+          <td>${fmtN(u.importeFondoB)}</td>
+          <td>${fmtN(u.totalPrimerVto)}<br><span style="font-size:11px;color:var(--muted);">vto. ${fmtF(u.fechaPrimerVto)}</span></td>
+          <td>${fmtN(u.totalSegundoVto)}<br><span style="font-size:11px;color:var(--muted);">vto. ${fmtF(u.fechaSegundoVto)}</span></td>
+        </tr>
+      `;
+    }).join('');
+
+    mount.innerHTML = `
+      <div class="kpi-row" style="margin-bottom:18px;">
+        <div class="kpi highlight"><div class="label">Período publicado</div><div class="value" style="font-size:18px;">${escapeHtml(data.periodo||'—')}</div></div>
+        <div class="kpi"><div class="label">Gasto total del período</div><div class="value">${data.totales ? fmtN(data.totales.totalGeneralGastos) : '—'}</div></div>
+        <div class="kpi ${data.deudaTotal>0?'highlight':''}"><div class="label">Deuda de todas las unidades</div><div class="value">${fmtN(data.deudaTotal)}</div></div>
+        <div class="kpi"><div class="label">Unidades</div><div class="value">${data.cantidadUnidades}</div></div>
+      </div>
+      <table class="ledger">
+        <thead><tr>
+          <th>UF</th><th>Propietario</th><th>Deuda</th><th>Fondo A</th><th>Fondo B</th><th>Total 1er vto.</th><th>Total 2do vto.</th>
+        </tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+      <p class="panel-note" style="margin-top:14px;font-size:12px;">Estos datos se leen en vivo de la planilla de Google Sheets del consorcio (hoja "Prorrateo_Mensual") — se actualizan solos apenas la administración carga el período nuevo, sin necesidad de tipear nada acá.</p>
+    `;
+  }
+  /* ---------- Facturas y comprobantes: vista en vivo de Gastos_Mensual, con selector de período
+     (acá es donde el propietario puede ver facturas de meses anteriores, no solo el último) ---------- */
+  async function mountFacturasVivo(mountId){
+    const mount = document.getElementById(mountId);
+    if(!mount) return;
+    const spreadsheetId = await getSpreadsheetIdActivo();
+    if(!spreadsheetId){
+      mount.innerHTML = `<div class="empty">Este consorcio todavía no tiene la planilla de liquidación vinculada.</div>`;
+      return;
+    }
+    mount.innerHTML = `<div class="empty">Buscando las facturas del consorcio…</div>`;
+
+    async function renderPeriodo(periodo){
+      const data = await fetchResumenConsorcio(spreadsheetId, periodo);
+      if(!data){
+        mount.innerHTML = `<div class="empty">No se pudo leer la planilla de este consorcio.</div>`;
+        return;
+      }
+      const fmtN = (v)=> '$ ' + (Number(v)||0).toLocaleString('es-AR',{maximumFractionDigits:0});
+      const fmtF = (v)=> v ? new Date(v).toLocaleDateString('es-AR') : (v||'—');
+      const gastos = data.gastos || [];
+      const periodos = data.periodosDisponibles && data.periodosDisponibles.length ? data.periodosDisponibles : [data.periodo].filter(Boolean);
+
+      const filas = gastos.length===0 ? `<tr><td colspan="7" style="text-align:center;color:var(--muted);">No hay facturas cargadas para este período.</td></tr>` : gastos.map(g=>`
+        <tr>
+          <td>${escapeHtml(g.rubro||'')}</td>
+          <td>${escapeHtml(g.proveedor||'')}</td>
+          <td>${fmtF(g.fecha)}</td>
+          <td>${escapeHtml(g.detalle||'')}</td>
+          <td>${fmtN(g.importe)}</td>
+          <td>${escapeHtml(g.fondo||'')}</td>
+          <td>${g.linkFactura ? `<a href="${escapeHtml(g.linkFactura)}" target="_blank" rel="noopener" class="btn ghost" style="display:inline-block;padding:5px 9px;font-size:11px;text-decoration:none;">Ver ↗</a>` : `<span style="color:var(--muted);font-size:12px;">Sin comprobante</span>`}</td>
+        </tr>
+      `).join('');
+
+      mount.innerHTML = `
+        <div class="toolbar" style="margin-bottom:14px;">
+          <div>
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Período</label>
+            <select id="${mountId}-periodo-select" style="padding:7px 10px;border-radius:8px;border:1px solid var(--line,#ccc);">
+              ${periodos.map(p=>`<option value="${escapeHtml(p)}" ${p===data.periodo?'selected':''}>${escapeHtml(p)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="kpi" style="min-width:180px;"><div class="label">Total facturado en ${escapeHtml(data.periodo||'—')}</div><div class="value" style="font-size:16px;">${fmtN(data.totalGastosPeriodoSeleccionado)}</div></div>
+        </div>
+        <table class="ledger">
+          <thead><tr><th>Rubro</th><th>Proveedor</th><th>Fecha</th><th>Detalle</th><th>Importe</th><th>Fondo</th><th>Comprobante</th></tr></thead>
+          <tbody>${filas}</tbody>
+        </table>
+        <p class="panel-note" style="margin-top:14px;font-size:12px;">Se lee en vivo de la hoja "Gastos_Mensual" de la planilla — elegí cualquier período para ver las facturas de ese mes.</p>
+      `;
+
+      document.getElementById(mountId+'-periodo-select').addEventListener('change', (e)=>{
+        renderPeriodo(e.target.value);
+      });
+    }
+
+    renderPeriodo();
+  }
+
+  /* ---------- Documentos y buenas prácticas: vista en vivo de DocumentosLegales_Ley941 ---------- */
+  async function mountDocumentosVivo(mountId){
+    const mount = document.getElementById(mountId);
+    if(!mount) return;
+    const spreadsheetId = await getSpreadsheetIdActivo();
+    if(!spreadsheetId){
+      mount.innerHTML = `<div class="empty">Este consorcio todavía no tiene la planilla de liquidación vinculada.</div>`;
+      return;
+    }
+    mount.innerHTML = `<div class="empty">Buscando los documentos del consorcio…</div>`;
+    const data = await fetchDocumentosConsorcio(spreadsheetId);
+    if(!data || !data.documentos || data.documentos.length===0){
+      mount.innerHTML = `<div class="empty">Todavía no se cargó documentación en la hoja "DocumentosLegales_Ley941" de este consorcio.</div>`;
+      return;
+    }
+    mount.innerHTML = `
+      <div class="cards">
+        ${data.documentos.map(d=>`
+          <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:14px;">
+            <div>
+              <div style="font-weight:600;">${escapeHtml(d.documento)}</div>
+              ${d.actualizado ? `<div class="card-meta">Actualizado: ${escapeHtml(String(d.actualizado))}</div>` : ''}
+            </div>
+            <a href="${escapeHtml(d.link)}" target="_blank" rel="noopener" class="btn primary" style="text-decoration:none;white-space:nowrap;">Ver ↗</a>
+          </div>
+        `).join('')}
+      </div>
+      <p class="panel-note" style="margin-top:14px;font-size:12px;">Se lee en vivo de la planilla del consorcio — para agregar o cambiar un documento, se edita directamente ahí, en la hoja "DocumentosLegales_Ley941".</p>
+    `;
+  }
+
   function statusEl(id){
     return `<div class="status" id="${id}"><span class="dot"></span><span class="txt">Listo</span></div>`;
   }
@@ -3064,7 +3255,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           const val = escapeHtml(row[c.key]);
           const disabled = role==='admin' ? '' : 'disabled';
           if(c.type==='textarea'){
-            return `<td><textarea data-field="${c.key}" rows="1" ${disabled} placeholder="${c.placeholder||''}">${val}</textarea></td>`;
+            return `<td><textarea data-field="${c.key}" rows="3" ${disabled} placeholder="${c.placeholder||''}">${val}</textarea></td>`;
           }
           return `<td class="${c.numeric?'num':''}"><input type="text" data-field="${c.key}" value="${val}" ${disabled} placeholder="${c.placeholder||''}"></td>`;
         }).join('') + (role==='admin' ? `<td class="row-del"><button data-action="delete" title="Eliminar">✕</button></td>` : '');
@@ -4380,15 +4571,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   function renderAll(){
     mountResumen();
 
-    mountLedger('expensas-mount', 'naken-expensas', [
-      {key:'periodo', label:'Período', placeholder:'Julio 2026'},
-      {key:'venc1', label:'1er vencimiento', placeholder:'10/07/2026'},
-      {key:'venc2', label:'2do vencimiento', placeholder:'20/07/2026'},
-      {key:'ordinarias', label:'Ordinarias ($)', numeric:true, placeholder:'0'},
-      {key:'extraordinarias', label:'Extraordinarias ($)', numeric:true, placeholder:'0'},
-      {key:'total', label:'Total ($)', numeric:true, placeholder:'0'},
-      {key:'estado', label:'Estado', placeholder:'Publicada'},
-    ], {emptyText:'Todavía no se publicaron liquidaciones.'});
+    mountExpensasVivo('expensas-mount');
 
     mountExpensasPdf('expensas-pdf-mount');
 
@@ -4403,36 +4586,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       emptyText:'No hay reclamos ni consultas cargadas.'
     });
 
-    mountLinkField('facturas-link-mount', 'naken-facturas-sheet', {
-      title: 'Planilla de facturas (Google Sheets)',
-      hint: 'Si preferís cargar las facturas del mes en tu propio Google Sheets, pegá acá el link para compartirlo con los propietarios.',
-      placeholder: 'https://docs.google.com/spreadsheets/…',
-      buttonLabel: 'Ver planilla de facturas',
-      emptyText: 'La administración todavía no compartió la planilla de este mes.'
-    });
-
-    const facturaColumns = [
-      {key:'mes', label:'Mes', placeholder:'07/2026'},
-      {key:'categoria', label:'Categoría', placeholder:'Mantenimiento / Servicios / Sueldos'},
-      {key:'proveedor', label:'Proveedor', placeholder:''},
-      {key:'monto', label:'Monto ($)', numeric:true, placeholder:'0'},
-      {key:'descripcion', label:'Descripción', type:'textarea', placeholder:'Detalle del gasto'},
-      {key:'comprobante', label:'Link del comprobante', placeholder:'Pegá acá el link de Drive'},
-      {key:'verComprobante', label:'Comprobante', computed:(row)=>row.comprobante, isLink:true},
-    ];
-    if(role==='propietario' && currentUser && currentUser.porcentual){
-      facturaColumns.push({
-        key:'tuParte',
-        label:`Tu parte (${currentUser.porcentual}%)`,
-        computed: (row)=>{
-          const monto = parseFloat((row.monto||'0').toString().replace(/\./g,'').replace(',','.'));
-          const pct = parseFloat((currentUser.porcentual||'0').toString().replace(',','.'));
-          if(isNaN(monto) || isNaN(pct)) return '';
-          return '$ ' + (monto*pct/100).toLocaleString('es-AR',{maximumFractionDigits:2});
-        }
-      });
-    }
-    mountLedger('facturas-mount', 'naken-facturas', facturaColumns, {emptyText:'Todavía no se cargaron facturas este mes.'});
+    mountFacturasVivo('facturas-mount');
 
     // Pre-Asamblea: explicaciones/propuestas (admin) + preguntas y alternativas (propietarios)
     document.getElementById('asamblea-mount').innerHTML = `
@@ -4548,21 +4702,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       {key:'notas', label:'Notas', placeholder:''},
     ], {emptyText:'Sin categorías cargadas.'});
 
-    mountLinkField('reglamento-link-mount', 'naken-reglamento-link', {
-      title: 'Reglamento de Copropiedad',
-      hint: 'Subí el reglamento a Google Drive (u otro servicio) y pegá acá el link para compartir.',
-      placeholder: 'https://drive.google.com/…',
-      buttonLabel: 'Ver reglamento',
-      emptyText: 'La administración todavía no cargó el reglamento.'
-    });
-
-    mountLinkField('interno-link-mount', 'naken-interno-link', {
-      title: 'Manual interno del consorcio (si existiera)',
-      hint: 'Código de convivencia, normas de uso de amenities u otro documento propio del edificio.',
-      placeholder: 'https://drive.google.com/…',
-      buttonLabel: 'Ver manual interno',
-      emptyText: 'Este consorcio todavía no tiene un manual interno cargado.'
-    });
+    mountDocumentosVivo('documentos-vivo-mount');
 
     mountAsistencia('asistencia-mount', 'naken-asamblea-asistencia');
     if(role==='admin') mountUsuarios('usuarios-mount');
