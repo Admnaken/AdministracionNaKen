@@ -3077,6 +3077,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   /* ---------- Panel general del administrador: todos los consorcios ---------- */
   async function renderAdminOverview(){
     whoami.textContent = 'Viendo como Administrador — panel general';
+    sidebarEl.style.display = 'none';
+    mainContent.style.display = 'none';
+    document.getElementById('consorcio-switcher').style.display = 'none';
     adminOverviewScreen.style.display = 'block';
     adminOverviewScreen.innerHTML = `<div class="empty">Cargando consorcios…</div>`;
 
