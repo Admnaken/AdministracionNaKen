@@ -185,6 +185,27 @@
     font-weight: 500;
   }
   .navbtn.active svg.nav-icon { stroke: var(--gold); }
+  .nav-badge {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    margin-left: auto;
+    border-radius: 999px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    font-family: 'Inter', sans-serif;
+  }
+  .btn.btn-flash-ok {
+    background: var(--ok) !important;
+    border-color: var(--ok) !important;
+    color: #fff !important;
+  }
 
   /* ---------- MAIN ---------- */
   main { flex: 1; min-width: 0; }
@@ -475,7 +496,13 @@
     gap: 10px;
     margin-bottom: 10px;
   }
-  .new-ticket textarea { grid-column: 1 / -1; min-height: 150px; }
+  .new-ticket textarea {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 220px;
+    grid-column: 1 / -1;
+  }
 
   /* ---------- MANUAL ---------- */
   .manual textarea {
@@ -975,8 +1002,8 @@
       <button class="navbtn" data-panel="formapago">Forma de pago</button>
       <button class="navbtn" data-panel="reclamos">Reclamos y consultas</button>
       <button class="navbtn" data-panel="facturas">Facturas del mes</button>
-      <button class="navbtn" data-panel="asamblea">Pre-Asamblea</button>
-      <button class="navbtn" data-panel="conflictos">Conflictos entre vecinos</button>
+      <button class="navbtn" data-panel="asamblea">Pre-Asamblea<span class="nav-badge" id="nb-asamblea"></span></button>
+      <button class="navbtn" data-panel="conflictos">Conflictos entre vecinos<span class="nav-badge" id="nb-conflictos"></span></button>
     </div>
 
     <div class="navgroup">
@@ -1570,7 +1597,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             `;
             miLiqMount.innerHTML = `
               <div class="dash-card" style="margin-bottom:22px;">
-                <h3 style="margin-top:0;">Tu liquidación — período ${escapeHtml(liq.periodo||'—')}</h3>
+                <h3 style="margin-top:0;">Tu liquidación — período ${escapeHtml(formatPeriodo(liq.periodo))}</h3>
                 <p class="panel-note" style="margin:0 0 14px;">Unidad ${escapeHtml(u.pisoDpto||u.uf||'')} — esto es lo que le corresponde pagar a tu unidad este período.</p>
                 <div class="kpi-row" style="margin-bottom:6px;">
                   <div class="kpi"><div class="label">Fondo A (gastos ordinarios)</div><div class="value">${fmtN(u.importeFondoA)}</div></div>
@@ -2070,6 +2097,66 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   };
   const CONFLICTO_TIPOS = Object.keys(MARCO_NORMATIVO);
 
+  /* ---------- Avisos de novedades: Pre-Asamblea y Conflictos ---------- */
+  async function computeAsambleaUnseen(){
+    const [comunicados, preguntas] = await Promise.all([
+      loadData('naken-asamblea-comunicados', []),
+      loadData('naken-asamblea-preguntas', [])
+    ]);
+    const seenKey = seenKeyFor('asamblea');
+    if(role==='admin'){
+      return countUnseen(preguntas, seenKey, it=>it.id+'|'+(it.respuesta||''));
+    } else if(role==='propietario' && currentUser){
+      const misPreguntas = preguntas.filter(it=>it.unidad===currentUser.unidad);
+      const relevantes = [...comunicados.map(it=>({id:it.id, sig:it.id})), ...misPreguntas.map(it=>({id:it.id, sig:it.id+'|'+(it.respuesta||'')}))];
+      const seen = seenMapGet(seenKey);
+      return relevantes.filter(it=>seen[it.id]!==it.sig).length;
+    }
+    return 0;
+  }
+  async function refreshAsambleaBadge(){
+    try{ setNavBadge('nb-asamblea', await computeAsambleaUnseen()); }catch(e){}
+  }
+  async function markAsambleaSeen(){
+    const [comunicados, preguntas] = await Promise.all([
+      loadData('naken-asamblea-comunicados', []),
+      loadData('naken-asamblea-preguntas', [])
+    ]);
+    const seenKey = seenKeyFor('asamblea');
+    if(role==='admin'){
+      markAllSeen(preguntas, seenKey, it=>it.id+'|'+(it.respuesta||''));
+    } else if(role==='propietario' && currentUser){
+      const misPreguntas = preguntas.filter(it=>it.unidad===currentUser.unidad);
+      const seen = seenMapGet(seenKey);
+      comunicados.forEach(it=>{ seen[it.id]=it.id; });
+      misPreguntas.forEach(it=>{ seen[it.id]=it.id+'|'+(it.respuesta||''); });
+      seenMapSet(seenKey, seen);
+    }
+    setNavBadge('nb-asamblea', 0);
+  }
+
+  function conflictosRelevantes(casos){
+    if(role==='admin') return casos;
+    if(role==='propietario' && currentUser) return casos.filter(c=>c.unidadDenunciante===currentUser.unidad || c.unidadDenunciada===currentUser.unidad);
+    return [];
+  }
+  function conflictoSig(c){
+    return [c.estado, c.notificacion||'', c.descargo||'', c.respuestaAdminDescargo||'', c.mediacionLink||'', c.acuerdoTexto||''].join('§');
+  }
+  async function refreshConflictosBadge(){
+    try{
+      const casos = await loadData('naken-conflictos', []);
+      const relevantes = conflictosRelevantes(casos);
+      setNavBadge('nb-conflictos', countUnseen(relevantes, seenKeyFor('conflictos'), c=>c.id+'::'+conflictoSig(c)));
+    }catch(e){}
+  }
+  async function markConflictosSeen(){
+    const casos = await loadData('naken-conflictos', []);
+    const relevantes = conflictosRelevantes(casos);
+    markAllSeen(relevantes, seenKeyFor('conflictos'), c=>c.id+'::'+conflictoSig(c));
+    setNavBadge('nb-conflictos', 0);
+  }
+
   function mountConflictos(mountId){
     const mount = document.getElementById(mountId);
     const statusId = mountId+'-status';
@@ -2083,7 +2170,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <label>Tipo de conflicto</label>
             <select id="cf-tipo">${CONFLICTO_TIPOS.map(t=>`<option>${t}</option>`).join('')}</select>
           </div>
-          <div><label>Unidad denunciante</label><input type="text" id="cf-denunciante" placeholder="Ej: 4° B" value="${role==='propietario' && currentUser ? escapeHtml(currentUser.unidad) : ''}"></div>
+          <div><label>Unidad denunciante</label><input type="text" id="cf-denunciante" value="${role==='propietario' && currentUser ? escapeHtml(currentUser.unidad) : ''}" ${role==='propietario' ? 'readonly style="background:var(--gray-100,#f2f2f2);cursor:not-allowed;"' : 'placeholder="Ej: 4° B"'}></div>
           <div><label>Unidad denunciada</label><input type="text" id="cf-denunciada" placeholder="Ej: 5° A"></div>
           <div>
             <label>Fecha y hora del hecho</label>
@@ -2209,7 +2296,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         mediacionFecha: '',
         acuerdoTexto: '',
         aceptoDenunciante: '',
-        aceptoDenunciado: ''
+        aceptoDenunciado: '',
+        descargo: '',
+        descargoFecha: '',
+        respuestaAdminDescargo: '',
+        respuestaAdminFecha: ''
       });
       await saveData('naken-conflictos', casos, statusId);
       document.getElementById('cf-denunciada').value = '';
@@ -2219,14 +2310,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       document.getElementById('cf-evidencia-file').value = '';
       document.getElementById('cf-evidencia-status').textContent = '';
       document.getElementById('cf-descripcion').value = '';
+      flashButtonSuccess(document.getElementById('cf-submit'), '✓ Caso cargado');
       renderList();
+      refreshConflictosBadge();
     });
 
     function badgeClass(estado){
       if(estado==='Resuelto' || estado==='Acuerdo firmado') return 'resuelto';
       if(estado==='Escalado') return 'escalado';
       if(estado==='Acuerdo propuesto') return 'acuerdo';
-      if(estado==='Notificado' || estado==='En mediación') return 'proceso';
+      if(estado==='Notificado' || estado==='En mediación' || estado==='Descargo recibido') return 'proceso';
       return 'pendiente';
     }
 
@@ -2272,7 +2365,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           ${role==='admin' ? `
             <span class="card-field-label">Estado del caso</span>
             <select class="cf-field" data-id="${c.id}" data-f="estado">
-              ${['Pendiente','Notificado','En mediación','Acuerdo propuesto','Acuerdo firmado','Resuelto','Escalado'].map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join('')}
+              ${['Pendiente','Notificado','Descargo recibido','En mediación','Acuerdo propuesto','Acuerdo firmado','Resuelto','Escalado'].map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join('')}
             </select>
 
             <span class="card-field-label">Texto de notificación (editable)</span>
@@ -2286,8 +2379,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
             <span class="card-field-label">Términos del acuerdo</span>
             <textarea class="cf-field" data-id="${c.id}" data-f="acuerdoTexto" rows="3" placeholder="Ej: El propietario de la unidad 5°A se compromete a no usar el lavarropas después de las 22hs.">${escapeHtml(c.acuerdoTexto)}</textarea>
+
+            ${c.descargo ? `
+              <div style="margin-top:16px;padding:12px 14px;background:var(--paper,#faf8f3);border-left:3px solid var(--gold);border-radius:4px;">
+                <span class="card-field-label">Descargo de la unidad ${escapeHtml(c.unidadDenunciada)}${c.descargoFecha ? ' — '+escapeHtml(c.descargoFecha) : ''}</span>
+                <div style="font-size:13.5px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.descargo)}</div>
+              </div>
+              <span class="card-field-label" style="margin-top:12px;">Tu respuesta al descargo</span>
+              <textarea class="cf-field" data-id="${c.id}" data-f="respuestaAdminDescargo" rows="4" placeholder="Explicá tu decisión: si se acepta el descargo, se propone un acuerdo, o se avanza a otra instancia.">${escapeHtml(c.respuestaAdminDescargo||'')}</textarea>
+              <div class="toolbar" style="margin-top:6px;"><span></span><button class="btn primary" data-action="responder-descargo" data-id="${c.id}" style="font-size:12px;">Enviar respuesta</button></div>
+            ` : `
+              <p class="panel-note" style="margin-top:14px;font-size:12px;">Todavía no hay descargo de la unidad ${escapeHtml(c.unidadDenunciada)}. Va a poder escribirlo apenas el caso quede en estado "Notificado" o posterior.</p>
+            `}
           ` : `
-            ${c.estado==='Notificado' || c.estado==='En mediación' || c.estado==='Acuerdo propuesto' || c.estado==='Acuerdo firmado' ? `
+            ${c.estado==='Notificado' || c.estado==='Descargo recibido' || c.estado==='En mediación' || c.estado==='Acuerdo propuesto' || c.estado==='Acuerdo firmado' ? `
               <span class="card-field-label">Comunicación de la administración</span>
               <div style="font-size:13px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.notificacion || plantillaNotificacion(c))}</div>
             ` : ''}
@@ -2295,6 +2400,24 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             ${c.acuerdoTexto ? `
               <span class="card-field-label">Términos del acuerdo propuesto</span>
               <div style="font-size:13px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.acuerdoTexto)}</div>
+            ` : ''}
+
+            ${currentUser && currentUser.unidad===c.unidadDenunciada && (c.estado==='Notificado' || c.estado==='Descargo recibido' || c.estado==='En mediación' || c.estado==='Acuerdo propuesto' || c.estado==='Acuerdo firmado') ? `
+              <div style="margin-top:16px;padding:12px 14px;background:var(--paper,#faf8f3);border-left:3px solid var(--gold);border-radius:4px;">
+                <span class="card-field-label">Tu descargo</span>
+                <p class="panel-note" style="margin:4px 0 8px;">Se te notificó esta incidencia. Tenés derecho a explicar tu versión antes de que la administración avance con cualquier decisión — contá qué pasó, si no volverá a repetirse, o cualquier aclaración que consideres necesaria.</p>
+                ${c.descargo ? `
+                  <div style="font-size:13.5px;white-space:pre-wrap;">${escapeHtml(c.descargo)}</div>
+                  <div class="card-meta" style="margin-top:4px;">Enviado ${escapeHtml(c.descargoFecha||'')}</div>
+                  ${c.respuestaAdminDescargo ? `
+                    <span class="card-field-label" style="margin-top:12px;">Respuesta de la administración</span>
+                    <div style="font-size:13.5px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.respuestaAdminDescargo)}</div>
+                  ` : `<p class="panel-note" style="margin:8px 0 0;font-size:12px;">La administración todavía no respondió tu descargo.</p>`}
+                ` : `
+                  <textarea id="cf-descargo-${c.id}" rows="6" style="width:100%;box-sizing:border-box;border:1px solid var(--line,#ccc);border-radius:5px;padding:9px 10px;font-family:'Inter',sans-serif;font-size:13.5px;" placeholder="Escribí tu descargo acá…"></textarea>
+                  <div class="toolbar" style="margin-top:8px;"><span></span><button class="btn primary" data-action="enviar-descargo" data-id="${c.id}" style="font-size:12px;">Enviar descargo</button></div>
+                `}
+              </div>
             ` : ''}
           `}
 
@@ -2315,6 +2438,19 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             navigator.clipboard.writeText(ta.value).then(()=>{ b.textContent='Copiado ✓'; setTimeout(()=>b.textContent='Copiar texto',1500); });
           });
         });
+        listEl.querySelectorAll('[data-action="responder-descargo"]').forEach(b=>{
+          b.addEventListener('click', async ()=>{
+            const casos2 = await loadData('naken-conflictos', []);
+            const caso = casos2.find(x=>x.id===b.dataset.id);
+            if(!caso) return;
+            const ta = listEl.querySelector(`textarea[data-id="${caso.id}"][data-f="respuestaAdminDescargo"]`);
+            caso.respuestaAdminDescargo = ta.value.trim();
+            caso.respuestaAdminFecha = new Date().toLocaleDateString('es-AR');
+            await saveData('naken-conflictos', casos2, statusId);
+            flashButtonSuccess(b, '✓ Respuesta enviada');
+            refreshConflictosBadge();
+          });
+        });
       }
       if(role==='propietario'){
         listEl.querySelectorAll('[data-action="aceptar"]').forEach(b=>{
@@ -2326,6 +2462,23 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             if(b.dataset.side==='denunciante') caso.aceptoDenunciante = sello;
             else caso.aceptoDenunciado = sello;
             await saveData('naken-conflictos', casos2);
+            renderList();
+          });
+        });
+        listEl.querySelectorAll('[data-action="enviar-descargo"]').forEach(b=>{
+          b.addEventListener('click', async ()=>{
+            const ta = document.getElementById('cf-descargo-'+b.dataset.id);
+            const texto = ta ? ta.value.trim() : '';
+            if(!texto) return;
+            const casos2 = await loadData('naken-conflictos', []);
+            const caso = casos2.find(x=>x.id===b.dataset.id);
+            if(!caso) return;
+            caso.descargo = texto;
+            caso.descargoFecha = new Date().toLocaleString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+            if(caso.estado==='Notificado' || caso.estado==='En mediación') caso.estado = 'Descargo recibido';
+            await saveData('naken-conflictos', casos2, statusId);
+            flashButtonSuccess(b, '✓ Descargo enviado');
+            refreshConflictosBadge();
             renderList();
           });
         });
@@ -2783,7 +2936,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const totalGastos = data.totales ? data.totales.totalGeneralGastos : null;
         mount.innerHTML = `
           <div class="kpi-row" style="margin:0;">
-            <div class="kpi highlight"><div class="label">Gastos ${data.periodo ? 'del período '+escapeHtml(data.periodo) : 'del mes'}</div><div class="value" style="font-size:16px;">${totalGastos!==null ? fmtOv(totalGastos) : '—'}</div></div>
+            <div class="kpi highlight"><div class="label">Gastos ${data.periodo ? 'de '+escapeHtml(formatPeriodo(data.periodo)) : 'del mes'}</div><div class="value" style="font-size:16px;">${totalGastos!==null ? fmtOv(totalGastos) : '—'}</div></div>
             <div class="kpi ${data.deudaTotal>0?'highlight':''}"><div class="label">Deuda de las unidades</div><div class="value" style="font-size:16px;">${fmtOv(data.deudaTotal)}</div></div>
           </div>
         `;
@@ -2842,6 +2995,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       panels.forEach(p=>p.classList.remove('active'));
       document.getElementById('panel-'+btn.dataset.panel).classList.add('active');
       updateNavIconColors();
+      if(btn.dataset.panel==='asamblea') markAsambleaSeen();
+      if(btn.dataset.panel==='conflictos') markConflictosSeen();
     });
   });
 
@@ -2880,6 +3035,61 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     return d.innerHTML;
   }
   function uid(){ return Math.random().toString(36).slice(2,9); }
+
+  const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  /** Convierte "08/2026" en "Agosto 2026". Si no matchea ese formato, devuelve el texto tal cual vino. */
+  function formatPeriodo(mmYYYY){
+    if(!mmYYYY) return '—';
+    const m = String(mmYYYY).trim().match(/^(\d{1,2})\/(\d{4})$/);
+    if(!m) return mmYYYY;
+    const mes = MESES_ES[parseInt(m[1],10)-1];
+    if(!mes) return mmYYYY;
+    return mes.charAt(0).toUpperCase()+mes.slice(1)+' '+m[2];
+  }
+
+  /** Feedback visual en un botón de "Enviar/Guardar": cambia de color y texto un ratito para confirmar que se cargó. */
+  function flashButtonSuccess(btn, successText){
+    if(!btn) return;
+    if(btn.dataset.flashing) return;
+    btn.dataset.flashing = '1';
+    const original = btn.textContent;
+    btn.textContent = successText || '✓ Cargado';
+    btn.classList.add('btn-flash-ok');
+    setTimeout(()=>{
+      btn.textContent = original;
+      btn.classList.remove('btn-flash-ok');
+      delete btn.dataset.flashing;
+    }, 1800);
+  }
+
+  /** ---------- "Visto / no visto" por pestaña: para los avisos de novedades en el menú ---------- */
+  function seenMapGet(key){
+    try{ return JSON.parse(localStorage.getItem(key) || '{}'); }catch(e){ return {}; }
+  }
+  function seenMapSet(key, map){
+    try{ localStorage.setItem(key, JSON.stringify(map)); }catch(e){}
+  }
+  function countUnseen(items, seenKey, sigFn){
+    const seen = seenMapGet(seenKey);
+    return items.filter(it => seen[it.id] !== sigFn(it)).length;
+  }
+  function markAllSeen(items, seenKey, sigFn){
+    const seen = seenMapGet(seenKey);
+    items.forEach(it => { seen[it.id] = sigFn(it); });
+    seenMapSet(seenKey, seen);
+  }
+  function setNavBadge(id, count){
+    const el = document.getElementById(id);
+    if(!el) return;
+    if(count>0){ el.textContent = count>99?'99+':String(count); el.style.display = 'inline-flex'; }
+    else { el.style.display = 'none'; }
+  }
+  /** Clave de "visto" única por usuario + consorcio, para que no se pisen entre distintos consorcios o propietarios. */
+  function seenKeyFor(panel){
+    const consorcioId = getActiveConsorcioId() || 'sc';
+    const quien = role==='admin' ? 'admin' : (currentUser ? currentUser.username : 'anon');
+    return `naken-visto-${panel}-${consorcioId}-${quien}`;
+  }
 
   /** Le agrega un botón con forma de ojo a un input de contraseña, para mostrar/ocultar lo que se escribió. */
   function addPasswordEyeToggle(inputId){
@@ -3035,7 +3245,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     mount.innerHTML = `
       <div class="kpi-row" style="margin-bottom:18px;">
-        <div class="kpi highlight"><div class="label">Período publicado</div><div class="value" style="font-size:18px;">${escapeHtml(data.periodo||'—')}</div></div>
+        <div class="kpi highlight"><div class="label">Período publicado</div><div class="value" style="font-size:18px;">${escapeHtml(formatPeriodo(data.periodo))}</div></div>
         <div class="kpi"><div class="label">Gasto total del período</div><div class="value">${data.totales ? fmtN(data.totales.totalGeneralGastos) : '—'}</div></div>
         <div class="kpi ${data.deudaTotal>0?'highlight':''}"><div class="label">Deuda de todas las unidades</div><div class="value">${fmtN(data.deudaTotal)}</div></div>
         <div class="kpi"><div class="label">Unidades</div><div class="value">${data.cantidadUnidades}</div></div>
@@ -3089,10 +3299,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <div>
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Período</label>
             <select id="${mountId}-periodo-select" style="padding:7px 10px;border-radius:8px;border:1px solid var(--line,#ccc);">
-              ${periodos.map(p=>`<option value="${escapeHtml(p)}" ${p===data.periodo?'selected':''}>${escapeHtml(p)}</option>`).join('')}
+              ${periodos.map(p=>`<option value="${escapeHtml(p)}" ${p===data.periodo?'selected':''}>${escapeHtml(formatPeriodo(p))}</option>`).join('')}
             </select>
           </div>
-          <div class="kpi" style="min-width:180px;"><div class="label">Total facturado en ${escapeHtml(data.periodo||'—')}</div><div class="value" style="font-size:16px;">${fmtN(data.totalGastosPeriodoSeleccionado)}</div></div>
+          <div class="kpi" style="min-width:180px;"><div class="label">Total facturado en ${escapeHtml(formatPeriodo(data.periodo))}</div><div class="value" style="font-size:16px;">${fmtN(data.totalGastosPeriodoSeleccionado)}</div></div>
         </div>
         <table class="ledger">
           <thead><tr><th>Rubro</th><th>Proveedor</th><th>Fecha</th><th>Detalle</th><th>Importe</th><th>Fondo</th><th>Comprobante</th></tr></thead>
@@ -3348,7 +3558,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <div class="grid">
           <div>
             <span class="card-field-label">Unidad</span>
-            <input type="text" id="${mountId}-unidad" placeholder="Ej: 4° B">
+            <input type="text" id="${mountId}-unidad" value="${currentUser ? escapeHtml(currentUser.unidad) : ''}" readonly style="background:var(--gray-100,#f2f2f2);cursor:not-allowed;">
           </div>
           <div>
             <span class="card-field-label">Tipo</span>
@@ -3431,10 +3641,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           unidad, tipo, asunto,
           estado: 'Pendiente', respuesta: ''
         });
-        document.getElementById(mountId+'-unidad').value='';
         document.getElementById(mountId+'-asunto').value='';
         render();
         saveData(storageKey, items, statusId);
+        flashButtonSuccess(document.getElementById(mountId+'-submit'), '✓ Enviado');
+        if(storageKey==='naken-asamblea-preguntas') markAsambleaSeen();
       });
     }
 
@@ -4708,6 +4919,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     if(role==='admin') mountUsuarios('usuarios-mount');
     if(role==='admin') mountLiquidaciones('liquidaciones-mount', 'naken-liquidaciones-sueldo');
     if(role==='admin') mountCalcHonorarios('calchonorarios-mount');
+
+    refreshAsambleaBadge();
+    refreshConflictosBadge();
 
     mountManual('manual-mount', 'naken-manual',
 `Esta administración se compromete a:
