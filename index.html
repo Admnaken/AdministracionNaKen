@@ -1038,6 +1038,7 @@
   <main>
     <div class="topbar">
       <span class="whoami" id="whoami">Acceso</span>
+      <button class="btn ghost" id="global-refresh-btn" style="display:none;margin-right:8px;">↻ Actualizar</button>
       <button class="btn ghost" id="global-logout-btn" style="display:none;">Cerrar sesión</button>
     </div>
 
@@ -2776,6 +2777,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   const profileBanner = document.getElementById('profile-banner');
   const sidebarEl = document.querySelector('.sidebar');
   const globalLogoutBtn = document.getElementById('global-logout-btn');
+  const globalRefreshBtn = document.getElementById('global-refresh-btn');
   const adminOverviewScreen = document.getElementById('admin-overview-screen');
   let adminAuthenticated = false;
 
@@ -3084,6 +3086,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       gateScreen.style.display = 'none';
       profileBanner.style.display = 'none';
       globalLogoutBtn.style.display = '';
+      globalRefreshBtn.style.display = '';
       mainContent.style.display = 'none';
       sidebarEl.style.display = 'none';
       document.getElementById('consorcio-switcher').style.display = 'none';
@@ -3095,6 +3098,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       mainContent.style.display = 'block';
       sidebarEl.style.display = '';
       globalLogoutBtn.style.display = 'none';
+      globalRefreshBtn.style.display = 'none';
       document.getElementById('consorcio-switcher').style.display = 'none';
       renderProfileBanner();
       renderAll();
@@ -3105,6 +3109,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       profileBanner.style.display = 'none';
       sidebarEl.style.display = 'none';
       globalLogoutBtn.style.display = 'none';
+      globalRefreshBtn.style.display = 'none';
       document.getElementById('consorcio-switcher').style.display = 'none';
       gateScreen.style.display = 'block';
       renderLoginGate();
@@ -3325,6 +3330,21 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     applyRole('propietario');
   }
   globalLogoutBtn.addEventListener('click', logout);
+  globalRefreshBtn.addEventListener('click', async ()=>{
+    const original = globalRefreshBtn.textContent;
+    globalRefreshBtn.textContent = 'Actualizando…';
+    globalRefreshBtn.disabled = true;
+    try{
+      if(role==='admin' && adminOverviewScreen.style.display!=='none'){
+        await renderAdminOverview();
+      } else {
+        await Promise.resolve(renderAll());
+      }
+    } finally {
+      globalRefreshBtn.textContent = original;
+      globalRefreshBtn.disabled = false;
+    }
+  });
 
   const btnBackOverview = document.getElementById('btn-back-overview');
   if(btnBackOverview){
@@ -3341,9 +3361,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <b>${escapeHtml(currentUser.nombreCompleto)}</b> — Unidad ${escapeHtml(currentUser.unidad)}
         <div class="meta" id="profile-banner-meta">Cargando datos del consorcio…</div>
       </div>
+      <button id="profile-refresh-btn" class="btn ghost" style="margin-right:8px;">↻ Actualizar</button>
       <button id="logout-btn">Cerrar sesión</button>
     `;
     document.getElementById('logout-btn').addEventListener('click', logout);
+    document.getElementById('profile-refresh-btn').addEventListener('click', async ()=>{
+      const btn = document.getElementById('profile-refresh-btn');
+      const original = btn.textContent;
+      btn.textContent = 'Actualizando…';
+      btn.disabled = true;
+      try{ await Promise.resolve(renderAll()); } finally { btn.textContent = original; btn.disabled = false; }
+    });
 
     const [datos, edificios, liq] = await Promise.all([
       loadData('naken-consorcio-datos', {edificio:'', barrio:''}),
@@ -3398,6 +3426,25 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       btn.classList.remove('btn-flash-ok');
       delete btn.dataset.flashing;
     }, 1800);
+  }
+
+  /** Máscara de moneda tipo caja registradora: cada dígito que se escribe entra por la derecha,
+   *  ocupando primero los centavos. Muestra "$ 1.234,56" mientras se escribe "123456". */
+  function attachMoneyMask(input){
+    input.setAttribute('inputmode','numeric');
+    input.addEventListener('input', ()=>{
+      let digits = input.value.replace(/\D/g,'').replace(/^0+(?=\d)/,'');
+      if(!digits){ input.value=''; return; }
+      while(digits.length<3) digits = '0'+digits;
+      const centavos = digits.slice(-2);
+      let enteros = digits.slice(0,-2).replace(/^0+(?=\d)/,'');
+      enteros = enteros.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      input.value = '$ ' + enteros + ',' + centavos;
+    });
+  }
+  /** Convierte lo que dejó attachMoneyMask ("$ 1.234,56") al mismo formato que ya usa fmtMonto para mostrarlo (sin el "$ "). */
+  function parseMoneyMasked(str){
+    return String(str||'').replace(/\$/g,'').trim();
   }
 
   /** ---------- "Visto / no visto" por pestaña: para los avisos de novedades en el menú ---------- */
@@ -4225,20 +4272,49 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           ${p.comprobante ? `<a href="${escapeHtml(p.comprobante)}" target="_blank" rel="noopener" class="btn ghost" style="display:inline-block;margin-top:6px;text-decoration:none;font-size:11px;padding:6px 10px;">Ver comprobante ↗</a>` : `<div class="empty" style="padding:6px 0 0;">Sin comprobante adjunto</div>`}
           ${role==='admin' ? `
             <span class="card-field-label">Estado</span>
-            <select class="cp-field" data-id="${p.id}" data-f="estado">
+            <select class="cp-field" data-id="${p.id}" data-estado-actual="${escapeHtml(p.estado)}">
               ${['Pendiente de verificar','Verificado','Observado'].map(e=>`<option ${p.estado===e?'selected':''}>${e}</option>`).join('')}
             </select>
+            <div class="cp-confirm-wrap" data-id="${p.id}"></div>
           ` : (p.notaAdmin ? `<div class="card-meta" style="margin-top:6px;">Nota de la administración: ${escapeHtml(p.notaAdmin)}</div>` : '')}
         `;
         listEl.appendChild(card);
       });
       if(role==='admin'){
-        listEl.querySelectorAll('.cp-field').forEach(f=>{
-          f.addEventListener('change', async ()=>{
-            const pagos2 = await loadData('naken-pagos-informados', []);
-            const p = pagos2.find(x=>x.id===f.dataset.id);
-            if(p) p[f.dataset.f] = f.value;
-            await saveData('naken-pagos-informados', pagos2, statusId);
+        listEl.querySelectorAll('.cp-field').forEach(sel=>{
+          sel.addEventListener('change', ()=>{
+            const wrap = listEl.querySelector(`.cp-confirm-wrap[data-id="${sel.dataset.id}"]`);
+            const nuevo = sel.value;
+            const actual = sel.dataset.estadoActual;
+            if(nuevo===actual){ wrap.innerHTML=''; return; }
+            const necesitaNota = nuevo==='Observado';
+            wrap.innerHTML = `
+              <div style="margin-top:8px;padding:10px 12px;background:var(--paper,#faf8f3);border-left:3px solid var(--gold);border-radius:4px;">
+                <p style="margin:0 0 8px;font-size:12.5px;">Vas a marcar este pago como <b>${escapeHtml(nuevo)}</b>. Esto queda visible para el propietario.</p>
+                ${necesitaNota ? `<textarea class="cp-nota" rows="2" placeholder="Contale al propietario qué está mal (ej: el monto no coincide, falta un mes)" style="width:100%;box-sizing:border-box;border:1px solid var(--line,#ccc);border-radius:5px;padding:7px 9px;font-family:'Inter',sans-serif;font-size:13px;margin-bottom:8px;"></textarea>` : ''}
+                <div class="toolbar" style="margin:0;">
+                  <button class="btn ghost cp-cancelar" style="font-size:11px;">Cancelar</button>
+                  <button class="btn primary cp-confirmar" style="font-size:11px;">Confirmar ${nuevo.toLowerCase()}</button>
+                </div>
+              </div>
+            `;
+            wrap.querySelector('.cp-cancelar').addEventListener('click', ()=>{
+              sel.value = actual;
+              wrap.innerHTML = '';
+            });
+            wrap.querySelector('.cp-confirmar').addEventListener('click', async (e)=>{
+              const btn = e.target;
+              const pagos2 = await loadData('naken-pagos-informados', []);
+              const p = pagos2.find(x=>x.id===sel.dataset.id);
+              if(p){
+                p.estado = nuevo;
+                if(necesitaNota) p.notaAdmin = wrap.querySelector('.cp-nota').value.trim();
+                if(nuevo==='Verificado') p.notaAdmin = '';
+              }
+              await saveData('naken-pagos-informados', pagos2, statusId);
+              flashButtonSuccess(btn, '✓ Listo');
+              setTimeout(()=>renderLista(), 900);
+            });
           });
         });
       }
@@ -4255,8 +4331,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <h3>Informar un pago</h3>
           <div class="field-grid">
             <div><label>Fecha del pago</label><input type="date" id="cp-fecha"></div>
-            <div><label>Monto ($)</label><input type="text" id="cp-monto" placeholder="0"></div>
-            <div><label>Período al que corresponde</label><input type="text" id="cp-periodo" placeholder="Ej: Julio 2026"></div>
+            <div><label>Monto</label><input type="text" id="cp-monto" placeholder="$ 0,00"></div>
+            <div>
+              <label>Período al que corresponde</label>
+              <select id="cp-periodo-select"><option value="">Buscando meses…</option></select>
+              <input type="text" id="cp-periodo-manual" placeholder="Ej: deuda de la gestión anterior" style="display:none;margin-top:6px;">
+            </div>
           </div>
           <label>Comprobante (foto o PDF)</label>
           <input type="file" id="cp-file" accept="image/*,application/pdf" style="width:100%;border:1px solid var(--line);border-radius:5px;padding:8px 10px;font-size:13px;background:#fff;">
@@ -4272,6 +4352,32 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <div class="subhead">Tus pagos informados</div>
         <div class="cards" id="${listMountId}-lista"></div>
       `;
+
+      // Fecha: hoy por defecto (se puede cambiar si el pago fue otro día)
+      document.getElementById('cp-fecha').value = new Date().toISOString().slice(0,10);
+      // Monto: formatea solo mientras se escribe, con $ y centavos
+      attachMoneyMask(document.getElementById('cp-monto'));
+
+      // Período: desplegable con los meses que todavía no tiene marcados como verificados,
+      // más una opción manual para casos fuera de la lista (ej: deuda de una gestión anterior).
+      (async ()=>{
+        const periodoSelect = document.getElementById('cp-periodo-select');
+        const periodoManual = document.getElementById('cp-periodo-manual');
+        const [resumen, pagosPrevios] = await Promise.all([
+          currentUser.consorcioSpreadsheetId ? fetchResumenConsorcio(currentUser.consorcioSpreadsheetId) : Promise.resolve(null),
+          loadData('naken-pagos-informados', [])
+        ]);
+        const yaVerificados = new Set(
+          pagosPrevios.filter(p=>p.unidad===currentUser.unidad && p.estado==='Verificado').map(p=>p.periodo)
+        );
+        const periodos = (resumen && resumen.periodosDisponibles) ? resumen.periodosDisponibles.filter(p=>!yaVerificados.has(formatPeriodo(p)) && !yaVerificados.has(p)) : [];
+        periodoSelect.innerHTML =
+          (periodos.length ? periodos.map(p=>`<option value="${escapeHtml(formatPeriodo(p))}">${escapeHtml(formatPeriodo(p))}</option>`).join('') : `<option value="">No hay meses pendientes</option>`) +
+          `<option value="__otro__">Otro / deuda de gestión anterior</option>`;
+        periodoSelect.addEventListener('change', ()=>{
+          periodoManual.style.display = periodoSelect.value==='__otro__' ? '' : 'none';
+        });
+      })();
 
       document.getElementById('cp-file').addEventListener('change', async (e)=>{
         const file = e.target.files[0];
@@ -4298,8 +4404,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
       document.getElementById('cp-submit').addEventListener('click', async ()=>{
         const fecha = document.getElementById('cp-fecha').value;
-        const monto = document.getElementById('cp-monto').value.trim();
-        const periodo = document.getElementById('cp-periodo').value.trim();
+        const monto = parseMoneyMasked(document.getElementById('cp-monto').value);
+        const periodoSelect = document.getElementById('cp-periodo-select');
+        const periodo = periodoSelect.value==='__otro__' ? document.getElementById('cp-periodo-manual').value.trim() : periodoSelect.value;
         const comprobante = document.getElementById('cp-comprobante-link').value;
         if(!fecha || !monto){ setStatus(statusId,'error'); return; }
         const pagos = await loadData('naken-pagos-informados', []);
@@ -4313,9 +4420,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           notaAdmin: ''
         });
         await saveData('naken-pagos-informados', pagos, statusId);
-        document.getElementById('cp-fecha').value = '';
+        document.getElementById('cp-fecha').value = new Date().toISOString().slice(0,10);
         document.getElementById('cp-monto').value = '';
-        document.getElementById('cp-periodo').value = '';
+        document.getElementById('cp-periodo-manual').value = '';
+        document.getElementById('cp-periodo-manual').style.display = 'none';
         document.getElementById('cp-comprobante-link').value = '';
         document.getElementById('cp-file').value = '';
         document.getElementById('cp-file-status').textContent = '';
