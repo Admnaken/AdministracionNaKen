@@ -911,6 +911,7 @@
     50% { opacity: .35; }
   }
   .status.saving .dot { animation: pulseDot 1s ease-in-out infinite; }
+  .nowrap { white-space: nowrap; }
 
   /* ---------- RESPONSIVE ---------- */
   @media (max-width: 860px) {
@@ -1058,8 +1059,8 @@
           <h2>Resumen del consorcio</h2>
           <p class="panel-note">Un vistazo general antes de entrar al detalle de cada solapa.</p>
         </div>
-        <div id="mi-liquidacion-mount"></div>
         <div id="resumen-contact-mount"></div>
+        <div id="mi-liquidacion-mount"></div>
         <div id="resumen-kpi" class="kpi-row"></div>
         <div class="dash-grid">
           <div class="dash-card">
@@ -1082,7 +1083,6 @@
           <p class="panel-note">Se lee en vivo de la planilla de liquidación del consorcio: gasto total del período, deuda y el detalle por unidad, apenas la administración la publica.</p>
         </div>
         <div id="expensas-mount"></div>
-        <div id="expensas-pdf-mount"></div>
       </section>
 
       <!-- FORMA DE PAGO -->
@@ -1090,7 +1090,7 @@
         <div class="panel-head">
           <span class="eyebrow">Consorcistas</span>
           <h2>Forma de pago y cobranzas</h2>
-          <p class="panel-note">Datos de contacto de la administración y del consorcio, y los medios habilitados para pagar la expensa.</p>
+          <p class="panel-note">Lo que le corresponde pagar a tu unidad, los medios habilitados para pagar, e informar tus pagos. Los datos de la administración y el consorcio están en "Resumen".</p>
         </div>
         <div id="formapago-mount"></div>
       </section>
@@ -1594,7 +1594,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
                       <td>${escapeHtml(g.rubro||'')}</td>
                       <td>${escapeHtml(g.proveedor||'')}</td>
                       <td>${escapeHtml(g.detalle||'')}</td>
-                      <td>${fmtN(g.importe)}</td>
+                      <td class="nowrap">${fmtN(g.importe)}</td>
                       <td>${g.linkFactura ? `<a href="${escapeHtml(g.linkFactura)}" target="_blank" rel="noopener" class="btn ghost" style="display:inline-block;padding:5px 9px;font-size:11px;text-decoration:none;">Ver ↗</a>` : `<span style="color:var(--muted);font-size:12px;">Sin comprobante</span>`}</td>
                     </tr>
                   `).join('')}
@@ -1608,6 +1608,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
                 <div class="kpi-row" style="margin-bottom:6px;">
                   <div class="kpi"><div class="label">Fondo A (gastos ordinarios)</div><div class="value">${fmtN(u.importeFondoA)}</div></div>
                   <div class="kpi"><div class="label">Fondo B (gastos extraordinarios)</div><div class="value">${fmtN(u.importeFondoB)}</div></div>
+                  ${Number(u.importeFondoReserva)>0 ? `<div class="kpi"><div class="label">Fondo de Reserva</div><div class="value">${fmtN(u.importeFondoReserva)}</div></div>` : ''}
                   ${Number(u.deuda)>0 ? `<div class="kpi highlight"><div class="label">Deuda anterior</div><div class="value">${fmtN(u.deuda)}</div></div>` : ''}
                   ${Number(u.interesesPunitorios)>0 ? `<div class="kpi highlight"><div class="label">Intereses por mora</div><div class="value">${fmtN(u.interesesPunitorios)}</div></div>` : ''}
                   <div class="kpi highlight"><div class="label">Total al 1er vencimiento (${fmtF(u.fechaPrimerVto)})</div><div class="value">${fmtN(u.totalPrimerVto)}</div></div>
@@ -3343,6 +3344,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const original = globalRefreshBtn.textContent;
     globalRefreshBtn.textContent = 'Actualizando…';
     globalRefreshBtn.disabled = true;
+    clearAppCache();
     try{
       if(role==='admin' && adminOverviewScreen.style.display!=='none'){
         await renderAdminOverview();
@@ -3379,6 +3381,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const original = btn.textContent;
       btn.textContent = 'Actualizando…';
       btn.disabled = true;
+      clearAppCache();
       try{ await Promise.resolve(renderAll()); } finally { btn.textContent = original; btn.disabled = false; }
     });
 
@@ -3535,8 +3538,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
 
   /* ---------- Edificios administrados (para el selector del alta de propietarios) ---------- */
+  const _cache = { edificios: null, edificiosAt: 0, resumen: {}, config: {} };
+  const CACHE_TTL_MS = 20000;
+  function clearAppCache(){
+    _cache.edificios = null; _cache.edificiosAt = 0; _cache.resumen = {}; _cache.config = {};
+  }
   async function getEdificios(){
-    return await loadData('naken-edificios', []);
+    const now = Date.now();
+    if(_cache.edificios && (now - _cache.edificiosAt) < CACHE_TTL_MS) return _cache.edificios;
+    _cache.edificios = await loadData('naken-edificios', []);
+    _cache.edificiosAt = now;
+    return _cache.edificios;
   }
   async function addEdificioSiNoExiste(nombre){
     const lista = await getEdificios();
@@ -3563,11 +3575,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   /* ---------- Resumen de gastos de UN consorcio entero, para las tarjetas del panel general del admin ---------- */
   async function fetchResumenConsorcio(spreadsheetId, periodo){
     if(!spreadsheetId) return null;
+    const cacheKey = spreadsheetId+'|'+(periodo||'');
+    const now = Date.now();
+    const cached = _cache.resumen[cacheKey];
+    if(cached && (now - cached.at) < CACHE_TTL_MS) return cached.data;
     const url = `${APPS_SCRIPT_URL}?action=resumenConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&periodo=${encodeURIComponent(periodo||'')}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
     try{
       const res = await fetch(url);
       const data = await res.json();
-      return data && data.ok ? data : null;
+      const result = data && data.ok ? data : null;
+      _cache.resumen[cacheKey] = { data: result, at: now };
+      return result;
     }catch(e){
       return null;
     }
@@ -3599,11 +3617,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   /* ---------- Datos de Administración / Consorcio / Forma de pago: en vivo de Config_NAKEN ---------- */
   async function fetchConfigConsorcio(spreadsheetId){
     if(!spreadsheetId) return null;
+    const now = Date.now();
+    const cached = _cache.config[spreadsheetId];
+    if(cached && (now - cached.at) < CACHE_TTL_MS) return cached.data;
     const url = `${APPS_SCRIPT_URL}?action=configConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
     try{
       const res = await fetch(url);
       const data = await res.json();
-      return data && data.ok ? data : null;
+      const result = data && data.ok ? data : null;
+      _cache.config[spreadsheetId] = { data: result, at: now };
+      return result;
     }catch(e){
       return null;
     }
@@ -3646,17 +3669,18 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const fmtF = (v)=> v ? new Date(v).toLocaleDateString('es-AR') : '—';
     const unidades = data.unidades || [];
 
-    const filas = unidades.length===0 ? `<tr><td colspan="7" style="text-align:center;color:var(--muted);">Sin propietarios cargados para este período.</td></tr>` : unidades.map(u=>{
+    const filas = unidades.length===0 ? `<tr><td colspan="8" style="text-align:center;color:var(--muted);">Sin propietarios cargados para este período.</td></tr>` : unidades.map(u=>{
       const esMiUnidad = role==='propietario' && currentUser && String(u.uf).trim()===String(currentUser.unidad).trim();
       return `
         <tr${esMiUnidad ? ' style="background:rgba(201,168,76,.12);font-weight:600;"' : ''}>
-          <td>${escapeHtml(String(u.uf||''))} ${escapeHtml(u.pisoDpto||'')}</td>
+          <td class="nowrap">${escapeHtml(String(u.uf||''))} ${escapeHtml(u.pisoDpto||'')}</td>
           <td>${escapeHtml(u.propietario||'')}</td>
-          <td>${fmtN(u.deuda)}</td>
-          <td>${fmtN(u.importeFondoA)}</td>
-          <td>${fmtN(u.importeFondoB)}</td>
-          <td>${fmtN(u.totalPrimerVto)}<br><span style="font-size:11px;color:var(--muted);">vto. ${fmtF(u.fechaPrimerVto)}</span></td>
-          <td>${fmtN(u.totalSegundoVto)}<br><span style="font-size:11px;color:var(--muted);">vto. ${fmtF(u.fechaSegundoVto)}</span></td>
+          <td class="nowrap">${fmtN(u.deuda)}</td>
+          <td class="nowrap">${fmtN(u.importeFondoA)}</td>
+          <td class="nowrap">${fmtN(u.importeFondoB)}</td>
+          <td class="nowrap">${fmtN(u.importeFondoReserva)}</td>
+          <td class="nowrap">${fmtN(u.totalPrimerVto)}<br><span style="font-size:11px;color:var(--muted);">vto. ${fmtF(u.fechaPrimerVto)}</span></td>
+          <td class="nowrap">${fmtN(u.totalSegundoVto)}<br><span style="font-size:11px;color:var(--muted);">vto. ${fmtF(u.fechaSegundoVto)}</span></td>
         </tr>
       `;
     }).join('');
@@ -3670,11 +3694,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       </div>
       <table class="ledger">
         <thead><tr>
-          <th>UF</th><th>Propietario</th><th>Deuda</th><th>Fondo A</th><th>Fondo B</th><th>Total 1er vto.</th><th>Total 2do vto.</th>
+          <th>UF</th><th>Propietario</th><th>Deuda</th><th>Fondo A</th><th>Fondo B</th><th>Fondo de Reserva</th><th>Total 1er vto.</th><th>Total 2do vto.</th>
         </tr></thead>
         <tbody>${filas}</tbody>
       </table>
-      <p class="panel-note" style="margin-top:14px;font-size:12px;">Estos datos se leen en vivo de la planilla de Google Sheets del consorcio (hoja "Prorrateo_Mensual") — se actualizan solos apenas la administración carga el período nuevo, sin necesidad de tipear nada acá.</p>
     `;
   }
   /* ---------- Facturas y comprobantes: vista en vivo de Gastos_Mensual, con selector de período
@@ -3704,9 +3727,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <tr>
           <td>${escapeHtml(g.rubro||'')}</td>
           <td>${escapeHtml(g.proveedor||'')}</td>
-          <td>${fmtF(g.fecha)}</td>
+          <td class="nowrap">${fmtF(g.fecha)}</td>
           <td>${escapeHtml(g.detalle||'')}</td>
-          <td>${fmtN(g.importe)}</td>
+          <td class="nowrap">${fmtN(g.importe)}</td>
           <td>${escapeHtml(g.fondo||'')}</td>
           <td>${g.linkFactura ? `<a href="${escapeHtml(g.linkFactura)}" target="_blank" rel="noopener" class="btn ghost" style="display:inline-block;padding:5px 9px;font-size:11px;text-decoration:none;">Ver ↗</a>` : `<span style="color:var(--muted);font-size:12px;">Sin comprobante</span>`}</td>
         </tr>
@@ -3726,7 +3749,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <thead><tr><th>Rubro</th><th>Proveedor</th><th>Fecha</th><th>Detalle</th><th>Importe</th><th>Fondo</th><th>Comprobante</th></tr></thead>
           <tbody>${filas}</tbody>
         </table>
-        <p class="panel-note" style="margin-top:14px;font-size:12px;">Se lee en vivo de la hoja "Gastos_Mensual" de la planilla — elegí cualquier período para ver las facturas de ese mes.</p>
       `;
 
       document.getElementById(mountId+'-periodo-select').addEventListener('change', (e)=>{
@@ -3805,6 +3827,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
   async function saveData(key, data, statusId){
     if(statusId) setStatus(statusId,'saving');
+    if(key==='naken-edificios'){ _cache.edificios = null; }
     try{
       const res = await window.storage.set(nsKey(key), JSON.stringify(data), true);
       if(statusId) setStatus(statusId, res ? 'saved' : 'error');
@@ -4181,7 +4204,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       <div id="${mountId}-tumonto"></div>
       <div id="${mountId}-pago"></div>
       <div id="${mountId}-informar"></div>
-      <div id="${mountId}-contact"></div>
       <div id="${mountId}-lista"></div>
     `;
 
@@ -4212,8 +4234,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     } else {
       tuMontoMount.innerHTML = '';
     }
-
-    mountContactBlock(mountId+'-contact');
 
     (async ()=>{
       const spreadsheetId = role==='propietario' && currentUser
@@ -4340,7 +4360,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <div class="new-ticket">
           <h3>Informar un pago</h3>
           <div class="field-grid">
-            <div><label>Fecha del pago</label><input type="date" id="cp-fecha"></div>
             <div><label>Monto</label><input type="text" id="cp-monto" placeholder="$ 0,00"></div>
             <div>
               <label>Período al que corresponde</label>
@@ -4363,8 +4382,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <div class="cards" id="${listMountId}-lista"></div>
       `;
 
-      // Fecha: hoy por defecto (se puede cambiar si el pago fue otro día)
-      document.getElementById('cp-fecha').value = new Date().toISOString().slice(0,10);
       // Monto: formatea solo mientras se escribe, con $ y centavos
       attachMoneyMask(document.getElementById('cp-monto'));
 
@@ -4413,24 +4430,22 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
 
       document.getElementById('cp-submit').addEventListener('click', async ()=>{
-        const fecha = document.getElementById('cp-fecha').value;
         const monto = parseMoneyMasked(document.getElementById('cp-monto').value);
         const periodoSelect = document.getElementById('cp-periodo-select');
         const periodo = periodoSelect.value==='__otro__' ? document.getElementById('cp-periodo-manual').value.trim() : periodoSelect.value;
         const comprobante = document.getElementById('cp-comprobante-link').value;
-        if(!fecha || !monto){ setStatus(statusId,'error'); return; }
+        if(!monto){ setStatus(statusId,'error'); return; }
         const pagos = await loadData('naken-pagos-informados', []);
         pagos.push({
           id: uid(),
           unidad: currentUser.unidad,
           propietario: currentUser.nombreCompleto,
-          fecha: new Date(fecha).toLocaleDateString('es-AR'),
+          fecha: new Date().toLocaleDateString('es-AR'),
           monto, periodo, comprobante,
           estado: 'Pendiente de verificar',
           notaAdmin: ''
         });
         await saveData('naken-pagos-informados', pagos, statusId);
-        document.getElementById('cp-fecha').value = new Date().toISOString().slice(0,10);
         document.getElementById('cp-monto').value = '';
         document.getElementById('cp-periodo-manual').value = '';
         document.getElementById('cp-periodo-manual').style.display = 'none';
@@ -5288,8 +5303,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     mountResumen();
 
     mountExpensasVivo('expensas-mount');
-
-    mountExpensasPdf('expensas-pdf-mount');
 
     mountFormaPago('formapago-mount');
 
