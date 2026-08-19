@@ -2878,8 +2878,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <input type="text" id="req-consorcio-nuevo" placeholder="Ej: Edificio Almirante, Av. Libertador 1234">
             <p style="font-size:11.5px;color:var(--muted);margin:4px 0 0;">Lo vamos a incorporar al sistema y la administración se pone en contacto para confirmar el alta.</p>
           </div>
+          <p style="font-size:11.5px;color:var(--muted);background:var(--paper,#faf8f3);border-left:3px solid var(--gold);padding:8px 10px;margin:4px 0 10px;line-height:1.5;">Completá estos datos con la información del <b>titular de la unidad</b> (el propietario). No puede darse de alta cualquier integrante de la familia — si no sos el titular, pedile a la administración que te habilite un acceso.</p>
           <label>Nombre completo</label><input type="text" id="req-nombre">
-          <label>Unidad funcional</label><input type="text" id="req-unidad" placeholder="Ej: 4° B">
+          <label>Unidad funcional</label>
+          <select id="req-unidad-select" disabled style="background:var(--gray-100,#f2f2f2);color:var(--muted);">
+            <option value="">Elegí primero tu edificio</option>
+          </select>
+          <input type="text" id="req-unidad-manual" placeholder="Ej: 4° B" style="display:none;">
           <label>Usuario que querés usar</label><input type="text" id="req-username">
           <label>Contraseña (5 dígitos)</label><input type="password" id="req-password" maxlength="5" placeholder="Ej: 48213">
           <div class="toolbar" style="margin-top:16px;"><span></span><button class="btn primary" id="req-submit">Enviar solicitud</button></div>
@@ -2896,8 +2901,52 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         `<option value="">Elegí tu edificio…</option>` +
         activos.map(e=>`<option value="${escapeHtml(e.nombre)}">${escapeHtml(e.nombre)}</option>`).join('') +
         `<option value="__nuevo__">Mi edificio no está en la lista</option>`;
-      sel.addEventListener('change', ()=>{
+
+      const unidadSelect = document.getElementById('req-unidad-select');
+      const unidadManual = document.getElementById('req-unidad-manual');
+
+      function setUnidadEsperando(){
+        unidadManual.style.display = 'none';
+        unidadSelect.style.display = '';
+        unidadSelect.disabled = true;
+        unidadSelect.style.background = 'var(--gray-100,#f2f2f2)';
+        unidadSelect.style.color = 'var(--muted)';
+        unidadSelect.innerHTML = `<option value="">En espera de alta del edificio</option>`;
+      }
+
+      sel.addEventListener('change', async ()=>{
         document.getElementById('req-consorcio-nuevo-wrap').style.display = sel.value==='__nuevo__' ? 'block' : 'none';
+
+        if(sel.value==='__nuevo__'){
+          // Edificio recién creado por el propietario: todavía no hay planilla para leer unidades, se escribe a mano.
+          unidadSelect.style.display = 'none';
+          unidadManual.style.display = '';
+          return;
+        }
+        if(!sel.value){
+          setUnidadEsperando();
+          return;
+        }
+        setUnidadEsperando();
+        unidadSelect.innerHTML = `<option value="">Buscando unidades…</option>`;
+        const edificio = edificios.find(e=>e.nombre===sel.value);
+        const spreadsheetId = edificio ? edificio.spreadsheetId : '';
+        const data = spreadsheetId ? await fetchUnidadesConsorcio(spreadsheetId) : null;
+        const unidades = data && data.unidades ? data.unidades.filter(u=>u.pisoDpto || u.uf) : [];
+        if(unidades.length===0){
+          setUnidadEsperando();
+          return;
+        }
+        unidadSelect.disabled = false;
+        unidadSelect.style.background = '';
+        unidadSelect.style.color = '';
+        unidadSelect.innerHTML =
+          `<option value="">Elegí tu unidad…</option>` +
+          unidades.map(u=>{
+            const valor = u.pisoDpto || u.uf;
+            const etiqueta = u.propietario ? `${valor} — ${u.propietario}` : valor;
+            return `<option value="${escapeHtml(valor)}">${escapeHtml(etiqueta)}</option>`;
+          }).join('');
       });
     })();
 
@@ -2968,7 +3017,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const consorcioSel = document.getElementById('req-consorcio').value;
       const consorcioNuevo = document.getElementById('req-consorcio-nuevo').value.trim();
       const nombreCompleto = document.getElementById('req-nombre').value.trim();
-      const unidad = document.getElementById('req-unidad').value.trim();
+      const unidadSelectEl = document.getElementById('req-unidad-select');
+      const unidad = unidadSelectEl.style.display!=='none' ? unidadSelectEl.value.trim() : document.getElementById('req-unidad-manual').value.trim();
       const username = document.getElementById('req-username').value.trim();
       const password = document.getElementById('req-password').value;
       const msg = document.getElementById('req-msg');
@@ -3010,9 +3060,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         document.getElementById('req-consorcio-nuevo').value='';
         document.getElementById('req-consorcio-nuevo-wrap').style.display='none';
         document.getElementById('req-nombre').value='';
-        document.getElementById('req-unidad').value='';
+        document.getElementById('req-unidad-select').innerHTML = `<option value="">Elegí primero tu edificio</option>`;
+        document.getElementById('req-unidad-select').disabled = true;
+        document.getElementById('req-unidad-select').style.display = '';
+        document.getElementById('req-unidad-manual').value = '';
+        document.getElementById('req-unidad-manual').style.display = 'none';
         document.getElementById('req-username').value='';
         document.getElementById('req-password').value='';
+        flashButtonSuccess(btn, '✓ Enviada');
       });
     });
   }
@@ -3465,6 +3520,18 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   async function fetchDocumentosConsorcio(spreadsheetId){
     if(!spreadsheetId) return null;
     const url = `${APPS_SCRIPT_URL}?action=documentosConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
+    try{
+      const res = await fetch(url);
+      const data = await res.json();
+      return data && data.ok ? data : null;
+    }catch(e){
+      return null;
+    }
+  }
+  /* ---------- Unidades funcionales de un consorcio: para el desplegable del formulario de alta ---------- */
+  async function fetchUnidadesConsorcio(spreadsheetId){
+    if(!spreadsheetId) return null;
+    const url = `${APPS_SCRIPT_URL}?action=unidadesConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
     try{
       const res = await fetch(url);
       const data = await res.json();
