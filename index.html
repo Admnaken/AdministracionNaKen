@@ -249,7 +249,7 @@
     color: var(--white);
   }
 
-  .content { padding: 32px; max-width: 980px; }
+  .content { padding: 32px; max-width: 1200px; }
   #admin-overview-screen { max-width: 1440px; }
   #gate-screen { margin: 0 auto; }
   .panel { display: none; }
@@ -915,6 +915,7 @@
   /* ---------- RESPONSIVE ---------- */
   @media (max-width: 860px) {
     .app { flex-direction: column; }
+    table.ledger { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .sidebar {
       width: 100%;
       flex-direction: row;
@@ -1647,9 +1648,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       <div class="kpi"><div class="label">Última expensa publicada</div><div class="value" style="font-size:16px;">${resumen && resumen.periodo ? escapeHtml(formatPeriodo(resumen.periodo)) : 'Sin datos'}</div></div>
     `;
 
-    // ¿En qué se usa el dinero? — directo de Resumen_Rubros_Mensual de la planilla
+    // ¿En qué se usa el dinero? — directo de Resumen_Rubros_Mensual de la planilla, más el aporte a
+    // Fondo de Reserva (que no es un gasto facturado, así que no está en Resumen_Rubros_Mensual, pero
+    // sí es parte de lo que paga el propietario cada mes — sin esto, el gráfico no llegaba al 100%).
     const rubros = (resumen && resumen.resumenRubros) ? resumen.resumenRubros.filter(r=>num(r.total)>0) : [];
-    const bucketColors = ['#2EB7E5','#5B8DB8','#E8952C','#8D5BB8','#9AA39C','#C9A84C','#6EA37A','#B8615B'];
+    const aporteReserva = resumen && resumen.totales ? num(resumen.totales.aporteFondoReservaGeneral) : 0;
+    if(aporteReserva > 0) rubros.push({ rubro: 'Fondo de Reserva', total: aporteReserva });
+    const bucketColors = ['#2EB7E5','#5B8DB8','#E8952C','#8D5BB8','#C9A84C','#6EA37A','#B8615B','#9AA39C'];
     const catLabels = rubros.map(r=>r.rubro);
     const catValues = rubros.map(r=>num(r.total));
     const catColors = rubros.map((r,i)=>bucketColors[i % bucketColors.length]);
@@ -3261,7 +3266,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           mount.innerHTML = `<p class="panel-note" style="margin:0;font-size:12.5px;color:var(--danger,#A03A3A);">No se pudo leer la planilla de este consorcio. Revisá que el ID esté bien pegado y que la planilla esté compartida.</p>`;
           return;
         }
-        const totalGastos = data.totales ? data.totales.totalGeneralGastos : null;
+        const totalGastos = data.totales ? (Number(data.totales.totalGeneralGastos)||0) + (Number(data.totales.aporteFondoReservaGeneral)||0) : null;
         mount.innerHTML = `
           <div class="kpi-row" style="margin:0;">
             <div class="kpi highlight"><div class="label">Gastos ${data.periodo ? 'de '+escapeHtml(formatPeriodo(data.periodo)) : 'del mes'}</div><div class="value" style="font-size:16px;">${totalGastos!==null ? fmtOv(totalGastos) : '—'}</div></div>
@@ -3659,7 +3664,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     mount.innerHTML = `
       <div class="kpi-row" style="margin-bottom:18px;">
         <div class="kpi highlight"><div class="label">Período publicado</div><div class="value" style="font-size:18px;">${escapeHtml(formatPeriodo(data.periodo))}</div></div>
-        <div class="kpi"><div class="label">Gasto total del período</div><div class="value">${data.totales ? fmtN(data.totales.totalGeneralGastos) : '—'}</div></div>
+        <div class="kpi"><div class="label">Gasto total del período (incluye Fondo de Reserva)</div><div class="value">${data.totales ? fmtN((Number(data.totales.totalGeneralGastos)||0) + (Number(data.totales.aporteFondoReservaGeneral)||0)) : '—'}</div></div>
         <div class="kpi ${data.deudaTotal>0?'highlight':''}"><div class="label">Deuda de todas las unidades</div><div class="value">${fmtN(data.deudaTotal)}</div></div>
         <div class="kpi"><div class="label">Unidades</div><div class="value">${data.cantidadUnidades}</div></div>
       </div>
