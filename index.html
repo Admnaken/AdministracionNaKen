@@ -1619,51 +1619,36 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       }
     }
 
-    const [facturas, expensas, deudas, reserva, reclamos, liquidaciones, pagosInformados] = await Promise.all([
-      loadData('naken-facturas', []),
-      loadData('naken-expensas', []),
-      loadData('naken-deudas', []),
-      loadData('naken-reserva', []),
+    const spreadsheetIdActivo = await getSpreadsheetIdActivo();
+    const [resumen, reclamos, pagosInformados] = await Promise.all([
+      spreadsheetIdActivo ? fetchResumenConsorcio(spreadsheetIdActivo) : Promise.resolve(null),
       loadData('naken-reclamos', []),
-      loadData('naken-liquidaciones-sueldo', []),
       loadData('naken-pagos-informados', [])
     ]);
 
     function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
     function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:0}); }
 
-    const deudaTotal = deudas.reduce((s,r)=>s+num(r.monto),0);
-    const reservaTotal = reserva.reduce((s,r)=>s+num(r.monto),0);
+    const reservaTotal = resumen && resumen.totales ? resumen.totales.saldoFondoReservaCierre : 0;
+    const deudaTotal = resumen ? resumen.deudaTotal : 0;
     const reclamosPendientes = reclamos.filter(r=>r.estado==='Pendiente'||r.estado==='En proceso').length;
     const pagosPendientes = pagosInformados.filter(p=>p.estado==='Pendiente de verificar').length;
-    const ultimaExpensa = expensas.length ? expensas[expensas.length-1] : null;
 
     document.getElementById('resumen-kpi').innerHTML = `
       <div class="kpi highlight"><div class="label">Fondo de reserva</div><div class="value">${fmt(reservaTotal)}</div></div>
       <div class="kpi highlight"><div class="label">Deuda total del consorcio</div><div class="value">${fmt(deudaTotal)}</div></div>
       <div class="kpi"><div class="label">Reclamos abiertos</div><div class="value">${reclamosPendientes}</div></div>
       ${role==='admin' ? `<div class="kpi ${pagosPendientes>0?'highlight':''}"><div class="label">Pagos por verificar</div><div class="value">${pagosPendientes}</div></div>` : ''}
-      <div class="kpi"><div class="label">Última expensa publicada</div><div class="value" style="font-size:16px;">${ultimaExpensa ? escapeHtml(ultimaExpensa.periodo||'—') : 'Sin datos'}</div></div>
+      <div class="kpi"><div class="label">Última expensa publicada</div><div class="value" style="font-size:16px;">${resumen && resumen.periodo ? escapeHtml(formatPeriodo(resumen.periodo)) : 'Sin datos'}</div></div>
     `;
 
-    // En qué se usa el dinero: Sueldo / Servicios / Mantenimiento / Fondo de Reserva / Otros
-    const buckets = { 'Sueldo del personal':0, 'Servicios':0, 'Mantenimiento':0, 'Fondo de reserva':0, 'Otros gastos':0 };
-    liquidaciones.forEach(l=>{ buckets['Sueldo del personal'] += num(l.totalCargas) + num(l.sueldoNeto); });
-    facturas.forEach(f=>{
-      const c = (f.categoria||'').toLowerCase();
-      const monto = num(f.monto);
-      if(/servicio/.test(c)) buckets['Servicios'] += monto;
-      else if(/manten/.test(c)) buckets['Mantenimiento'] += monto;
-      else buckets['Otros gastos'] += monto;
-    });
-    reserva.forEach(r=>{ buckets['Fondo de reserva'] += num(r.monto); });
-
-    const bucketColors = { 'Sueldo del personal':'#2EB7E5', 'Servicios':'#5B8DB8', 'Mantenimiento':'#E8952C', 'Fondo de reserva':'#8D5BB8', 'Otros gastos':'#9AA39C' };
-    const entries = Object.entries(buckets).filter(([,v])=>v>0);
-    const total = entries.reduce((s,[,v])=>s+v,0);
-    const catLabels = entries.map(([k])=>k);
-    const catValues = entries.map(([,v])=>v);
-    const catColors = entries.map(([k])=>bucketColors[k]);
+    // ¿En qué se usa el dinero? — directo de Resumen_Rubros_Mensual de la planilla
+    const rubros = (resumen && resumen.resumenRubros) ? resumen.resumenRubros.filter(r=>num(r.total)>0) : [];
+    const bucketColors = ['#2EB7E5','#5B8DB8','#E8952C','#8D5BB8','#9AA39C','#C9A84C','#6EA37A','#B8615B'];
+    const catLabels = rubros.map(r=>r.rubro);
+    const catValues = rubros.map(r=>num(r.total));
+    const catColors = rubros.map((r,i)=>bucketColors[i % bucketColors.length]);
+    const total = catValues.reduce((s,v)=>s+v,0);
 
     if(chartGastos) chartGastos.destroy();
     const ctx1 = document.getElementById('chart-gastos');
@@ -1671,7 +1656,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     if(ctx1 && window.Chart){
       if(catLabels.length===0){
         ctx1.getContext('2d').clearRect(0,0,ctx1.width,ctx1.height);
-        if(captionEl) captionEl.textContent = 'Todavía no hay datos cargados este período.';
+        if(captionEl) captionEl.textContent = spreadsheetIdActivo ? 'Todavía no hay datos cargados este período.' : 'Este consorcio todavía no tiene la planilla de liquidación vinculada.';
       } else {
         chartGastos = new Chart(ctx1, {
           type: 'pie',
@@ -1701,24 +1686,21 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       }
     }
 
-    // Expensas ordinarias/extraordinarias por período (barras)
-    const ultimos = expensas.slice(-6);
+    // Expensas por período — evolución del gasto total mes a mes, directo de Gastos_Mensual
+    const porPeriodo = (resumen && resumen.totalesPorPeriodo) ? resumen.totalesPorPeriodo.slice(-6) : [];
     if(chartExpensas) chartExpensas.destroy();
     const ctx2 = document.getElementById('chart-expensas');
     if(ctx2 && window.Chart){
-      if(ultimos.length===0){
+      if(porPeriodo.length===0){
         ctx2.getContext('2d').clearRect(0,0,ctx2.width,ctx2.height);
       } else {
         chartExpensas = new Chart(ctx2, {
           type: 'bar',
           data: {
-            labels: ultimos.map(e=>e.periodo||''),
-            datasets: [
-              { label: 'Ordinarias', data: ultimos.map(e=>num(e.ordinarias)), backgroundColor: '#2EB7E5' },
-              { label: 'Extraordinarias', data: ultimos.map(e=>num(e.extraordinarias)), backgroundColor: '#E8952C' }
-            ]
+            labels: porPeriodo.map(p=>formatPeriodo(p.periodo)),
+            datasets: [{ label: 'Gasto total', data: porPeriodo.map(p=>num(p.total)), backgroundColor: '#2EB7E5' }]
           },
-          options: { plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } }, scales: { y: { beginAtZero: true } } }
+          options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
         });
       }
     }
@@ -3332,14 +3314,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   function uid(){ return Math.random().toString(36).slice(2,9); }
 
   const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-  /** Convierte "08/2026" en "Agosto 2026". Si no matchea ese formato, devuelve el texto tal cual vino. */
-  function formatPeriodo(mmYYYY){
-    if(!mmYYYY) return '—';
-    const m = String(mmYYYY).trim().match(/^(\d{1,2})\/(\d{4})$/);
-    if(!m) return mmYYYY;
-    const mes = MESES_ES[parseInt(m[1],10)-1];
-    if(!mes) return mmYYYY;
-    return mes.charAt(0).toUpperCase()+mes.slice(1)+' '+m[2];
+  /** Convierte "08/2026" (o una fecha ISO/Date) en "Agosto 2026". Si no puede interpretarlo, devuelve el texto tal cual. */
+  function formatPeriodo(valor){
+    if(!valor) return '—';
+    const m = String(valor).trim().match(/^(\d{1,2})\/(\d{4})$/);
+    if(m){
+      const mes = MESES_ES[parseInt(m[1],10)-1];
+      if(mes) return mes.charAt(0).toUpperCase()+mes.slice(1)+' '+m[2];
+    }
+    const d = new Date(valor);
+    if(!isNaN(d.getTime())){
+      const mes = MESES_ES[d.getUTCMonth()];
+      if(mes) return mes.charAt(0).toUpperCase()+mes.slice(1)+' '+d.getUTCFullYear();
+    }
+    return String(valor);
   }
 
   /** Feedback visual en un botón de "Enviar/Guardar": cambia de color y texto un ratito para confirmar que se cargó. */
@@ -4019,9 +4007,42 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   function mountFormaPago(mountId){
     const mount = document.getElementById(mountId);
     const statusId = mountId+'-status';
-    const fields = ['empresaCobranzas','notasCobranzas','cbu','alias','banco','sucursal','titularCuit'];
 
-    mount.innerHTML = `<div id="${mountId}-contact"></div><div id="${mountId}-pago"></div><div id="${mountId}-comprobantes"></div>`;
+    mount.innerHTML = `
+      <div id="${mountId}-tumonto"></div>
+      <div id="${mountId}-pago"></div>
+      <div id="${mountId}-informar"></div>
+      <div id="${mountId}-contact"></div>
+      <div id="${mountId}-lista"></div>
+    `;
+
+    // "Tu monto a pagar" — en vivo, de la planilla, solo para propietarios
+    const tuMontoMount = document.getElementById(mountId+'-tumonto');
+    if(role==='propietario' && currentUser){
+      tuMontoMount.innerHTML = `<div class="empty">Buscando tu monto a pagar…</div>`;
+      (async ()=>{
+        const spreadsheetId = currentUser.consorcioSpreadsheetId || await getSpreadsheetIdDelConsorcio(currentUser.consorcio);
+        const liq = spreadsheetId ? await fetchLiquidacion(spreadsheetId, currentUser.unidad) : null;
+        if(!liq || !liq.unidad){
+          tuMontoMount.innerHTML = `<div class="empty">Todavía no encontramos tu liquidación de este período.</div>`;
+          return;
+        }
+        const u = liq.unidad;
+        const fmtN = (v)=> '$ ' + (Number(v)||0).toLocaleString('es-AR',{maximumFractionDigits:0});
+        const fmtF = (v)=> v ? new Date(v).toLocaleDateString('es-AR') : '—';
+        tuMontoMount.innerHTML = `
+          <div class="infoblock" style="border-color:var(--gold);">
+            <h3>Tu monto a pagar — ${escapeHtml(formatPeriodo(liq.periodo))}</h3>
+            <div class="kpi-row" style="margin-top:8px;">
+              <div class="kpi highlight"><div class="label">Total pagando antes del 1er vencimiento (${fmtF(u.fechaPrimerVto)})</div><div class="value">${fmtN(u.totalPrimerVto)}</div></div>
+              <div class="kpi"><div class="label">Total pagando después, hasta el 2do vencimiento (${fmtF(u.fechaSegundoVto)})</div><div class="value">${fmtN(u.totalSegundoVto)}</div></div>
+            </div>
+          </div>
+        `;
+      })();
+    } else {
+      tuMontoMount.innerHTML = '';
+    }
 
     loadData('naken-consorcio-datos', {}).then(cfg=>{
       document.getElementById(mountId+'-contact').innerHTML = `
@@ -4099,13 +4120,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
     }
 
-    mountComprobantesPago(mountId+'-comprobantes');
+    mountComprobantesPago(mountId+'-informar', mountId+'-lista');
   }
 
   /* ---------- Comprobantes de pago informados por propietarios ---------- */
-  function mountComprobantesPago(mountId){
-    const mount = document.getElementById(mountId);
-    const statusId = mountId+'-status';
+  function mountComprobantesPago(formMountId, listMountId){
+    const listWrap = document.getElementById(listMountId);
+    const statusId = formMountId+'-status';
 
     function badgeClass(estado){
       if(estado==='Verificado') return 'resuelto';
@@ -4116,7 +4137,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     async function renderLista(){
       const pagos = await loadData('naken-pagos-informados', []);
       const visibles = role==='admin' ? pagos : pagos.filter(p=>currentUser && p.unidad===currentUser.unidad);
-      const listEl = document.getElementById(mountId+'-lista');
+      const listEl = document.getElementById(listMountId+'-lista');
       if(!listEl) return;
       if(visibles.length===0){
         listEl.innerHTML = `<div class="empty">${role==='admin' ? 'Todavía no hay pagos informados.' : 'Todavía no informaste ningún pago.'}</div>`;
@@ -4162,7 +4183,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
 
     if(role==='propietario' && currentUser){
-      mount.innerHTML = `
+      document.getElementById(formMountId).innerHTML = `
         <div class="new-ticket">
           <h3>Informar un pago</h3>
           <div class="field-grid">
@@ -4179,8 +4200,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}<button class="btn primary" id="cp-submit">Enviar</button></div>
           </div>
         </div>
+      `;
+      listWrap.innerHTML = `
         <div class="subhead">Tus pagos informados</div>
-        <div class="cards" id="${mountId}-lista"></div>
+        <div class="cards" id="${listMountId}-lista"></div>
       `;
 
       document.getElementById('cp-file').addEventListener('change', async (e)=>{
@@ -4229,12 +4252,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         document.getElementById('cp-comprobante-link').value = '';
         document.getElementById('cp-file').value = '';
         document.getElementById('cp-file-status').textContent = '';
+        flashButtonSuccess(document.getElementById('cp-submit'), '✓ Enviado');
         renderLista();
       });
     } else {
-      mount.innerHTML = `
+      document.getElementById(formMountId).innerHTML = '';
+      listWrap.innerHTML = `
         <div class="subhead">Pagos informados por propietarios</div>
-        <div class="cards" id="${mountId}-lista"></div>
+        <div class="cards" id="${listMountId}-lista"></div>
       `;
     }
 
