@@ -1058,6 +1058,7 @@
           <p class="panel-note">Un vistazo general antes de entrar al detalle de cada solapa.</p>
         </div>
         <div id="mi-liquidacion-mount"></div>
+        <div id="resumen-contact-mount"></div>
         <div id="resumen-kpi" class="kpi-row"></div>
         <div class="dash-grid">
           <div class="dash-card">
@@ -1417,7 +1418,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
   // Sube un archivo (foto/audio/video) a una carpeta de Drive vía el mismo Apps Script,
   // y devuelve la URL para ver el archivo. Pensado para clips cortos (~15 MB o menos).
-  window.uploadFileToDrive = function(file){
+  window.uploadFileToDrive = function(file, subfolder){
     return new Promise((resolve, reject)=>{
       if(!file){ reject(new Error('Sin archivo')); return; }
       const reader = new FileReader();
@@ -1433,6 +1434,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               filename: file.name || ('evidencia-' + Date.now()),
               mimeType: file.type || 'application/octet-stream',
               data: base64,
+              subfolder: subfolder || '',
               token: APPS_SCRIPT_TOKEN
             })
           });
@@ -1563,6 +1565,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   /* ---------- Resumen (dashboard con gráficos) ---------- */
   let chartGastos = null, chartExpensas = null;
   async function mountResumen(mountId_unused){
+    mountContactBlock('resumen-contact-mount');
+
     // Liquidación real de la unidad, tomada en vivo de la planilla del consorcio
     const miLiqMount = document.getElementById('mi-liquidacion-mount');
     if(miLiqMount){
@@ -2372,7 +2376,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       statusEl2.textContent = `Subiendo (${sizeMB} MB)... puede tardar unos segundos.`;
       statusEl2.style.color = 'var(--brass)';
       try{
-        const url = await window.uploadFileToDrive(file);
+        const url = await window.uploadFileToDrive(file, currentUser ? currentUser.consorcio : '');
         document.getElementById('cf-evidencia').value = url;
         statusEl2.textContent = 'Listo — evidencia subida y cargada ✓';
         statusEl2.style.color = 'var(--ok)';
@@ -3587,6 +3591,18 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return null;
     }
   }
+  /* ---------- Datos de Administración / Consorcio / Forma de pago: en vivo de Config_NAKEN ---------- */
+  async function fetchConfigConsorcio(spreadsheetId){
+    if(!spreadsheetId) return null;
+    const url = `${APPS_SCRIPT_URL}?action=configConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
+    try{
+      const res = await fetch(url);
+      const data = await res.json();
+      return data && data.ok ? data : null;
+    }catch(e){
+      return null;
+    }
+  }
   async function getSpreadsheetIdDelConsorcio(nombreConsorcio){
     if(!nombreConsorcio) return '';
     const edificios = await getEdificios();
@@ -4118,6 +4134,40 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
 
   /* ---------- Forma de pago y cobranzas ---------- */
+  /** Arma el HTML de las tarjetas "Administración" y "Consorcio" a partir de lo que devuelve
+   *  fetchConfigConsorcio — se usa tanto en Resumen como en Forma de pago, para no leer/armarlo dos veces. */
+  function contactBlockHtml(cfg){
+    const a = (cfg && cfg.administracion) || {}, c = (cfg && cfg.consorcio) || {}, v = (cfg && cfg.vencimientos) || {};
+    return `
+      <div class="config-row" style="margin-bottom:6px;">
+        <div class="infoblock">
+          <h3>Administración</h3>
+          <p><b>${escapeHtml(a.nombre||'—')}</b><br>
+          CUIT: ${escapeHtml(a.cuit||'—')}${a.rpa ? ' · RPA N° '+escapeHtml(a.rpa) : ''}<br>
+          ${escapeHtml(a.domicilio||'—')}<br>
+          ${escapeHtml(a.email||'')}${a.telefono ? ' · '+escapeHtml(a.telefono) : ''}<br>
+          ${a.horarioAtencion ? escapeHtml(a.horarioAtencion)+'<br>' : ''}
+          ${a.telefonoEmergencia ? 'Emergencias (24hs): '+escapeHtml(a.telefonoEmergencia) : ''}</p>
+        </div>
+        <div class="infoblock">
+          <h3>Consorcio</h3>
+          <p><b>${escapeHtml(c.nombreDireccion||'—')}</b><br>
+          CUIT: ${escapeHtml(c.cuit||'—')}<br>
+          ${c.claveSuterh ? 'SUTERH: '+escapeHtml(c.claveSuterh)+'<br>' : ''}
+          ${v.dia1 ? `Vencimientos: día ${escapeHtml(String(v.dia1))} y día ${escapeHtml(String(v.dia2))} de cada mes` : ''}</p>
+        </div>
+      </div>
+    `;
+  }
+  async function mountContactBlock(mountId){
+    const mount = document.getElementById(mountId);
+    if(!mount) return;
+    const spreadsheetId = await getSpreadsheetIdActivo();
+    if(!spreadsheetId){ mount.innerHTML = ''; return; }
+    const cfg = await fetchConfigConsorcio(spreadsheetId);
+    mount.innerHTML = cfg ? contactBlockHtml(cfg) : '';
+  }
+
   function mountFormaPago(mountId){
     const mount = document.getElementById(mountId);
     const statusId = mountId+'-status';
@@ -4158,81 +4208,36 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       tuMontoMount.innerHTML = '';
     }
 
-    loadData('naken-consorcio-datos', {}).then(cfg=>{
-      document.getElementById(mountId+'-contact').innerHTML = `
-        <div class="config-row" style="margin-bottom:6px;">
-          <div class="infoblock">
-            <h3>Administración</h3>
-            <p><b>${escapeHtml(cfg.administradorNombre||'—')}</b><br>
-            CUIT: ${escapeHtml(cfg.administradorCuit||'—')}<br>
-            ${escapeHtml(cfg.administradorDomicilio||'—')}<br>
-            ${escapeHtml(cfg.administradorTel||'—')}<br>
-            ${escapeHtml(cfg.administradorFiscal||'')}<br>
-            ${escapeHtml(cfg.administradorRedes||'')}</p>
-          </div>
-          <div class="infoblock">
-            <h3>Consorcio</h3>
-            <p><b>${escapeHtml(cfg.edificio||'—')}</b><br>
-            ${escapeHtml(cfg.barrio||'—')}<br>
-            CUIT: ${escapeHtml(cfg.consorcioCuit||'—')}<br>
-            Convenio: ${escapeHtml(cfg.consorcioConvenio||'—')}</p>
-          </div>
-        </div>
-      `;
-    });
+    mountContactBlock(mountId+'-contact');
 
-    const pagoMount = document.getElementById(mountId+'-pago');
-    if(role==='admin'){
+    (async ()=>{
+      const spreadsheetId = role==='propietario' && currentUser
+        ? (currentUser.consorcioSpreadsheetId || await getSpreadsheetIdDelConsorcio(currentUser.consorcio))
+        : await getSpreadsheetIdActivo();
+      const pagoMount = document.getElementById(mountId+'-pago');
+      if(!spreadsheetId){
+        pagoMount.innerHTML = `<div class="empty">Este consorcio todavía no tiene la planilla de liquidación vinculada.</div>`;
+        return;
+      }
+      const cfg = await fetchConfigConsorcio(spreadsheetId);
+      if(!cfg){
+        pagoMount.innerHTML = `<div class="empty">No se pudo leer la planilla de este consorcio.</div>`;
+        return;
+      }
+      const f = cfg.formaPago || {};
+
       pagoMount.innerHTML = `
         <div class="infoblock">
-          <h3>Empresa de cobranzas y depósito</h3>
-          <div class="config-row">
-            <div><label>Empresa de cobranzas</label><input type="text" id="fp-empresa" placeholder="Ej: SIRO"></div>
-            <div><label>Notas</label><input type="text" id="fp-notas" placeholder=""></div>
-            <div><label>CBU</label><input type="text" id="fp-cbu" placeholder=""></div>
-            <div><label>Alias</label><input type="text" id="fp-alias" placeholder=""></div>
-            <div><label>Banco</label><input type="text" id="fp-banco" placeholder=""></div>
-            <div><label>Sucursal</label><input type="text" id="fp-sucursal" placeholder=""></div>
-            <div><label>Titular / CUIT de la cuenta</label><input type="text" id="fp-titular" placeholder=""></div>
-          </div>
-          <div class="toolbar"><span></span><div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}<button class="btn primary" id="fp-save">Guardar</button></div></div>
+          <h3>Cómo pagar</h3>
+          <p><b>Transferencia o depósito:</b><br>
+          CBU: ${escapeHtml(f.cbu||'—')}<br>
+          Alias: ${escapeHtml(f.alias||'—')}<br>
+          ${escapeHtml(f.banco||'')} ${escapeHtml(f.sucursal||'')}${f.numeroCuenta ? ' · Cuenta N° '+escapeHtml(f.numeroCuenta) : ''}<br>
+          Titular: ${escapeHtml(f.titular||'—')} (CUIT ${escapeHtml(f.cuitTitular||'—')})
+          ${f.codigoPago ? '<br>Código de pago electrónico: '+escapeHtml(f.codigoPago) : ''}</p>
         </div>
       `;
-      loadData('naken-forma-pago', {}).then(d=>{
-        document.getElementById('fp-empresa').value = d.empresaCobranzas||'';
-        document.getElementById('fp-notas').value = d.notasCobranzas||'';
-        document.getElementById('fp-cbu').value = d.cbu||'';
-        document.getElementById('fp-alias').value = d.alias||'';
-        document.getElementById('fp-banco').value = d.banco||'';
-        document.getElementById('fp-sucursal').value = d.sucursal||'';
-        document.getElementById('fp-titular').value = d.titularCuit||'';
-      });
-      document.getElementById('fp-save').addEventListener('click', ()=>{
-        saveData('naken-forma-pago', {
-          empresaCobranzas: document.getElementById('fp-empresa').value.trim(),
-          notasCobranzas: document.getElementById('fp-notas').value.trim(),
-          cbu: document.getElementById('fp-cbu').value.trim(),
-          alias: document.getElementById('fp-alias').value.trim(),
-          banco: document.getElementById('fp-banco').value.trim(),
-          sucursal: document.getElementById('fp-sucursal').value.trim(),
-          titularCuit: document.getElementById('fp-titular').value.trim(),
-        }, statusId);
-      });
-    } else {
-      loadData('naken-forma-pago', {}).then(d=>{
-        pagoMount.innerHTML = `
-          <div class="infoblock">
-            <h3>Cómo pagar</h3>
-            <p><b>Empresa de cobranzas:</b> ${escapeHtml(d.empresaCobranzas||'—')} ${d.notasCobranzas?'— '+escapeHtml(d.notasCobranzas):''}</p>
-            <p><b>Transferencia / depósito:</b><br>
-            CBU: ${escapeHtml(d.cbu||'—')}<br>
-            Alias: ${escapeHtml(d.alias||'—')}<br>
-            ${escapeHtml(d.banco||'')} ${escapeHtml(d.sucursal||'')}<br>
-            Titular: ${escapeHtml(d.titularCuit||'—')}</p>
-          </div>
-        `;
-      });
-    }
+    })();
 
     mountComprobantesPago(mountId+'-informar', mountId+'-lista');
   }
@@ -4392,7 +4397,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         st.textContent = `Subiendo (${sizeMB} MB)...`;
         st.style.color = 'var(--brass)';
         try{
-          const url = await window.uploadFileToDrive(file);
+          const url = await window.uploadFileToDrive(file, currentUser ? currentUser.consorcio : '');
           document.getElementById('cp-comprobante-link').value = url;
           st.textContent = 'Comprobante subido ✓';
           st.style.color = 'var(--ok)';
