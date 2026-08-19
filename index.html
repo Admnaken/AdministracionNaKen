@@ -1447,6 +1447,26 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       reader.readAsDataURL(file);
     });
   };
+
+  /** Verifica nombre + código contra la hoja "Propietarios", sin que ninguno de los dos
+   *  viaje de vuelta al navegador — la comparación la hace el Apps Script. */
+  window.verificarInvitacion = async function(spreadsheetId, unidad, nombreCompleto, codigo){
+    try{
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'verificarInvitacion',
+          spreadsheetId, unidad, nombreCompleto, codigo,
+          token: APPS_SCRIPT_TOKEN
+        })
+      });
+      const data = await res.json();
+      return data && data.ok ? data : { ok:false, valido:false, tieneCodigo:false };
+    }catch(err){
+      return { ok:false, valido:false, tieneCodigo:false };
+    }
+  };
 })();
 </script>
 
@@ -2890,13 +2910,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <input type="text" id="req-consorcio-nuevo" placeholder="Ej: Edificio Almirante, Av. Libertador 1234">
             <p style="font-size:11.5px;color:var(--muted);margin:4px 0 0;">Lo vamos a incorporar al sistema y la administración se pone en contacto para confirmar el alta.</p>
           </div>
-          <p style="font-size:11.5px;color:var(--muted);background:var(--paper,#faf8f3);border-left:3px solid var(--gold);padding:8px 10px;margin:4px 0 10px;line-height:1.5;">Completá estos datos con la información del <b>titular de la unidad</b> (el propietario). No puede darse de alta cualquier integrante de la familia — si no sos el titular, pedile a la administración que te habilite un acceso.</p>
-          <label>Nombre completo</label><input type="text" id="req-nombre">
+          <p style="font-size:11.5px;color:var(--muted);background:var(--paper,#faf8f3);border-left:3px solid var(--gold);padding:8px 10px;margin:4px 0 10px;line-height:1.5;">Por seguridad, el desplegable de abajo no muestra nombres — solo el piso y unidad. Escribí tu nombre completo tal como figura en el registro de propietarios: la administración lo compara antes de habilitarte, así que si no coincide, no se aprueba.</p>
           <label>Unidad funcional</label>
           <select id="req-unidad-select" disabled style="background:var(--gray-100,#f2f2f2);color:var(--muted);">
             <option value="">Elegí primero tu edificio</option>
           </select>
           <input type="text" id="req-unidad-manual" placeholder="Ej: 4° B" style="display:none;">
+          <label>Nombre completo (el titular de la unidad)</label><input type="text" id="req-nombre">
+          <label>Código de invitación</label>
+          <input type="text" id="req-codigo" placeholder="El que te mandó la administración por WhatsApp">
+          <p style="font-size:11px;color:var(--muted);margin:4px 0 0;">Si todavía no tenés uno, pedíselo a la administración antes de continuar.</p>
           <label>Usuario que querés usar</label><input type="text" id="req-username">
           <label>Contraseña (5 dígitos)</label><input type="password" id="req-password" maxlength="5" placeholder="Ej: 48213">
           <div class="toolbar" style="margin-top:16px;"><span></span><button class="btn primary" id="req-submit">Enviar solicitud</button></div>
@@ -2954,10 +2977,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         unidadSelect.style.color = '';
         unidadSelect.innerHTML =
           `<option value="">Elegí tu unidad…</option>` +
+          // A propósito NO se muestra el nombre del propietario acá: este desplegable lo ve
+          // cualquiera que abra la app, antes de loguearse. Los nombres solo se comparan
+          // del lado del administrador, al aprobar la solicitud (ver mountUsuarios).
           unidades.map(u=>{
             const valor = u.pisoDpto || u.uf;
-            const etiqueta = u.propietario ? `${valor} — ${u.propietario}` : valor;
-            return `<option value="${escapeHtml(valor)}">${escapeHtml(etiqueta)}</option>`;
+            return `<option value="${escapeHtml(valor)}">${escapeHtml(valor)}</option>`;
           }).join('');
       });
     })();
@@ -3029,6 +3054,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const consorcioSel = document.getElementById('req-consorcio').value;
       const consorcioNuevo = document.getElementById('req-consorcio-nuevo').value.trim();
       const nombreCompleto = document.getElementById('req-nombre').value.trim();
+      const codigo = document.getElementById('req-codigo').value.trim();
       const unidadSelectEl = document.getElementById('req-unidad-select');
       const unidad = unidadSelectEl.style.display!=='none' ? unidadSelectEl.value.trim() : document.getElementById('req-unidad-manual').value.trim();
       const username = document.getElementById('req-username').value.trim();
@@ -3053,7 +3079,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         return;
       }
 
-      await withLoading(btn, 'Enviando…', async ()=>{
+      await withLoading(btn, 'Verificando…', async ()=>{
         const usuarios = await loadData('naken-usuarios', []);
         if(usuarios.find(u=>u.username===username)){
           msg.innerHTML = `<div class="gate-msg error">Ese usuario ya existe, elegí otro.</div>`;
@@ -3065,13 +3091,42 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           ? await addEdificioSiNoExiste(consorcio)
           : (await getEdificios()).find(e=>e.nombre.trim().toLowerCase()===consorcio.trim().toLowerCase());
 
-        usuarios.push({id:uid(), consorcio, consorcioId: edificioRegistrado ? edificioRegistrado.id : null, nombreCompleto, unidad, username, password, porcentual:'', estado:'pendiente'});
+        // Si el edificio ya tiene planilla vinculada, verificamos nombre + código contra la hoja
+        // "Propietarios" antes de dar de alta. Si coincide, se habilita al instante — sin esperar
+        // a que la administración lo revise a mano.
+        let estado = 'pendiente';
+        let porcentual = '';
+        let verificado = false;
+        if(edificioRegistrado && edificioRegistrado.spreadsheetId){
+          if(!codigo){
+            msg.innerHTML = `<div class="gate-msg error">Falta el código de invitación — pedíselo a la administración por WhatsApp.</div>`;
+            return;
+          }
+          const v = await window.verificarInvitacion(edificioRegistrado.spreadsheetId, unidad, nombreCompleto, codigo);
+          if(v.tieneCodigo && !v.valido){
+            msg.innerHTML = `<div class="gate-msg error">El nombre o el código no coinciden con lo que tiene la administración. Revisalo y probá de nuevo.</div>`;
+            return;
+          }
+          if(v.valido){
+            estado = 'habilitado';
+            porcentual = v.porcentualFondoA ? String(Math.round(Number(v.porcentualFondoA)*10000)/100) : '';
+            verificado = true;
+          }
+          // Si la unidad todavía no tiene código cargado en la planilla (v.tieneCodigo===false),
+          // sigue de largo como "pendiente" — igual que antes, para no trabar a nadie mientras
+          // vas cargando los códigos de a poco.
+        }
+
+        usuarios.push({id:uid(), consorcio, consorcioId: edificioRegistrado ? edificioRegistrado.id : null, nombreCompleto, unidad, username, password, porcentual, estado});
         await saveData('naken-usuarios', usuarios);
-        msg.innerHTML = `<div class="gate-msg ok">Solicitud enviada. Vas a poder ingresar cuando la administración la habilite.</div>`;
+        msg.innerHTML = verificado
+          ? `<div class="gate-msg ok">¡Listo! Tu acceso ya está habilitado — entrá con tu usuario y clave desde "Ya tengo mi acceso".</div>`
+          : `<div class="gate-msg ok">Solicitud enviada. Vas a poder ingresar cuando la administración la habilite.</div>`;
         document.getElementById('req-consorcio').value='';
         document.getElementById('req-consorcio-nuevo').value='';
         document.getElementById('req-consorcio-nuevo-wrap').style.display='none';
         document.getElementById('req-nombre').value='';
+        document.getElementById('req-codigo').value='';
         document.getElementById('req-unidad-select').innerHTML = `<option value="">Elegí primero tu edificio</option>`;
         document.getElementById('req-unidad-select').disabled = true;
         document.getElementById('req-unidad-select').style.display = '';
@@ -4758,11 +4813,40 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const usuarios = await loadData('naken-usuarios', []);
       const pending = usuarios.filter(u=>u.estado==='pendiente');
       const enabled = usuarios.filter(u=>u.estado==='habilitado');
+      const edificios = await getEdificios();
+
+      // Para cada solicitud, buscamos el nombre del titular real de esa unidad (de la hoja
+      // "Propietarios") y lo comparamos contra lo que la persona escribió al pedir acceso —
+      // así podés confirmar que quien se está dando de alta es realmente el propietario.
+      const unidadesPorPlanilla = {};
+      async function nombreRealDe(u){
+        const ed = edificios.find(e => (u.consorcioId && e.id===u.consorcioId) || e.nombre===u.consorcio);
+        if(!ed || !ed.spreadsheetId) return null;
+        if(!unidadesPorPlanilla[ed.spreadsheetId]){
+          const data = await fetchUnidadesConsorcio(ed.spreadsheetId);
+          unidadesPorPlanilla[ed.spreadsheetId] = (data && data.unidades) || [];
+        }
+        const unidadTexto = String(u.unidad||'').trim().toLowerCase();
+        const encontrada = unidadesPorPlanilla[ed.spreadsheetId].find(x=>
+          String(x.pisoDpto||'').trim().toLowerCase()===unidadTexto ||
+          String(x.uf||'').trim().toLowerCase()===unidadTexto
+        );
+        return encontrada ? (encontrada.propietario || '') : null;
+      }
+      const nombresReales = await Promise.all(pending.map(nombreRealDe));
 
       const pendingEl = document.getElementById(mountId+'-pending');
       pendingEl.innerHTML = pending.length===0
         ? `<div class="empty">No hay solicitudes pendientes.</div>`
-        : pending.map(u=>`
+        : pending.map((u,i)=>{
+          const real = nombresReales[i];
+          const coincide = real!==null && real.trim().toLowerCase()===(u.nombreCompleto||'').trim().toLowerCase();
+          const verificacionHtml = real===null
+            ? `<p class="panel-note" style="margin:8px 0 0;font-size:12px;">No pudimos comparar contra el registro — vinculá la planilla de este consorcio, o revisá que esa unidad esté en la hoja "Propietarios".</p>`
+            : coincide
+              ? `<p style="margin:8px 0 0;font-size:12.5px;color:var(--ok);">✓ Coincide con el titular registrado.</p>`
+              : `<p style="margin:8px 0 0;font-size:12.5px;color:var(--danger);font-weight:600;">⚠ No coincide — la planilla dice que el titular es "${escapeHtml(real)}". Verificá antes de habilitar.</p>`;
+          return `
           <div class="card">
             <div class="card-top">
               <div>
@@ -4771,14 +4855,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               </div>
               <span class="badge pendiente">Pendiente</span>
             </div>
-            <span class="card-field-label">Porcentual de la unidad (%)</span>
+            ${verificacionHtml}
+            <span class="card-field-label" style="margin-top:8px;">Porcentual de la unidad (%)</span>
             <input type="text" data-id="${u.id}" class="pct-input" placeholder="0.00" style="max-width:140px;">
             <div class="toolbar" style="margin-top:10px;">
               <button class="btn ghost" data-action="rechazar" data-id="${u.id}">Rechazar</button>
               <button class="btn primary" data-action="habilitar" data-id="${u.id}">Habilitar</button>
             </div>
           </div>
-        `).join('');
+        `;
+        }).join('');
 
       const enabledEl = document.getElementById(mountId+'-enabled');
       enabledEl.innerHTML = enabled.length===0
