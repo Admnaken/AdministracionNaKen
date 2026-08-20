@@ -2349,14 +2349,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     doc.setFont('helvetica','normal');
     doc.setFontSize(9);
     doc.setTextColor(...COLOR_TEXTO);
-    doc.text('Registro de conflicto entre copropietarios', M, y); y+=10;
+    doc.text('Registro de conflicto entre copropietarios', M, y); y+=5;
+    doc.text('Administrador: Lic. Sebastián R. Espeche - Mat. RPA 20066', M, y); y+=8;
 
     heading('DATOS DEL CASO');
     doc.autoTable({
       ...AUTOTABLE_BASE, startY: y, margin:{left:M,right:M}, theme:'grid',
       body: [
         ['N° de caso', c.id, 'Fecha de apertura', c.fecha||'—'],
-        ['Estado del caso', c.estado||'—', 'Administrador / Mediador', 'Administración NAKEN'],
+        ['Estado del caso', c.estado||'—', 'Administrador / Mediador', 'Lic. Sebastián R. Espeche - Mat. RPA 20066'],
       ]
     });
     y = doc.lastAutoTable.finalY + 8;
@@ -2368,7 +2369,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     heading('PARTES INVOLUCRADAS');
     doc.autoTable({
       ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-      head: [['', 'Parte A (denunciante)', 'Parte B (denunciada)']],
+      head: [['', 'Parte A', 'Parte B']],
       body: [
         ['Nombre completo', (parteA&&parteA.nombreCompleto)||'—', (parteB&&parteB.nombreCompleto)||'—'],
         ['Unidad funcional', c.unidadDenunciante||'—', c.unidadDenunciada||'—'],
@@ -2421,7 +2422,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     parrafo('Ambas partes se comprometen a respetar los acuerdos alcanzados y a informar a la administración cualquier reiteración de los hechos, antes de recurrir a otras vías. La presente planilla queda archivada en el legajo del consorcio como constancia del proceso llevado a cabo, y podrá ser exhibida como antecedente ante la reiteración del conflicto o la intervención de terceros (asamblea, asesoría legal, autoridad competente).', {size:8.5});
 
     heading('CONFORMIDAD');
-    parrafo('La conformidad de las partes se dio a través de las intervenciones registradas dentro de la aplicación de administración del consorcio (app.administracionnaken.com.ar → Conflictos entre vecinos), donde cada parte ingresó con su usuario y clave personal. Por ese motivo, esta acta no requiere firma física.', {size:8.5});
+    parrafo('La conformidad de las partes se dio a través de las intervenciones registradas dentro de la aplicación de administración del consorcio (app.administracionnaken.com.ar - Conflictos entre vecinos), donde cada parte ingresó con su usuario y clave personal. Por ese motivo, esta acta no requiere firma física.', {size:8.5});
     if(!c.formalizada){
       parrafo('En este caso en particular, la buena predisposición de la unidad denunciada permitió resolver la situación sin necesidad de avanzar a una instancia formal de mediación. Por lo tanto, en ningún momento se le informó a la unidad denunciada la identidad de la unidad denunciante.', {size:8.5, bold:true, acento:true});
     }
