@@ -2297,6 +2297,18 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const M = 14;
     let y = 18;
 
+    // Paleta del consorcio
+    const COLOR_PRINCIPAL = [11,42,74];   // #0B2A4A — encabezados y títulos
+    const COLOR_SECUNDARIO = [44,62,80];  // #2C3E50 — bordes y filas alternadas
+    const COLOR_ACENTO = [201,169,78];    // #C9A94E — para resaltar conceptos importantes
+    const COLOR_FONDO_ALT = [248,249,250];// #F8F9FA — filas alternadas
+    const COLOR_TEXTO = [51,51,51];       // #333333 — cuerpo
+    const AUTOTABLE_BASE = {
+      styles: { fontSize: 9, textColor: COLOR_TEXTO, lineColor: COLOR_SECUNDARIO, lineWidth: 0.1 },
+      headStyles: { fillColor: COLOR_PRINCIPAL, textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: COLOR_FONDO_ALT }
+    };
+
     const [edificios, usuarios] = await Promise.all([getEdificios(), loadData('naken-usuarios', [])]);
     const consorcioId = getActiveConsorcioId();
     const edificio = edificios.find(e=>e.id===consorcioId);
@@ -2308,36 +2320,40 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     function heading(texto){
       if(y>270){ doc.addPage(); y=18; }
-      doc.setFillColor(27,42,61);
+      doc.setFillColor(...COLOR_PRINCIPAL);
       doc.rect(M, y, 182, 7, 'F');
       doc.setTextColor(255,255,255);
       doc.setFont('helvetica','bold');
       doc.setFontSize(10);
       doc.text(texto, M+3, y+5);
-      doc.setTextColor(20,20,20);
+      doc.setTextColor(...COLOR_TEXTO);
       y += 12;
     }
     function parrafo(texto, opts={}){
       doc.setFont('helvetica', opts.bold?'bold':'normal');
       doc.setFontSize(opts.size||9.5);
+      doc.setTextColor(...(opts.acento ? COLOR_ACENTO : COLOR_TEXTO));
       const lineas = doc.splitTextToSize(texto||'—', 182);
       if(y + lineas.length*4.6 > 285){ doc.addPage(); y=18; }
       doc.text(lineas, M, y);
       y += lineas.length*4.6 + 3;
+      doc.setTextColor(...COLOR_TEXTO);
     }
 
     doc.setFont('helvetica','bold');
     doc.setFontSize(13);
+    doc.setTextColor(...COLOR_PRINCIPAL);
     doc.text('ADMINISTRACIÓN NAKEN', M, y); y+=6;
     doc.setFontSize(11);
     doc.text('Planilla de Mediación Vecinal', M, y); y+=5;
     doc.setFont('helvetica','normal');
     doc.setFontSize(9);
+    doc.setTextColor(...COLOR_TEXTO);
     doc.text('Registro de conflicto entre copropietarios', M, y); y+=10;
 
     heading('DATOS DEL CASO');
     doc.autoTable({
-      startY: y, margin:{left:M,right:M}, theme:'grid', styles:{fontSize:9},
+      ...AUTOTABLE_BASE, startY: y, margin:{left:M,right:M}, theme:'grid',
       body: [
         ['N° de caso', c.id, 'Fecha de apertura', c.fecha||'—'],
         ['Estado del caso', c.estado||'—', 'Administrador / Mediador', 'Administración NAKEN'],
@@ -2346,12 +2362,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     y = doc.lastAutoTable.finalY + 8;
 
     heading('DATOS DEL CONSORCIO');
-    doc.autoTable({ startY:y, margin:{left:M,right:M}, theme:'grid', styles:{fontSize:9}, body:[['Consorcio', nombreConsorcio||'—']] });
+    doc.autoTable({ ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', body:[['Consorcio', nombreConsorcio||'—']] });
     y = doc.lastAutoTable.finalY + 8;
 
     heading('PARTES INVOLUCRADAS');
     doc.autoTable({
-      startY:y, margin:{left:M,right:M}, theme:'grid', styles:{fontSize:9},
+      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
       head: [['', 'Parte A (denunciante)', 'Parte B (denunciada)']],
       body: [
         ['Nombre completo', (parteA&&parteA.nombreCompleto)||'—', (parteB&&parteB.nombreCompleto)||'—'],
@@ -2363,9 +2379,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     heading('ORIGEN DEL RECLAMO');
     doc.autoTable({
-      startY:y, margin:{left:M,right:M}, theme:'grid', styles:{fontSize:9},
+      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
       body: [
-        ['Fecha de inicio', c.fechaHecho||'—'],
+        ['Fecha y hora del incidente', c.fechaHecho||'—'],
         ['Tipo de conflicto', c.tipo||'—'],
         ['Unidad afectada', c.unidadDenunciada||'—'],
       ]
@@ -2386,7 +2402,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       parrafo('Todavía no se registraron instancias de mediación para este caso.');
     } else {
       doc.autoTable({
-        startY:y, margin:{left:M,right:M}, theme:'grid', styles:{fontSize:8.5, cellWidth:'wrap'},
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', styles:{...AUTOTABLE_BASE.styles, fontSize:8.5, cellWidth:'wrap'},
         head:[['Instancia','Fecha','Resumen']],
         columnStyles:{0:{cellWidth:38},1:{cellWidth:26},2:{cellWidth:'auto'}},
         body: instancias
@@ -2395,7 +2411,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
 
     heading('RESULTADO DEL PROCESO');
-    parrafo(`Estado final: ${c.estado||'—'}`, {bold:true});
+    parrafo(`Estado final: ${c.estado||'—'}`, {bold:true, acento:true});
     if(c.resultadoReunion) parrafo('Resultado de la reunión de mediación: ' + c.resultadoReunion);
     if(c.cierreMotivo) parrafo('Motivo del cierre: ' + c.cierreMotivo);
     if(!c.resultadoReunion && !c.cierreMotivo) parrafo('(sin resultado cargado todavía)');
@@ -2404,19 +2420,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     parrafo('Las partes que suscriben la presente planilla declaran haber participado voluntariamente del proceso de mediación conducido por la administración del consorcio, con el objetivo de resolver el conflicto descripto por la vía del diálogo, evitando su escalada a instancias administrativas, judiciales o de convivencia que puedan afectar la paz social del edificio.', {size:8.5});
     parrafo('Ambas partes se comprometen a respetar los acuerdos alcanzados y a informar a la administración cualquier reiteración de los hechos, antes de recurrir a otras vías. La presente planilla queda archivada en el legajo del consorcio como constancia del proceso llevado a cabo, y podrá ser exhibida como antecedente ante la reiteración del conflicto o la intervención de terceros (asamblea, asesoría legal, autoridad competente).', {size:8.5});
 
-    if(y>230){ doc.addPage(); y=18; }
-    heading('CONFORMIDAD — FIRMAS');
-    y += 18;
-    const cols = [M+4, M+68, M+136];
-    const labels = ['Parte A\n'+((parteA&&parteA.nombreCompleto)||''), 'Parte B\n'+((parteB&&parteB.nombreCompleto)||''), 'Administrador / Mediador\nAdministración NAKEN'];
-    cols.forEach((x,i)=>{
-      doc.line(x, y, x+52, y);
-      doc.setFontSize(8);
-      const lineas = labels[i].split('\n');
-      doc.text(lineas[0], x, y+5);
-      doc.text(lineas[1]||'', x, y+9);
-      doc.text('Aclaración y DNI:', x, y+14);
-    });
+    heading('CONFORMIDAD');
+    parrafo('La conformidad de las partes se dio a través de las intervenciones registradas dentro de la aplicación de administración del consorcio (app.administracionnaken.com.ar → Conflictos entre vecinos), donde cada parte ingresó con su usuario y clave personal. Por ese motivo, esta acta no requiere firma física.', {size:8.5});
+    if(!c.formalizada){
+      parrafo('En este caso en particular, la buena predisposición de la unidad denunciada permitió resolver la situación sin necesidad de avanzar a una instancia formal de mediación. Por lo tanto, en ningún momento se le informó a la unidad denunciada la identidad de la unidad denunciante.', {size:8.5, bold:true, acento:true});
+    }
 
     doc.save(`Mediacion_${c.id}_${(c.unidadDenunciada||'').replace(/[^a-zA-Z0-9]/g,'')}.pdf`);
   }
@@ -2427,6 +2435,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     mount.innerHTML = `
       <div id="cf-reglamento-links" class="config-row" style="margin-bottom:16px;"></div>
+      ${role==='propietario' ? `
       <div class="new-ticket">
         <h3>Cargar un caso nuevo</h3>
         <div class="field-grid">
@@ -2434,7 +2443,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <label>Tipo de conflicto</label>
             <select id="cf-tipo">${CONFLICTO_TIPOS.map(t=>`<option>${t}</option>`).join('')}</select>
           </div>
-          <div><label>Unidad denunciante</label><input type="text" id="cf-denunciante" value="${role==='propietario' && currentUser ? escapeHtml(currentUser.unidad) : ''}" ${role==='propietario' ? 'readonly style="background:var(--gray-100,#f2f2f2);cursor:not-allowed;"' : 'placeholder="Ej: 4° B"'}></div>
+          <div><label>Unidad denunciante</label><input type="text" id="cf-denunciante" value="${currentUser ? escapeHtml(currentUser.unidad) : ''}" readonly style="background:var(--gray-100,#f2f2f2);cursor:not-allowed;"></div>
           <div><label>Unidad denunciada</label><input type="text" id="cf-denunciada" placeholder="Ej: 5° A"></div>
           <div>
             <label>Fecha y hora del hecho</label>
@@ -2461,20 +2470,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}<button class="btn primary" id="cf-submit">Cargar caso</button></div>
         </div>
       </div>
+      ` : ''}
       <div class="subhead">Casos</div>
       <div class="cards" id="cf-list"></div>
     `;
-
-    function renderNormativa(){
-      const tipo = document.getElementById('cf-tipo').value;
-      document.getElementById('cf-normativa-box').innerHTML = `
-        <h3>Marco legal general — ${escapeHtml(tipo)}</h3>
-        <p>${escapeHtml(MARCO_NORMATIVO[tipo])}</p>
-        <p class="disclaimer">Esto es información general, no un dictamen sobre tu caso puntual — no reemplaza el asesoramiento de un abogado.</p>
-      `;
-    }
-    document.getElementById('cf-tipo').addEventListener('change', renderNormativa);
-    renderNormativa();
 
     getSpreadsheetIdActivo().then(spreadsheetId=>fetchDocumentosConsorcio(spreadsheetId)).then(data=>{
       const box = document.getElementById('cf-reglamento-links');
@@ -2495,97 +2494,106 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       }
     });
 
-    document.getElementById('cf-fecha-confirmar').addEventListener('click', ()=>{
-      const raw = document.getElementById('cf-fechahecho').value;
-      const conf = document.getElementById('cf-fecha-confirmada');
-      if(!raw){
-        conf.style.color = 'var(--danger)';
-        conf.textContent = 'Elegí una fecha y hora primero.';
-        return;
+    if(role==='propietario'){
+      function renderNormativa(){
+        const tipo = document.getElementById('cf-tipo').value;
+        document.getElementById('cf-normativa-box').innerHTML = `
+          <h3>Marco legal general — ${escapeHtml(tipo)}</h3>
+          <p>${escapeHtml(MARCO_NORMATIVO[tipo])}</p>
+          <p class="disclaimer">Esto es información general, no un dictamen sobre tu caso puntual — no reemplaza el asesoramiento de un abogado.</p>
+        `;
       }
-      const d = new Date(raw);
-      conf.style.color = 'var(--ok)';
-      conf.textContent = '✓ Registrado: ' + d.toLocaleString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-    });
+      document.getElementById('cf-tipo').addEventListener('change', renderNormativa);
+      renderNormativa();
 
-    document.getElementById('cf-evidencia-file').addEventListener('change', async (e)=>{
-      const file = e.target.files[0];
-      const statusEl2 = document.getElementById('cf-evidencia-status');
-      if(!file) return;
-      const sizeMB = (file.size/1024/1024).toFixed(1);
-      if(file.size > 20*1024*1024){
-        statusEl2.textContent = `Este archivo pesa ${sizeMB} MB — es probable que sea demasiado grande para subir directo. Probá acortar el video, o subilo vos mismo a Drive y pegá el link abajo.`;
-        statusEl2.style.color = 'var(--danger)';
-        return;
-      }
-      statusEl2.textContent = `Subiendo (${sizeMB} MB)... puede tardar unos segundos.`;
-      statusEl2.style.color = 'var(--brass)';
-      try{
-        const url = await window.uploadFileToDrive(file, currentUser ? currentUser.consorcio : '');
-        document.getElementById('cf-evidencia').value = url;
-        statusEl2.textContent = 'Listo — evidencia subida y cargada ✓';
-        statusEl2.style.color = 'var(--ok)';
-      }catch(err){
-        console.error('Error al subir evidencia:', err);
-        statusEl2.textContent = 'No se pudo subir. Detalle: ' + (err && err.message ? err.message : 'error desconocido') + ' — probá con el link manual de Drive.';
-        statusEl2.style.color = 'var(--danger)';
-      }
-    });
-
-    document.getElementById('cf-submit').addEventListener('click', async ()=>{
-      const denunciante = document.getElementById('cf-denunciante').value.trim();
-      const denunciada = document.getElementById('cf-denunciada').value.trim();
-      if(!denunciante || !denunciada){
-        setStatus(statusId,'error');
-        return;
-      }
-      const casos = await loadData('naken-conflictos', []);
-      casos.push({
-        id: uid(),
-        fecha: new Date().toLocaleDateString('es-AR'),
-        tipo: document.getElementById('cf-tipo').value,
-        unidadDenunciante: denunciante,
-        unidadDenunciada: denunciada,
-        fechaHecho: (()=>{
-          const raw = document.getElementById('cf-fechahecho').value;
-          if(!raw) return '';
-          const d = new Date(raw);
-          return isNaN(d.getTime()) ? raw : d.toLocaleString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-        })(),
-        evidencia: document.getElementById('cf-evidencia').value.trim(),
-        descripcion: document.getElementById('cf-descripcion').value.trim(),
-        estado: 'Pendiente',
-        notificacion: '',
-        mediacionLink: '',
-        mediacionFecha: '',
-        acuerdoTexto: '',
-        aceptoDenunciante: '',
-        aceptoDenunciado: '',
-        descargo: '',
-        descargoTipo: '',
-        descargoFecha: '',
-        respuestaAdminDescargo: '',
-        respuestaAdminFecha: '',
-        formalizada: false,
-        decisionDenunciante: '',
-        decisionDenuncianteFecha: '',
-        decisionDenunciado: '',
-        decisionDenunciadoFecha: '',
-        resultadoReunion: '',
-        resultadoReunionFecha: ''
+      document.getElementById('cf-fecha-confirmar').addEventListener('click', ()=>{
+        const raw = document.getElementById('cf-fechahecho').value;
+        const conf = document.getElementById('cf-fecha-confirmada');
+        if(!raw){
+          conf.style.color = 'var(--danger)';
+          conf.textContent = 'Elegí una fecha y hora primero.';
+          return;
+        }
+        const d = new Date(raw);
+        conf.style.color = 'var(--ok)';
+        conf.textContent = '✓ Registrado: ' + d.toLocaleString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
       });
-      await saveData('naken-conflictos', casos, statusId);
-      document.getElementById('cf-denunciada').value = '';
-      document.getElementById('cf-fechahecho').value = '';
-      document.getElementById('cf-fecha-confirmada').textContent = '';
-      document.getElementById('cf-evidencia').value = '';
-      document.getElementById('cf-evidencia-file').value = '';
-      document.getElementById('cf-evidencia-status').textContent = '';
-      document.getElementById('cf-descripcion').value = '';
-      flashButtonSuccess(document.getElementById('cf-submit'), '✓ Caso cargado');
-      renderList();
-      refreshConflictosBadge();
-    });
+
+      document.getElementById('cf-evidencia-file').addEventListener('change', async (e)=>{
+        const file = e.target.files[0];
+        const statusEl2 = document.getElementById('cf-evidencia-status');
+        if(!file) return;
+        const sizeMB = (file.size/1024/1024).toFixed(1);
+        if(file.size > 20*1024*1024){
+          statusEl2.textContent = `Este archivo pesa ${sizeMB} MB — es probable que sea demasiado grande para subir directo. Probá acortar el video, o subilo vos mismo a Drive y pegá el link abajo.`;
+          statusEl2.style.color = 'var(--danger)';
+          return;
+        }
+        statusEl2.textContent = `Subiendo (${sizeMB} MB)... puede tardar unos segundos.`;
+        statusEl2.style.color = 'var(--brass)';
+        try{
+          const url = await window.uploadFileToDrive(file, currentUser ? currentUser.consorcio : '');
+          document.getElementById('cf-evidencia').value = url;
+          statusEl2.textContent = 'Listo — evidencia subida y cargada ✓';
+          statusEl2.style.color = 'var(--ok)';
+        }catch(err){
+          console.error('Error al subir evidencia:', err);
+          statusEl2.textContent = 'No se pudo subir. Detalle: ' + (err && err.message ? err.message : 'error desconocido') + ' — probá con el link manual de Drive.';
+          statusEl2.style.color = 'var(--danger)';
+        }
+      });
+
+      document.getElementById('cf-submit').addEventListener('click', async ()=>{
+        const denunciante = document.getElementById('cf-denunciante').value.trim();
+        const denunciada = document.getElementById('cf-denunciada').value.trim();
+        if(!denunciante || !denunciada){
+          setStatus(statusId,'error');
+          return;
+        }
+        const casos = await loadData('naken-conflictos', []);
+        casos.push({
+          id: uid(),
+          fecha: new Date().toLocaleDateString('es-AR'),
+          tipo: document.getElementById('cf-tipo').value,
+          unidadDenunciante: denunciante,
+          unidadDenunciada: denunciada,
+          fechaHecho: (()=>{
+            const raw = document.getElementById('cf-fechahecho').value;
+            if(!raw) return '';
+            const d = new Date(raw);
+            return isNaN(d.getTime()) ? raw : d.toLocaleString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+          })(),
+          evidencia: document.getElementById('cf-evidencia').value.trim(),
+          descripcion: document.getElementById('cf-descripcion').value.trim(),
+          estado: 'Pendiente',
+          notificacion: '',
+          mediacionLink: '',
+          mediacionFecha: '',
+          descargo: '',
+          descargoTipo: '',
+          descargoFecha: '',
+          formalizada: false,
+          cierreMotivo: '',
+          decisionDenunciante: '',
+          decisionDenuncianteFecha: '',
+          decisionDenunciado: '',
+          decisionDenunciadoFecha: '',
+          resultadoReunion: '',
+          resultadoReunionFecha: ''
+        });
+        await saveData('naken-conflictos', casos, statusId);
+        document.getElementById('cf-denunciada').value = '';
+        document.getElementById('cf-fechahecho').value = '';
+        document.getElementById('cf-fecha-confirmada').textContent = '';
+        document.getElementById('cf-evidencia').value = '';
+        document.getElementById('cf-evidencia-file').value = '';
+        document.getElementById('cf-evidencia-status').textContent = '';
+        document.getElementById('cf-descripcion').value = '';
+        flashButtonSuccess(document.getElementById('cf-submit'), '✓ Caso cargado');
+        renderList();
+        refreshConflictosBadge();
+      });
+    }
 
     function badgeClass(estado){
       if(estado==='Resuelto') return 'resuelto';
@@ -2623,6 +2631,46 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const puedeVerDenunciaCompleta = role==='admin' || esDenunciante || (esDenunciado && c.formalizada);
         const card = document.createElement('div');
         card.className = 'card';
+
+        // El denunciado, mientras el caso no llegó a una instancia formal, no debe ver NADA que lo
+        // identifique: ni el tipo de conflicto, ni la fecha de la denuncia, ni la unidad denunciante.
+        // Solo ve la comunicación de la administración (y, si ya se resolvió, ni siquiera eso —
+        // le queda un recordatorio mínimo, sin botón de PDF, para que nunca pueda enterarse quién lo denunció).
+        if(esDenunciado && !c.formalizada){
+          const yaCerrado = (c.estado==='Resuelto' || c.estado==='Cerrado sin acuerdo');
+          if(yaCerrado){
+            card.innerHTML = `
+              <div class="card-top"><div><b>Comunicación de la administración</b></div></div>
+              <p class="panel-note" style="margin:6px 0 0;">Hubo una comunicación de la administración por una situación vinculada a tu unidad. Ya se resolvió — si tenés dudas, podés escribirle a la administración desde "Reclamos y consultas".</p>
+            `;
+            listEl.appendChild(card);
+            return;
+          }
+          card.innerHTML = `
+            <div class="card-top">
+              <div><b>Comunicación de la administración</b></div>
+              <span class="badge ${badgeClass(c.estado)}">${escapeHtml(c.estado)}</span>
+            </div>
+            ${c.notificacion ? `<div style="font-size:13px;white-space:pre-wrap;margin-top:6px;">${escapeHtml(c.notificacion)}</div>` : ''}
+            ${!c.descargo ? `
+              <div class="new-ticket" style="margin-top:14px;">
+                <p style="margin:0 0 8px;">Se te comunicó una situación vinculada a tu unidad. Tenés derecho a hacer tu descargo antes de que se tome cualquier decisión — con presunción de inocencia de tu lado.</p>
+                <p class="panel-note" style="margin:0 0 10px;font-size:12px;">Si reconocés lo sucedido y te comprometés a que no se repita, elegilo así: evita que esto escale a una instancia formal. Si no estás de acuerdo, contá tu versión.</p>
+                <textarea id="cf-descargo-${c.id}" rows="4" placeholder="Contá tu versión, o simplemente confirmá tu compromiso a que no se repita (opcional)..."></textarea>
+                <div class="toolbar" style="margin-top:10px;gap:10px;"><span></span>
+                  <button class="btn ghost" data-action="descargo-niega" data-id="${c.id}" style="font-size:12px;">No estoy de acuerdo</button>
+                  <button class="btn primary" data-action="descargo-admite" data-id="${c.id}" style="font-size:12px;">Reconozco la situación</button>
+                </div>
+              </div>
+            ` : `
+              <div class="card-meta" style="margin-top:8px;">Tu descargo (${c.descargoTipo==='admite'?'reconociste la situación':'no estuviste de acuerdo'}) — ${escapeHtml(c.descargoFecha)}</div>
+              ${c.descargoTipo==='admite' ? `<p class="panel-note" style="margin-top:6px;font-size:12.5px;">Gracias por tu respuesta. La administración va a dar por cerrado el caso.</p>` : `<p class="panel-note" style="margin-top:6px;font-size:12.5px;">Tu respuesta fue enviada a la administración. Te van a contactar con los próximos pasos.</p>`}
+            `}
+          `;
+          listEl.appendChild(card);
+          return;
+        }
+
         card.innerHTML = `
           <div class="card-top">
             <div>
@@ -2750,7 +2798,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               ${c.estado==='Cerrado sin acuerdo' ? `<p class="panel-note" style="margin-top:10px;font-size:12.5px;"><b>El caso se cerró.</b> ${escapeHtml(c.cierreMotivo||'')}</p>` : ''}
             ` : ''}
 
-            ${(c.estado==='Resuelto' || c.estado==='Cerrado sin acuerdo') ? `
+            ${esDenunciante && (c.estado==='Resuelto' || c.estado==='Cerrado sin acuerdo') ? `
               <div class="toolbar" style="margin-top:12px;border-top:1px solid var(--gray-200);padding-top:10px;"><span></span>
                 <button class="btn ghost" data-action="pdf-mediacion" data-id="${c.id}" style="font-size:12px;">Descargar acta de mediación (PDF) ↓</button>
               </div>
