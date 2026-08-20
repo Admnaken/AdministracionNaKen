@@ -1224,7 +1224,7 @@
         <div class="panel-head">
           <span class="eyebrow">Transparencia</span>
           <h2>Libro Banco y Conciliación bancaria</h2>
-          <p class="panel-note" style="max-width:none;">Herramienta de control de integridad de fondos. El Libro Banco registra cada movimiento de la cuenta del consorcio; la Conciliación mensual coteja el saldo del Libro Banco contra el saldo del extracto bancario, identifica las partidas pendientes (cheques no cobrados, transferencias no acreditadas, débitos no contabilizados), vuelca a la liquidación del mes lo que corresponda, y archiva la hoja firmada — lista para ser auditada por un Contador Público.</p>
+          <p class="panel-note" style="max-width:none;">Herramienta de control de integridad de fondos. El Libro Banco registra cada movimiento de la cuenta del consorcio; la Conciliación mensual coteja el saldo del Libro Banco contra el saldo del extracto bancario, identifica las partidas pendientes (cheques no cobrados, transferencias no acreditadas, débitos no contabilizados), vuelca a la liquidación del mes lo que corresponda, y archiva la hoja firmada junto con el detalle del extracto bancario.</p>
         </div>
         <div id="conciliaciones-mount"></div>
       </section>
@@ -5462,17 +5462,22 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
     function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); }
     function uid(){ return 'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
-    function blankPeriodo(){ return { id:uid(), periodo:'', fechaExtracto:'', saldoLibroBanco:'', saldoExtracto:'', partidas:[], cerrado:false, fechaCierre:'' }; }
+    function blankPeriodo(){ return { id:uid(), numero:0, periodo:'', fechaExtracto:'', saldoLibroBanco:'', saldoExtracto:'', partidas:[], extractoMovs:[], extractoArchivoUrl:'', extractoArchivoNombre:'', cerrado:false, fechaCierre:'' }; }
     function getCurrentPeriodo(){ return periodos.find(p=>p.id===currentPeriodId) || null; }
     function calcDiferencia(p){
       const partidasSum = (p.partidas||[]).reduce((acc,it)=> acc + (it.signo==='-' ? -num(it.importe) : num(it.importe)), 0);
       return num(p.saldoExtracto) - (num(p.saldoLibroBanco) + partidasSum);
     }
 
+    let cuentaBancaria = {};
+
     mount.innerHTML = `
+      <div class="subhead" style="margin-top:0;">Datos de la cuenta bancaria</div>
+      <div id="${mountId}-cuenta-wrap"></div>
+
       <div id="${mountId}-kpi-mov" class="kpi-row"></div>
 
-      <div class="subhead" style="margin-top:0;">Libro Banco — movimientos de la cuenta</div>
+      <div class="subhead">Libro Banco — movimientos de la cuenta</div>
       <table class="ledger">
         <thead><tr>
           <th>Fecha</th><th>Concepto</th><th>Ingreso ($)</th><th>Egreso ($)</th><th>Saldo acumulado</th>
@@ -5495,6 +5500,59 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       <div class="subhead">Historial de conciliaciones</div>
       <div id="${mountId}-historial"></div>
     `;
+
+    /* ----- Datos de la cuenta bancaria (globales, por consorcio) ----- */
+    const cuentaWrap = document.getElementById(mountId+'-cuenta-wrap');
+    const CUENTA_KEY = 'naken-cuenta-bancaria';
+
+    function renderCuenta(){
+      const disabled = isAdmin ? '' : 'disabled';
+      cuentaWrap.innerHTML = `
+        <div class="field-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:6px;">
+          <div>
+            <label>Banco</label>
+            <input type="text" id="${mountId}-cta-banco" value="${escapeHtml(cuentaBancaria.banco||'')}" placeholder="Ej: Banco Nación" ${disabled}>
+          </div>
+          <div>
+            <label>Sucursal</label>
+            <input type="text" id="${mountId}-cta-sucursal" value="${escapeHtml(cuentaBancaria.sucursal||'')}" placeholder="Ej: Suc. 123" ${disabled}>
+          </div>
+          <div>
+            <label>Tipo de cuenta</label>
+            <select id="${mountId}-cta-tipo" ${disabled}>
+              <option ${cuentaBancaria.tipoCuenta==='Caja de ahorro'?'selected':''}>Caja de ahorro</option>
+              <option ${cuentaBancaria.tipoCuenta==='Cuenta corriente'?'selected':''}>Cuenta corriente</option>
+            </select>
+          </div>
+          <div>
+            <label>N° de cuenta</label>
+            <input type="text" id="${mountId}-cta-numero" value="${escapeHtml(cuentaBancaria.numeroCuenta||'')}" placeholder="Ej: 123-456789/0" ${disabled}>
+          </div>
+          <div>
+            <label>CBU</label>
+            <input type="text" id="${mountId}-cta-cbu" value="${escapeHtml(cuentaBancaria.cbu||'')}" placeholder="22 dígitos" ${disabled}>
+          </div>
+          <div>
+            <label>Alias</label>
+            <input type="text" id="${mountId}-cta-alias" value="${escapeHtml(cuentaBancaria.alias||'')}" placeholder="Ej: CONSORCIO.EDIFICIO" ${disabled}>
+          </div>
+        </div>
+        ${isAdmin ? `<div class="toolbar" style="margin-top:0;"><span></span><div style="display:flex;align-items:center;gap:12px;">${statusEl(mountId+'-cta-status')}<button class="btn primary" id="${mountId}-cta-save">Guardar datos de la cuenta</button></div></div>` : ''}
+      `;
+      if(isAdmin){
+        document.getElementById(mountId+'-cta-save').addEventListener('click', ()=>{
+          cuentaBancaria = {
+            banco: document.getElementById(mountId+'-cta-banco').value.trim(),
+            sucursal: document.getElementById(mountId+'-cta-sucursal').value.trim(),
+            tipoCuenta: document.getElementById(mountId+'-cta-tipo').value,
+            numeroCuenta: document.getElementById(mountId+'-cta-numero').value.trim(),
+            cbu: document.getElementById(mountId+'-cta-cbu').value.trim(),
+            alias: document.getElementById(mountId+'-cta-alias').value.trim(),
+          };
+          saveData(CUENTA_KEY, cuentaBancaria, mountId+'-cta-status');
+        });
+      }
+    }
 
     /* ----- Libro Banco ----- */
     const movBody = document.getElementById(mountId+'-mov-body');
@@ -5593,7 +5651,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <label>Período a conciliar</label>
             <select id="${mountId}-periodo-select">
               <option value="">Elegí un período…</option>
-              ${periodos.map(p=>`<option value="${p.id}" ${p.id===currentPeriodId?'selected':''}>${escapeHtml(p.periodo||'(sin nombre)')}${p.cerrado?' — Archivada':''}</option>`).join('')}
+              ${periodos.map(p=>`<option value="${p.id}" ${p.id===currentPeriodId?'selected':''}>N° ${p.numero||'—'} — ${escapeHtml(p.periodo||'(sin nombre)')}${p.cerrado?' — Archivada':''}</option>`).join('')}
             </select>
           </div>
           <div>${isAdmin ? `<button class="btn" id="${mountId}-periodo-add" style="width:100%;">+ Nuevo período</button>` : ''}</div>
@@ -5614,7 +5672,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       wrap.innerHTML = selectorHtml + `
         <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:16px 18px;background:#fff;margin:14px 0 16px;">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
-            <span class="badge ${p.cerrado?'resuelto':'pendiente'}">${p.cerrado?'Archivada — firmada':'Borrador'}</span>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-family:'Playfair Display',serif;font-size:18px;color:var(--primary);">Conciliación N° ${p.numero||'—'}</span>
+              <span class="badge ${p.cerrado?'resuelto':'pendiente'}">${p.cerrado?'Archivada — firmada':'Borrador'}</span>
+            </div>
             ${isAdmin && p.cerrado ? `<button class="btn ghost" id="${mountId}-periodo-reabrir" style="font-size:11px;">Reabrir para editar</button>` : ''}
           </div>
 
@@ -5639,6 +5700,25 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
           <div class="kpi-row" id="${mountId}-p-kpi" style="margin-bottom:16px;"></div>
 
+          <div class="subhead" style="margin-top:0;">Extracto bancario (archivo)</div>
+          <p class="panel-note" style="margin-top:-4px;">Subí el PDF o la foto del extracto real del banco para este período — queda adjunto a la conciliación como respaldo original.</p>
+          <div id="${mountId}-ext-archivo-wrap"></div>
+
+          <div class="subhead">Movimientos según extracto bancario</div>
+          <p class="panel-note" style="margin-top:-4px;">Detalle de los movimientos que figuran en el extracto del banco para este período — queda como respaldo de auditoría junto con el saldo final que cargaste arriba.</p>
+          <table class="ledger">
+            <thead><tr>
+              <th>Fecha</th><th>Concepto</th><th>Ingreso ($)</th><th>Egreso ($)</th>
+              ${editable ? '<th class="row-del"></th>' : ''}
+            </tr></thead>
+            <tbody id="${mountId}-ext-body"></tbody>
+          </table>
+          <div class="toolbar">
+            ${editable ? `<button class="btn" id="${mountId}-ext-add">+ Agregar movimiento del extracto</button>` : '<span></span>'}
+            <div style="display:flex;align-items:center;gap:12px;">${statusEl(mountId+'-ext-status')}</div>
+          </div>
+          <div id="${mountId}-ext-check" style="margin:-2px 0 16px;"></div>
+
           <div class="subhead" style="margin-top:0;">Partidas conciliatorias (diferencias en tránsito)</div>
           <table class="ledger">
             <thead><tr>
@@ -5661,8 +5741,112 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         </div>
       `;
 
+      renderExtractoArchivo();
+      renderExtractoMovs();
       renderPartidas();
       wirePeriodoEvents(p, editable);
+    }
+
+    function renderExtractoArchivo(){
+      const p = getCurrentPeriodo();
+      if(!p) return;
+      const wrap = document.getElementById(mountId+'-ext-archivo-wrap');
+      if(!wrap) return;
+      const editable = isAdmin && !p.cerrado;
+      const tieneArchivo = !!p.extractoArchivoUrl;
+      wrap.innerHTML = `
+        ${tieneArchivo ? `
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+            <a href="${escapeHtml(p.extractoArchivoUrl)}" target="_blank" rel="noopener" class="btn ghost" style="text-decoration:none;">Ver extracto adjunto ↗</a>
+            <span style="font-size:12.5px;color:var(--muted);">${escapeHtml(p.extractoArchivoNombre||'')}</span>
+          </div>
+        ` : ''}
+        ${editable ? `
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <input type="file" id="${mountId}-ext-archivo-file" accept="application/pdf,image/*">
+            <span id="${mountId}-ext-archivo-status" style="font-size:12.5px;color:var(--muted);"></span>
+          </div>
+        ` : (!tieneArchivo ? `<div class="empty">Sin extracto adjunto.</div>` : '')}
+      `;
+      if(editable){
+        document.getElementById(mountId+'-ext-archivo-file').addEventListener('change', async (e)=>{
+          const file = e.target.files[0];
+          const statusEl2 = document.getElementById(mountId+'-ext-archivo-status');
+          if(!file) return;
+          const sizeMB = (file.size/1024/1024).toFixed(1);
+          if(file.size > 20*1024*1024){
+            statusEl2.textContent = `Este archivo pesa ${sizeMB} MB — es demasiado grande. Probá con un PDF más liviano o una foto en vez de varias páginas escaneadas en alta resolución.`;
+            statusEl2.style.color = 'var(--danger)';
+            return;
+          }
+          statusEl2.textContent = `Subiendo (${sizeMB} MB)... puede tardar unos segundos.`;
+          statusEl2.style.color = 'var(--brass)';
+          try{
+            const url = await window.uploadFileToDrive(file, currentUser ? currentUser.consorcio : '');
+            p.extractoArchivoUrl = url;
+            p.extractoArchivoNombre = file.name || '';
+            savePeriodos();
+            renderExtractoArchivo();
+          }catch(err){
+            console.error('Error al subir extracto bancario:', err);
+            statusEl2.textContent = 'No se pudo subir. Detalle: ' + (err && err.message ? err.message : 'error desconocido');
+            statusEl2.style.color = 'var(--danger)';
+          }
+        });
+      }
+    }
+
+    function renderExtractoMovs(){
+      const p = getCurrentPeriodo();
+      if(!p) return;
+      const body = document.getElementById(mountId+'-ext-body');
+      if(!body) return;
+      const editable = isAdmin && !p.cerrado;
+      body.innerHTML = '';
+      const movs = p.extractoMovs || [];
+      if(movs.length===0){
+        body.innerHTML = `<tr><td colspan="${editable?5:4}"><div class="empty">Sin movimientos del extracto cargados todavía.</div></td></tr>`;
+      } else {
+        movs.forEach((it,i)=>{
+          const tr = document.createElement('tr');
+          tr.setAttribute('data-idx', i);
+          const disabled = editable ? '' : 'disabled';
+          tr.innerHTML = `
+            <td><input type="text" data-field="fecha" value="${escapeHtml(it.fecha)}" placeholder="DD/MM/AAAA" ${disabled}></td>
+            <td><input type="text" data-field="concepto" value="${escapeHtml(it.concepto)}" ${disabled}></td>
+            <td class="num"><input type="text" data-field="ingreso" value="${escapeHtml(it.ingreso)}" placeholder="0" ${disabled}></td>
+            <td class="num"><input type="text" data-field="egreso" value="${escapeHtml(it.egreso)}" placeholder="0" ${disabled}></td>
+            ${editable ? `<td class="row-del"><button data-action="ext-del" title="Eliminar">✕</button></td>` : ''}
+          `;
+          body.appendChild(tr);
+        });
+      }
+      updateExtractoCheck();
+    }
+
+    function readExtractoMovs(){
+      const out = [];
+      document.querySelectorAll(`#${mountId}-ext-body tr[data-idx]`).forEach(tr=>{
+        out.push({
+          fecha: tr.querySelector('[data-field="fecha"]').value,
+          concepto: tr.querySelector('[data-field="concepto"]').value,
+          ingreso: tr.querySelector('[data-field="ingreso"]').value,
+          egreso: tr.querySelector('[data-field="egreso"]').value,
+        });
+      });
+      return out;
+    }
+
+    function updateExtractoCheck(){
+      const check = document.getElementById(mountId+'-ext-check');
+      if(!check) return;
+      const movs = document.getElementById(mountId+'-ext-body') ? readExtractoMovs() : [];
+      if(movs.length===0){
+        check.innerHTML = '';
+        return;
+      }
+      const sumaMovs = movs.reduce((acc,m)=> acc + num(m.ingreso) - num(m.egreso), 0);
+      check.innerHTML = `<p class="panel-note" style="margin:0;">Movimiento neto de los ${movs.length} ítems cargados del extracto: <b>${fmt(sumaMovs)}</b> (ingresos menos egresos del período — no es el saldo final, que se carga arriba).</p>`;
     }
 
     function renderPartidas(){
@@ -5757,6 +5941,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         if(el) p[f] = el.value;
       });
       if(document.getElementById(mountId+'-p-body')) p.partidas = readPartidas();
+      if(document.getElementById(mountId+'-ext-body')) p.extractoMovs = readExtractoMovs();
     }
 
     function savePeriodos(){
@@ -5766,6 +5951,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     function addPeriodo(){
       const np = blankPeriodo();
+      np.numero = periodos.length + 1;
       periodos.push(np);
       currentPeriodId = np.id;
       savePeriodos();
@@ -5827,6 +6013,26 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         if(lastInput) lastInput.focus();
       });
 
+      const extBody = document.getElementById(mountId+'-ext-body');
+      extBody.addEventListener('input', ()=>{ updateExtractoCheck(); schedulePSave(); });
+      extBody.addEventListener('click', e=>{
+        const b = e.target.closest('[data-action="ext-del"]');
+        if(b){
+          p.extractoMovs = readExtractoMovs();
+          p.extractoMovs.splice(+b.closest('tr').dataset.idx,1);
+          renderExtractoMovs();
+          schedulePSave();
+        }
+      });
+      document.getElementById(mountId+'-ext-add').addEventListener('click', ()=>{
+        p.extractoMovs = readExtractoMovs();
+        p.extractoMovs.push({fecha:'',concepto:'',ingreso:'',egreso:''});
+        renderExtractoMovs();
+        schedulePSave();
+        const lastInput = document.querySelector(`#${mountId}-ext-body tr:last-child input`);
+        if(lastInput) lastInput.focus();
+      });
+
       document.getElementById(mountId+'-p-cerrar').addEventListener('click', ()=>{
         if(!confirm('¿Cerrar y archivar esta conciliación? Va a quedar marcada como firmada por la administración y no se va a poder editar sin reabrirla.')) return;
         syncPeriodoFromDom();
@@ -5847,11 +6053,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       }
       el.innerHTML = `
         <table class="ledger">
-          <thead><tr><th>Período</th><th>Fecha de cierre del extracto</th><th>Estado</th><th>Archivada el</th><th></th></tr></thead>
+          <thead><tr><th>N°</th><th>Período</th><th>Fecha de cierre del extracto</th><th>Estado</th><th>Archivada el</th><th></th></tr></thead>
           <tbody>
             ${[...periodos].reverse().map(p=>{
               const ok = Math.abs(calcDiferencia(p)) < 0.01;
               return `<tr>
+                <td>${p.numero||'—'}</td>
                 <td>${escapeHtml(p.periodo||'(sin nombre)')}</td>
                 <td>${escapeHtml(p.fechaExtracto||'—')}</td>
                 <td><span class="badge ${p.cerrado ? (ok?'resuelto':'escalado') : 'pendiente'}">${p.cerrado ? (ok?'Archivada — Concilia':'Archivada — Con diferencia') : 'Borrador'}</span></td>
@@ -5924,11 +6131,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       doc.setTextColor(...COLOR_PRINCIPAL);
       doc.text('ADMINISTRACIÓN NAKEN', M, y); y+=6;
       doc.setFontSize(11);
-      doc.text('Hoja de Conciliación Bancaria', M, y); y+=5;
+      doc.text(`Hoja de Conciliación Bancaria N° ${p.numero||'—'}`, M, y); y+=5;
       doc.setFont('helvetica','normal');
       doc.setFontSize(9);
       doc.setTextColor(...COLOR_TEXTO);
-      doc.text('Registro de rendición mensual — apto para auditoría de Contador Público', M, y); y+=5;
+      doc.text('Registro de rendición mensual', M, y); y+=5;
       doc.text('Administrador: Lic. Sebastián R. Espeche - Mat. RPA 20066', M, y); y+=10;
 
       heading('DATOS DEL PERÍODO');
@@ -5937,8 +6144,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       doc.autoTable({
         ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
         body: [
-          ['Consorcio', nombreConsorcio||'—', 'Período', p.periodo||'—'],
-          ['Fecha de cierre del extracto', p.fechaExtracto||'—', 'Estado', p.cerrado ? 'Archivada' : 'Borrador'],
+          ['N° de conciliación', String(p.numero||'—'), 'Consorcio', nombreConsorcio||'—'],
+          ['Período', p.periodo||'—', 'Fecha de cierre del extracto', p.fechaExtracto||'—'],
+          ['Estado', p.cerrado ? 'Archivada' : 'Borrador', '', ''],
+        ]
+      });
+      y = doc.lastAutoTable.finalY + 8;
+
+      heading('DATOS DE LA CUENTA BANCARIA');
+      doc.autoTable({
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+        body: [
+          ['Banco', cuentaBancaria.banco||'—', 'Sucursal', cuentaBancaria.sucursal||'—'],
+          ['Tipo de cuenta', cuentaBancaria.tipoCuenta||'—', 'N° de cuenta', cuentaBancaria.numeroCuenta||'—'],
+          ['CBU', cuentaBancaria.cbu||'—', 'Alias', cuentaBancaria.alias||'—'],
         ]
       });
       y = doc.lastAutoTable.finalY + 8;
@@ -5954,6 +6173,55 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         ]
       });
       y = doc.lastAutoTable.finalY + 8;
+
+      heading('MOVIMIENTOS DEL LIBRO BANCO DEL PERÍODO');
+      function parseFechaAR(str){
+        const m = (str||'').match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+        if(!m) return null;
+        const d = new Date(+m[3]<100?2000+ +m[3]: +m[3], +m[2]-1, +m[1]);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      const fechaCierreP = parseFechaAR(p.fechaExtracto);
+      const idxPeriodo = periodos.findIndex(x=>x.id===p.id);
+      const periodoAnterior = idxPeriodo>0 ? periodos[idxPeriodo-1] : null;
+      const fechaDesde = periodoAnterior ? parseFechaAR(periodoAnterior.fechaExtracto) : null;
+      const movsDelPeriodo = movRows.filter(r=>{
+        const f = parseFechaAR(r.fecha);
+        if(!fechaCierreP || !f) return true;
+        if(fechaDesde && f <= fechaDesde) return false;
+        return f <= fechaCierreP;
+      });
+      if(movsDelPeriodo.length===0){
+        parrafo('No hay movimientos del Libro Banco identificados para este período.');
+      } else {
+        let saldoAcum = 0;
+        doc.autoTable({
+          ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', styles:{...AUTOTABLE_BASE.styles, fontSize:8.5},
+          head:[['Fecha','Concepto','Ingreso','Egreso']],
+          body: movsDelPeriodo.map(r=>{
+            saldoAcum += num(r.ingreso) - num(r.egreso);
+            return [r.fecha||'—', r.concepto||'—', num(r.ingreso)?fmt(num(r.ingreso)):'—', num(r.egreso)?fmt(num(r.egreso)):'—'];
+          })
+        });
+        y = doc.lastAutoTable.finalY + 8;
+      }
+
+      heading('MOVIMIENTOS SEGÚN EXTRACTO BANCARIO DEL PERÍODO');
+      if(!p.extractoMovs || p.extractoMovs.length===0){
+        parrafo('No se cargaron movimientos del extracto bancario para este período.');
+      } else {
+        doc.autoTable({
+          ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', styles:{...AUTOTABLE_BASE.styles, fontSize:8.5},
+          head:[['Fecha','Concepto','Ingreso','Egreso']],
+          body: p.extractoMovs.map(r=>[r.fecha||'—', r.concepto||'—', num(r.ingreso)?fmt(num(r.ingreso)):'—', num(r.egreso)?fmt(num(r.egreso)):'—'])
+        });
+        y = doc.lastAutoTable.finalY + 8;
+      }
+      if(p.extractoArchivoUrl){
+        parrafo(`Extracto bancario original adjunto en la aplicación: ${p.extractoArchivoNombre||'(ver archivo)'} — ${p.extractoArchivoUrl}`, {size:8});
+      } else {
+        parrafo('No hay un archivo del extracto bancario adjunto para este período en la aplicación.', {size:8});
+      }
 
       heading('PASO 2 — PARTIDAS EN TRÁNSITO');
       if(!p.partidas || p.partidas.length===0){
@@ -5984,17 +6252,26 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
       heading('PASO 4 — RESULTADO Y ARCHIVO DE LA CONCILIACIÓN');
       parrafo(`Estado: ${ok ? 'CONCILIA — el saldo del Libro Banco ajustado por las partidas en tránsito coincide con el saldo del extracto bancario.' : 'NO CONCILIA — queda una diferencia de '+fmt(diferencia)+' sin explicar, a revisar antes de archivar.'}`, {bold:true, acento: !ok});
-      parrafo('La presente hoja de conciliación bancaria fue elaborada por la administración del consorcio a partir del Libro Banco y el extracto bancario del período indicado, como constancia de control de integridad de fondos. Queda archivada en el legajo del consorcio, adjunta a la rendición mensual, y a disposición para su revisión por parte de un Contador Público.', {size:8.5});
+      parrafo('La presente hoja de conciliación bancaria fue elaborada por la administración del consorcio a partir del Libro Banco y el extracto bancario del período indicado, como constancia de control de integridad de fondos. Queda archivada en el legajo del consorcio, adjunta a la rendición mensual.', {size:8.5});
       y += 3;
       parrafo(CONCILIACION_ADMIN_FIRMA, {bold:true, size:9});
 
-      doc.save(`Conciliacion_${(p.periodo||'periodo').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
+      doc.save(`Conciliacion_N${String(p.numero||0).padStart(3,'0')}_${(p.periodo||'periodo').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
     }
 
     /* ----- Carga inicial ----- */
-    Promise.all([loadData(movKey, []), loadData(concKey, [])]).then(([mv, pr])=>{
+    Promise.all([loadData(movKey, []), loadData(concKey, []), loadData(CUENTA_KEY, {})]).then(([mv, pr, cta])=>{
       movRows = mv;
       periodos = pr;
+      cuentaBancaria = cta || {};
+      let migrado = false;
+      periodos.forEach((p,i)=>{
+        if(!p.numero){ p.numero = i+1; migrado = true; }
+        if(p.extractoMovs === undefined){ p.extractoMovs = []; }
+        if(p.extractoArchivoUrl === undefined){ p.extractoArchivoUrl = ''; p.extractoArchivoNombre = ''; }
+      });
+      if(migrado && isAdmin) saveData(concKey, periodos);
+      renderCuenta();
       renderMov();
       if(periodos.length>0) currentPeriodId = periodos[periodos.length-1].id;
       renderConcWrap();
