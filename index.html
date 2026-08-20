@@ -1164,7 +1164,7 @@
         <div class="panel-head">
           <span class="eyebrow">Consorcistas</span>
           <h2>Conflictos entre vecinos</h2>
-          <p class="panel-note" style="max-width:none;">Un espacio formal para canalizar reclamos entre unidades (ruidos, filtraciones, mascotas, espacios comunes, convivencia) antes de que escalen. Cada caso muestra el marco legal general aplicable y queda documentado con fecha y evidencia.</p>
+          <p class="panel-note" style="max-width:none;">Un espacio formal para canalizar reclamos entre unidades (ruidos, filtraciones, mascotas, espacios comunes, convivencia) antes de que escalen. La administración interviene como intermediaria — el denunciado nunca ve la denuncia original, solo la comunicación de la administración, hasta que el caso pasa a una instancia formal.</p>
         </div>
         <div id="conflictos-mount"></div>
       </section>
@@ -2188,7 +2188,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     return [];
   }
   function conflictoSig(c){
-    return [c.estado, c.notificacion||'', c.descargo||'', c.respuestaAdminDescargo||'', c.mediacionLink||'', c.acuerdoTexto||'', c.decisionDenunciante||'', c.resultadoReunion||''].join('§');
+    return [c.estado, c.notificacion||'', c.descargo||'', c.descargoTipo||'', c.formalizada?'1':'0', c.mediacionLink||'', c.decisionDenunciante||'', c.decisionDenunciado||'', c.resultadoReunion||''].join('§');
   }
   async function refreshConflictosBadge(){
     try{
@@ -2376,10 +2376,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     heading('PROCESO DE MEDIACIÓN — REGISTRO DE INSTANCIAS');
     const instancias = [];
-    if(c.notificacion) instancias.push(['Instancia 1 — Notificación', c.fecha||'—', 'Notificación formal a la unidad denunciada con el marco normativo aplicable.']);
-    if(c.descargo) instancias.push(['Instancia 2 — Descargo', c.descargoFecha||'—', c.descargo]);
-    if(c.respuestaAdminDescargo) instancias.push(['Instancia 3 — Respuesta de la administración', c.respuestaAdminFecha||'—', c.respuestaAdminDescargo]);
-    if(c.mediacionFecha || c.mediacionLink) instancias.push(['Instancia de mediación', c.mediacionFecha||'—', c.mediacionLink||'—']);
+    if(c.notificacion) instancias.push(['Instancia 1 — Comunicación de la administración', c.fecha||'—', c.notificacion]);
+    if(c.descargo) instancias.push([`Instancia 2 — Descargo (${c.descargoTipo==='admite'?'reconoce la situación':'no está de acuerdo'})`, c.descargoFecha||'—', c.descargo]);
+    if(c.formalizada) instancias.push(['Instancia 3 — Formalización de la mediación', '—', 'Al no llegar a una resolución directa, la administración habilitó a ambas partes a ver la denuncia completa y decidir si continuaban con una instancia formal o desistían.']);
+    if(c.decisionDenunciante) instancias.push(['Decisión del denunciante', c.decisionDenuncianteFecha||'—', c.decisionDenunciante]);
+    if(c.decisionDenunciado) instancias.push(['Decisión del denunciado', c.decisionDenunciadoFecha||'—', c.decisionDenunciado]);
+    if(c.mediacionFecha || c.mediacionLink) instancias.push(['Reunión de mediación', c.mediacionFecha||'—', c.mediacionLink||'—']);
     if(instancias.length===0){
       parrafo('Todavía no se registraron instancias de mediación para este caso.');
     } else {
@@ -2393,10 +2395,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
 
     heading('RESULTADO DEL PROCESO');
-    parrafo('Acuerdos y compromisos asumidos:', {bold:true});
-    parrafo(c.acuerdoTexto || '(sin acuerdo cargado todavía)');
-    parrafo(`Aceptación Parte A (denunciante): ${c.aceptoDenunciante || '— pendiente —'}`);
-    parrafo(`Aceptación Parte B (denunciada): ${c.aceptoDenunciado || '— pendiente —'}`);
+    parrafo(`Estado final: ${c.estado||'—'}`, {bold:true});
+    if(c.resultadoReunion) parrafo('Resultado de la reunión de mediación: ' + c.resultadoReunion);
+    if(c.cierreMotivo) parrafo('Motivo del cierre: ' + c.cierreMotivo);
+    if(!c.resultadoReunion && !c.cierreMotivo) parrafo('(sin resultado cargado todavía)');
 
     heading('MARCO DE LA MEDIACIÓN — DECLARACIÓN DE BUENA FE Y NO ESCALAMIENTO');
     parrafo('Las partes que suscriben la presente planilla declaran haber participado voluntariamente del proceso de mediación conducido por la administración del consorcio, con el objetivo de resolver el conflicto descripto por la vía del diálogo, evitando su escalada a instancias administrativas, judiciales o de convivencia que puedan afectar la paz social del edificio.', {size:8.5});
@@ -2560,11 +2562,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         aceptoDenunciante: '',
         aceptoDenunciado: '',
         descargo: '',
+        descargoTipo: '',
         descargoFecha: '',
         respuestaAdminDescargo: '',
         respuestaAdminFecha: '',
+        formalizada: false,
         decisionDenunciante: '',
         decisionDenuncianteFecha: '',
+        decisionDenunciado: '',
+        decisionDenunciadoFecha: '',
         resultadoReunion: '',
         resultadoReunionFecha: ''
       });
@@ -2582,10 +2588,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     });
 
     function badgeClass(estado){
-      if(estado==='Resuelto' || estado==='Acuerdo firmado') return 'resuelto';
-      if(estado==='Escalado') return 'escalado';
-      if(estado==='Acuerdo propuesto' || estado==='Conforme — a cerrar') return 'acuerdo';
-      if(estado==='Notificado' || estado==='En mediación' || estado==='Descargo recibido' || estado==='Respuesta enviada' || estado==='Solicita reunión por Zoom' || estado==='Reunión realizada') return 'proceso';
+      if(estado==='Resuelto') return 'resuelto';
+      if(estado==='Cerrado sin acuerdo' || estado==='Escalado') return 'escalado';
+      if(estado==='Notificado' || estado==='Descargo recibido' || estado==='Mediación formal') return 'proceso';
       return 'pendiente';
     }
 
@@ -2598,7 +2603,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const listEl = document.getElementById('cf-list');
       const visibles = role==='admin'
         ? casos
-        : casos.filter(c => currentUser && (c.unidadDenunciante===currentUser.unidad || c.unidadDenunciada===currentUser.unidad));
+        : casos.filter(c => {
+            if(!currentUser) return false;
+            if(c.unidadDenunciante===currentUser.unidad) return true; // el denunciante siempre ve su propio caso
+            if(c.unidadDenunciada===currentUser.unidad) return c.estado!=='Pendiente'; // el denunciado recién ve algo cuando la admin lo notifica
+            return false;
+          });
 
       if(visibles.length===0){
         listEl.innerHTML = `<div class="empty">No hay casos cargados${role!=='admin' ? ' que te involucren' : ''}.</div>`;
@@ -2608,6 +2618,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       listEl.innerHTML = '';
       visibles.slice().reverse().forEach(c=>{
         const reincidencias = casos.filter(x=>x.unidadDenunciada===c.unidadDenunciada && x.tipo===c.tipo).length;
+        const esDenunciante = role==='propietario' && currentUser && currentUser.unidad===c.unidadDenunciante;
+        const esDenunciado = role==='propietario' && currentUser && currentUser.unidad===c.unidadDenunciada;
+        const puedeVerDenunciaCompleta = role==='admin' || esDenunciante || (esDenunciado && c.formalizada);
         const card = document.createElement('div');
         card.className = 'card';
         card.innerHTML = `
@@ -2615,137 +2628,134 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <div>
               <b>${escapeHtml(c.tipo)}</b>
               <div class="card-meta">${escapeHtml(c.fecha)} · Denuncia: unidad ${escapeHtml(c.unidadDenunciante)} → unidad ${escapeHtml(c.unidadDenunciada)}
-              ${reincidencias>1 ? ` · <span style="color:var(--danger);font-weight:600;">Reincidencia (${reincidencias}° caso de este tipo)</span>` : ''}</div>
+              ${role==='admin' && reincidencias>1 ? ` · <span style="color:var(--danger);font-weight:600;">Reincidencia (${reincidencias}° caso de este tipo)</span>` : ''}</div>
             </div>
             <span class="badge ${badgeClass(c.estado)}">${escapeHtml(c.estado)}</span>
           </div>
-          <div style="font-size:13.5px;margin:6px 0;">${escapeHtml(c.descripcion || '(sin descripción)')}</div>
-          ${c.fechaHecho ? `<div class="card-meta">Hecho ocurrido: ${escapeHtml(c.fechaHecho)}</div>` : ''}
-          ${c.evidencia ? `<a href="${escapeHtml(c.evidencia)}" target="_blank" rel="noopener" class="btn ghost" style="display:inline-block;margin-top:6px;text-decoration:none;font-size:11px;padding:6px 10px;">Ver evidencia ↗</a>` : ''}
-
-          <details style="margin-top:10px;">
-            <summary style="cursor:pointer;font-size:12px;color:var(--navy);">Ver marco legal aplicable</summary>
-            <p style="font-size:12.5px;margin-top:6px;">${escapeHtml(MARCO_NORMATIVO[c.tipo])}</p>
-          </details>
+          ${puedeVerDenunciaCompleta ? `
+            <div style="font-size:13.5px;margin:6px 0;">${escapeHtml(c.descripcion || '(sin descripción)')}</div>
+            ${c.fechaHecho ? `<div class="card-meta">Hecho ocurrido: ${escapeHtml(c.fechaHecho)}</div>` : ''}
+            ${c.evidencia ? `<a href="${escapeHtml(c.evidencia)}" target="_blank" rel="noopener" class="btn ghost" style="display:inline-block;margin-top:6px;text-decoration:none;font-size:11px;padding:6px 10px;">Ver evidencia ↗</a>` : ''}
+            <details style="margin-top:10px;">
+              <summary style="cursor:pointer;font-size:12px;color:var(--navy);">Ver marco legal aplicable</summary>
+              <p style="font-size:12.5px;margin-top:6px;">${escapeHtml(MARCO_NORMATIVO[c.tipo])}</p>
+            </details>
+          ` : esDenunciado ? `
+            <p class="panel-note" style="margin:8px 0 0;font-size:12.5px;">Por privacidad, todavía no se muestran los detalles de la denuncia acá — la administración va a comunicarte lo que corresponda, con la presunción de inocencia de tu lado, antes de exponer cualquier detalle.</p>
+          ` : ''}
 
           ${role==='admin' ? `
             <span class="card-field-label">Estado del caso</span>
             <select class="cf-field" data-id="${c.id}" data-f="estado">
-              ${['Pendiente','Notificado','Descargo recibido','Respuesta enviada','Conforme — a cerrar','Solicita reunión por Zoom','Reunión realizada','En mediación','Acuerdo propuesto','Acuerdo firmado','Resuelto','Escalado'].map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join('')}
+              ${['Pendiente','Notificado','Descargo recibido','Mediación formal','Resuelto','Cerrado sin acuerdo','Escalado'].map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join('')}
             </select>
 
-            <span class="card-field-label">Texto de notificación (editable)</span>
-            <textarea class="cf-field" data-id="${c.id}" data-f="notificacion" rows="4">${escapeHtml(c.notificacion || plantillaNotificacion(c))}</textarea>
-            <div class="toolbar" style="margin:6px 0;"><span></span><button class="btn ghost" data-action="copiar" data-copy="notif-${c.id}" style="font-size:11px;">Copiar texto</button></div>
-
-            <span class="card-field-label">Link de mediación virtual (Meet/Zoom)</span>
-            <input type="text" class="cf-field" data-id="${c.id}" data-f="mediacionLink" value="${escapeHtml(c.mediacionLink)}" placeholder="https://meet.google.com/...">
-            <span class="card-field-label">Fecha propuesta de mediación</span>
-            <input type="text" class="cf-field" data-id="${c.id}" data-f="mediacionFecha" value="${escapeHtml(c.mediacionFecha)}" placeholder="DD/MM/AAAA HH:MM">
-
-            <span class="card-field-label">Términos del acuerdo</span>
-            <textarea class="cf-field" data-id="${c.id}" data-f="acuerdoTexto" rows="3" placeholder="Ej: El propietario de la unidad 5°A se compromete a no usar el lavarropas después de las 22hs.">${escapeHtml(c.acuerdoTexto)}</textarea>
-
-            ${c.descargo ? `
-              <div style="margin-top:16px;padding:12px 14px;background:var(--paper,#faf8f3);border-left:3px solid var(--gold);border-radius:4px;">
-                <span class="card-field-label">Descargo de la unidad ${escapeHtml(c.unidadDenunciada)}${c.descargoFecha ? ' — '+escapeHtml(c.descargoFecha) : ''}</span>
-                <div style="font-size:13.5px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.descargo)}</div>
-              </div>
-              <span class="card-field-label" style="margin-top:12px;">Tu respuesta al descargo</span>
-              <textarea class="cf-field" data-id="${c.id}" data-f="respuestaAdminDescargo" rows="4" placeholder="Explicá tu decisión — esto se le muestra al denunciante para que diga si está de acuerdo o prefiere pasar a una reunión por Zoom.">${escapeHtml(c.respuestaAdminDescargo||'')}</textarea>
-              <div class="toolbar" style="margin-top:6px;"><span></span><button class="btn primary" data-action="responder-descargo" data-id="${c.id}" style="font-size:12px;">Enviar respuesta</button></div>
+            ${!c.notificacion ? `
+              <span class="card-field-label">Tu comunicación al denunciado</span>
+              <p class="panel-note" style="margin:2px 0 8px;font-size:12px;">Escribila con tus propias palabras — sin citar ni transcribir lo que puso el denunciante. La idea es resolver la situación evitando una confrontación directa entre vecinos, con la presunción de inocencia del denunciado.</p>
+              <textarea id="cf-notif-${c.id}" rows="4" placeholder="Ej: Se recibió un comentario sobre ruidos molestos provenientes de su unidad en horario nocturno. Le pedimos que revise la situación y nos cuente su versión." style="width:100%;box-sizing:border-box;border:1px solid var(--line,#ccc);border-radius:5px;padding:9px 10px;font-family:'Inter',sans-serif;font-size:13.5px;"></textarea>
+              <div class="toolbar" style="margin-top:6px;"><span></span><button class="btn primary" data-action="notificar" data-id="${c.id}" style="font-size:12px;">Enviar notificación al denunciado</button></div>
             ` : `
-              <p class="panel-note" style="margin-top:14px;font-size:12px;">Todavía no hay descargo de la unidad ${escapeHtml(c.unidadDenunciada)}. Va a poder escribirlo apenas el caso quede en estado "Notificado" o posterior.</p>
+              <span class="card-field-label">Comunicación enviada al denunciado</span>
+              <div style="font-size:13.5px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.notificacion)}</div>
             `}
 
-            ${c.decisionDenunciante ? `
-              <div style="margin-top:16px;padding:12px 14px;background:${c.decisionDenunciante.includes('Zoom')?'#FBEFE3':'#EAF6EC'};border-left:3px solid ${c.decisionDenunciante.includes('Zoom')?'var(--gold)':'var(--ok)'};border-radius:4px;">
-                <span class="card-field-label">Decisión de la unidad ${escapeHtml(c.unidadDenunciante)} (denunciante)${c.decisionDenuncianteFecha ? ' — '+escapeHtml(c.decisionDenuncianteFecha) : ''}</span>
-                <div style="font-size:13.5px;margin-top:4px;">${escapeHtml(c.decisionDenunciante)}</div>
+            ${c.descargo ? `
+              <div style="margin-top:16px;padding:12px 14px;background:${c.descargoTipo==='admite'?'#EAF6EC':'#FBEAEA'};border-left:3px solid ${c.descargoTipo==='admite'?'var(--ok)':'var(--danger)'};border-radius:4px;">
+                <span class="card-field-label" style="margin-top:0;">Descargo de la unidad ${escapeHtml(c.unidadDenunciada)} — ${c.descargoTipo==='admite'?'Reconoce la situación':'No está de acuerdo'}${c.descargoFecha ? ' · '+escapeHtml(c.descargoFecha) : ''}</span>
+                ${c.descargo ? `<div style="font-size:13.5px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.descargo)}</div>` : ''}
               </div>
-              ${c.decisionDenunciante==='De acuerdo' && c.estado!=='Resuelto' ? `
-                <div class="toolbar" style="margin-top:8px;"><span></span><button class="btn primary" data-action="cerrar-caso" data-id="${c.id}" style="font-size:12px;">Cerrar caso</button></div>
+              ${c.descargoTipo==='admite' && c.estado!=='Resuelto' && c.estado!=='Cerrado sin acuerdo' ? `
+                <div class="toolbar" style="margin-top:8px;"><span></span><button class="btn primary" data-action="cerrar-favorable" data-id="${c.id}" style="font-size:12px;">Cerrar caso (responsabilidad admitida)</button></div>
               ` : ''}
-            ` : (c.respuestaAdminDescargo ? `<p class="panel-note" style="margin-top:10px;font-size:12px;">Esperando que la unidad ${escapeHtml(c.unidadDenunciante)} diga si está de acuerdo o prefiere una reunión por Zoom.</p>` : '')}
+              ${c.descargoTipo==='niega' && !c.formalizada ? `
+                <p class="panel-note" style="margin:8px 0 0;font-size:12px;">El denunciado no está de acuerdo. Si querés avanzar con una instancia formal, esto habilita a ambas partes a ver la denuncia completa y decidir si continúan o desisten.</p>
+                <div class="toolbar" style="margin-top:6px;"><span></span><button class="btn primary" data-action="formalizar" data-id="${c.id}" style="font-size:12px;">Formalizar mediación</button></div>
+              ` : ''}
+            ` : `
+              <p class="panel-note" style="margin-top:14px;font-size:12px;">Todavía no hay descargo de la unidad ${escapeHtml(c.unidadDenunciada)}.</p>
+            `}
 
-            ${c.decisionDenunciante && c.decisionDenunciante.includes('Zoom') ? `
-              <span class="card-field-label" style="margin-top:12px;">Reunión por Zoom (convocala acá)</span>
-              <input type="text" class="cf-field" data-id="${c.id}" data-f="mediacionLink" value="${escapeHtml(c.mediacionLink)}" placeholder="https://zoom.us/j/...">
-              <span class="card-field-label">Fecha y hora de la reunión</span>
-              <input type="text" class="cf-field" data-id="${c.id}" data-f="mediacionFecha" value="${escapeHtml(c.mediacionFecha)}" placeholder="DD/MM/AAAA HH:MM">
+            ${c.formalizada ? `
+              ${c.decisionDenunciante ? `<div class="card-meta" style="margin-top:10px;">Decisión del denunciante (unidad ${escapeHtml(c.unidadDenunciante)}): <b>${escapeHtml(c.decisionDenunciante)}</b> — ${escapeHtml(c.decisionDenuncianteFecha)}</div>` : `<p class="panel-note" style="margin-top:10px;font-size:12px;">Esperando la decisión del denunciante (¿continuar o desistir?).</p>`}
+              ${c.decisionDenunciado ? `<div class="card-meta" style="margin-top:2px;">Decisión del denunciado (unidad ${escapeHtml(c.unidadDenunciada)}): <b>${escapeHtml(c.decisionDenunciado)}</b> — ${escapeHtml(c.decisionDenuncianteFecha ? c.decisionDenunciadoFecha : c.decisionDenunciadoFecha)}</div>` : `<p class="panel-note" style="margin-top:2px;font-size:12px;">Esperando la decisión del denunciado (¿continuar o desistir?).</p>`}
 
-              ${c.mediacionLink && c.mediacionFecha ? `
-                <span class="card-field-label" style="margin-top:12px;">Resultado de la reunión</span>
-                <p class="panel-note" style="margin:2px 0 6px;font-size:12px;">Se habilita una vez convocada la reunión. Al enviarlo, queda disponible para que ambas unidades lo vean y descarguen la planilla en PDF.</p>
-                <textarea id="cf-resultado-${c.id}" rows="4" style="width:100%;box-sizing:border-box;border:1px solid var(--line,#ccc);border-radius:5px;padding:9px 10px;font-family:'Inter',sans-serif;font-size:13.5px;" placeholder="Qué se acordó en la reunión...">${escapeHtml(c.resultadoReunion||'')}</textarea>
-                <div class="toolbar" style="margin-top:6px;"><span></span><button class="btn primary" data-action="cerrar-con-resultado" data-id="${c.id}" style="font-size:12px;">Guardar resultado y cerrar caso</button></div>
-                ${c.resultadoReunion ? `<div class="card-meta" style="margin-top:4px;">Guardado ${escapeHtml(c.resultadoReunionFecha||'')} — visible para ambas unidades.</div>` : ''}
-              ` : `
-                <p class="panel-note" style="margin-top:6px;font-size:12px;">Completá el link y la fecha de la reunión para habilitar el resultado.</p>
-              `}
+              ${c.decisionDenunciante==='Continuar' && c.decisionDenunciado==='Continuar' ? `
+                <span class="card-field-label" style="margin-top:12px;">Reunión por Zoom (convocala acá)</span>
+                <input type="text" class="cf-field" data-id="${c.id}" data-f="mediacionLink" value="${escapeHtml(c.mediacionLink)}" placeholder="https://zoom.us/j/...">
+                <span class="card-field-label">Fecha y hora de la reunión</span>
+                <input type="text" class="cf-field" data-id="${c.id}" data-f="mediacionFecha" value="${escapeHtml(c.mediacionFecha)}" placeholder="DD/MM/AAAA HH:MM">
+                ${c.mediacionLink && c.mediacionFecha ? `
+                  <span class="card-field-label" style="margin-top:12px;">Resultado de la reunión</span>
+                  <textarea id="cf-resultado-${c.id}" rows="4" style="width:100%;box-sizing:border-box;border:1px solid var(--line,#ccc);border-radius:5px;padding:9px 10px;font-family:'Inter',sans-serif;font-size:13.5px;" placeholder="Qué se acordó en la reunión...">${escapeHtml(c.resultadoReunion||'')}</textarea>
+                  <div class="toolbar" style="margin-top:6px;"><span></span><button class="btn primary" data-action="cerrar-con-resultado" data-id="${c.id}" style="font-size:12px;">Guardar resultado y cerrar caso</button></div>
+                ` : `<p class="panel-note" style="margin-top:6px;font-size:12px;">Completá el link y la fecha para habilitar el resultado.</p>`}
+              ` : ''}
+
+              ${c.estado==='Cerrado sin acuerdo' ? `<p class="panel-note" style="margin-top:10px;font-size:12px;"><b>Motivo del cierre:</b> ${escapeHtml(c.cierreMotivo||'')}</p>` : ''}
             ` : ''}
+
             <div class="toolbar" style="margin-top:16px;border-top:1px solid var(--gray-200);padding-top:12px;">
               <span></span>
-              <button class="btn ghost" data-action="pdf-mediacion" data-id="${c.id}" style="font-size:12px;">Generar planilla de mediación (PDF) ↓</button>
+              <button class="btn ghost" data-action="pdf-mediacion" data-id="${c.id}" style="font-size:12px;">Generar acta de mediación (PDF) ↓</button>
             </div>
           ` : `
-            ${c.estado==='Notificado' || c.estado==='Descargo recibido' || c.estado==='Respuesta enviada' || c.estado==='Conforme — a cerrar' || c.estado==='Solicita reunión por Zoom' || c.estado==='Reunión realizada' || c.estado==='En mediación' || c.estado==='Acuerdo propuesto' || c.estado==='Acuerdo firmado' || c.estado==='Resuelto' ? `
-              <span class="card-field-label">Comunicación de la administración</span>
-              <div style="font-size:13px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.notificacion || plantillaNotificacion(c))}</div>
-            ` : ''}
-            ${c.acuerdoTexto ? `
-              <span class="card-field-label">Términos del acuerdo propuesto</span>
-              <div style="font-size:13px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.acuerdoTexto)}</div>
-            ` : ''}
+            ${esDenunciado ? `
+              ${c.notificacion ? `
+                <span class="card-field-label">Comunicación de la administración</span>
+                <div style="font-size:13px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.notificacion)}</div>
+              ` : ''}
 
-            ${currentUser && currentUser.unidad===c.unidadDenunciada && (c.estado==='Notificado' || c.estado==='Descargo recibido' || c.estado==='Respuesta enviada' || c.estado==='En mediación' || c.estado==='Acuerdo propuesto' || c.estado==='Acuerdo firmado') ? `
-              <div style="margin-top:16px;padding:12px 14px;background:var(--paper,#faf8f3);border-left:3px solid var(--gold);border-radius:4px;">
-                <span class="card-field-label">Tu descargo</span>
-                <p class="panel-note" style="margin:4px 0 8px;">Se te notificó esta incidencia. Tenés derecho a explicar tu versión antes de que la administración avance con cualquier decisión — contá qué pasó, si no volverá a repetirse, o cualquier aclaración que consideres necesaria.</p>
-                ${c.descargo ? `
-                  <div style="font-size:13.5px;white-space:pre-wrap;">${escapeHtml(c.descargo)}</div>
-                  <div class="card-meta" style="margin-top:4px;">Enviado ${escapeHtml(c.descargoFecha||'')}</div>
-                  ${c.respuestaAdminDescargo ? `
-                    <span class="card-field-label" style="margin-top:12px;">Respuesta de la administración</span>
-                    <div style="font-size:13.5px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.respuestaAdminDescargo)}</div>
-                  ` : `<p class="panel-note" style="margin:8px 0 0;font-size:12px;">La administración todavía no respondió tu descargo.</p>`}
-                ` : `
-                  <textarea id="cf-descargo-${c.id}" rows="6" style="width:100%;box-sizing:border-box;border:1px solid var(--line,#ccc);border-radius:5px;padding:9px 10px;font-family:'Inter',sans-serif;font-size:13.5px;" placeholder="Escribí tu descargo acá…"></textarea>
-                  <div class="toolbar" style="margin-top:8px;"><span></span><button class="btn primary" data-action="enviar-descargo" data-id="${c.id}" style="font-size:12px;">Enviar descargo</button></div>
-                `}
-              </div>
-            ` : ''}
-
-            ${currentUser && currentUser.unidad===c.unidadDenunciante && c.respuestaAdminDescargo && !c.decisionDenunciante ? `
-              <div style="margin-top:16px;padding:12px 14px;background:var(--paper,#faf8f3);border-left:3px solid var(--gold);border-radius:4px;">
-                ${!(c.estado==='Notificado' || c.estado==='Descargo recibido') ? `
-                  <span class="card-field-label">Respuesta de la administración</span>
-                  <div style="font-size:13.5px;white-space:pre-wrap;margin:4px 0 10px;">${escapeHtml(c.respuestaAdminDescargo)}</div>
-                ` : ''}
-                <span class="card-field-label">¿Estás de acuerdo con la respuesta de la administración?</span>
-                <div class="toolbar" style="margin-top:8px;gap:10px;"><span></span>
-                  <button class="btn ghost" data-action="decision-zoom" data-id="${c.id}" style="font-size:12px;">Prefiero una reunión por Zoom</button>
-                  <button class="btn primary" data-action="decision-acuerdo" data-id="${c.id}" style="font-size:12px;">Sí, estoy de acuerdo</button>
+              ${!c.descargo ? `
+                <div class="new-ticket" style="margin-top:14px;">
+                  <p style="margin:0 0 8px;">Se te comunicó una situación vinculada a tu unidad. Tenés derecho a hacer tu descargo antes de que se tome cualquier decisión — con presunción de inocencia de tu lado.</p>
+                  <p class="panel-note" style="margin:0 0 10px;font-size:12px;">Si reconocés lo sucedido y te comprometés a que no se repita, elegilo así: evita que esto escale a una instancia formal. Si no estás de acuerdo, contá tu versión.</p>
+                  <textarea id="cf-descargo-${c.id}" rows="4" placeholder="Contá tu versión, o simplemente confirmá tu compromiso a que no se repita (opcional)..."></textarea>
+                  <div class="toolbar" style="margin-top:10px;gap:10px;"><span></span>
+                    <button class="btn ghost" data-action="descargo-niega" data-id="${c.id}" style="font-size:12px;">No estoy de acuerdo</button>
+                    <button class="btn primary" data-action="descargo-admite" data-id="${c.id}" style="font-size:12px;">Reconozco la situación</button>
+                  </div>
                 </div>
-              </div>
-            ` : ''}
-            ${c.decisionDenunciante ? `
-              <div class="card-meta" style="margin-top:8px;">Tu decisión: <b>${escapeHtml(c.decisionDenunciante)}</b>${c.decisionDenuncianteFecha ? ' — '+escapeHtml(c.decisionDenuncianteFecha) : ''}</div>
+              ` : `
+                <div class="card-meta" style="margin-top:8px;">Tu descargo (${c.descargoTipo==='admite'?'reconociste la situación':'no estuviste de acuerdo'}) — ${escapeHtml(c.descargoFecha)}</div>
+                ${c.descargoTipo==='admite' ? `<p class="panel-note" style="margin-top:6px;font-size:12.5px;">Gracias por tu respuesta. La administración va a dar por cerrado el caso.</p>` : (!c.formalizada ? `<p class="panel-note" style="margin-top:6px;font-size:12.5px;">Tu respuesta fue enviada a la administración. Te van a contactar con los próximos pasos.</p>` : '')}
+              `}
             ` : ''}
 
-            ${c.mediacionLink ? `<div style="margin-top:8px;"><span class="card-field-label">Reunión por Zoom</span><br>${escapeHtml(c.mediacionFecha)} — <a href="${escapeHtml(c.mediacionLink)}" target="_blank" rel="noopener">Unirme ↗</a></div>` : ''}
-            ${c.resultadoReunion ? `
-              <span class="card-field-label" style="margin-top:8px;">Resultado de la reunión</span>
-              <div style="font-size:13px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.resultadoReunion)}</div>
+            ${esDenunciante ? `
+              ${c.estado==='Pendiente' ? `<p class="panel-note" style="margin-top:8px;font-size:12.5px;">Tu reclamo está siendo evaluado por la administración.</p>` : ''}
+              ${c.estado==='Notificado' && !c.descargo ? `<p class="panel-note" style="margin-top:8px;font-size:12.5px;">La administración ya se comunicó con la otra unidad. Te vamos a mantener al tanto.</p>` : ''}
+              ${c.descargo && c.descargoTipo==='admite' ? `<p class="panel-note" style="margin-top:8px;font-size:12.5px;">La otra unidad reconoció la situación y se comprometió a que no se repita.</p>` : ''}
+              ${c.descargo && c.descargoTipo==='niega' && !c.formalizada ? `<p class="panel-note" style="margin-top:8px;font-size:12.5px;">La otra unidad no está de acuerdo con lo informado. La administración está evaluando los próximos pasos.</p>` : ''}
             ` : ''}
-            ${c.estado==='Resuelto' ? `
+
+            ${c.formalizada ? `
+              ${(esDenunciante && !c.decisionDenunciante) || (esDenunciado && !c.decisionDenunciado) ? `
+                <div style="margin-top:14px;padding:12px 14px;background:var(--paper,#faf8f3);border-left:3px solid var(--gold);border-radius:4px;">
+                  <span class="card-field-label" style="margin-top:0;">¿Querés continuar con una instancia formal de mediación, o preferís desistir?</span>
+                  <p class="panel-note" style="margin:4px 0 8px;font-size:12px;">Hace falta que las dos unidades acepten para pasar a una reunión de mediación. Si cualquiera desiste, el caso se cierra acá.</p>
+                  <div class="toolbar" style="margin-top:6px;gap:10px;"><span></span>
+                    <button class="btn ghost" data-action="decidir-desistir" data-id="${c.id}" style="font-size:12px;">Prefiero desistir</button>
+                    <button class="btn primary" data-action="decidir-continuar" data-id="${c.id}" style="font-size:12px;">Quiero continuar</button>
+                  </div>
+                </div>
+              ` : ''}
+              ${esDenunciante && c.decisionDenunciante ? `<div class="card-meta" style="margin-top:8px;">Tu decisión: <b>${escapeHtml(c.decisionDenunciante)}</b></div>` : ''}
+              ${esDenunciado && c.decisionDenunciado ? `<div class="card-meta" style="margin-top:8px;">Tu decisión: <b>${escapeHtml(c.decisionDenunciado)}</b></div>` : ''}
+              ${c.mediacionLink && c.decisionDenunciante==='Continuar' && c.decisionDenunciado==='Continuar' ? `<div style="margin-top:8px;"><span class="card-field-label" style="margin-top:0;">Reunión por Zoom</span><br>${escapeHtml(c.mediacionFecha)} — <a href="${escapeHtml(c.mediacionLink)}" target="_blank" rel="noopener">Unirme ↗</a></div>` : ''}
+              ${c.resultadoReunion ? `
+                <span class="card-field-label" style="margin-top:8px;">Resultado de la reunión</span>
+                <div style="font-size:13px;white-space:pre-wrap;margin-top:4px;">${escapeHtml(c.resultadoReunion)}</div>
+              ` : ''}
+              ${c.estado==='Cerrado sin acuerdo' ? `<p class="panel-note" style="margin-top:10px;font-size:12.5px;"><b>El caso se cerró.</b> ${escapeHtml(c.cierreMotivo||'')}</p>` : ''}
+            ` : ''}
+
+            ${(c.estado==='Resuelto' || c.estado==='Cerrado sin acuerdo') ? `
               <div class="toolbar" style="margin-top:12px;border-top:1px solid var(--gray-200);padding-top:10px;"><span></span>
-                <button class="btn ghost" data-action="pdf-mediacion" data-id="${c.id}" style="font-size:12px;">Descargar planilla de mediación (PDF) ↓</button>
+                <button class="btn ghost" data-action="pdf-mediacion" data-id="${c.id}" style="font-size:12px;">Descargar acta de mediación (PDF) ↓</button>
               </div>
             ` : ''}
           `}
-
-          ${role==='propietario' && currentUser && c.acuerdoTexto && (c.estado==='Acuerdo propuesto' || c.estado==='Acuerdo firmado') ? renderAceptacion(c) : ''}
         `;
         listEl.appendChild(card);
       });
@@ -2755,36 +2765,45 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           f.addEventListener('change', persistField);
           if(f.tagName==='TEXTAREA') f.addEventListener('blur', persistField);
         });
-        listEl.querySelectorAll('[data-action="copiar"]').forEach(b=>{
-          b.addEventListener('click', ()=>{
-            const id = b.dataset.copy.replace('notif-','');
-            const ta = listEl.querySelector(`textarea[data-id="${id}"][data-f="notificacion"]`);
-            navigator.clipboard.writeText(ta.value).then(()=>{ b.textContent='Copiado ✓'; setTimeout(()=>b.textContent='Copiar texto',1500); });
-          });
-        });
-        listEl.querySelectorAll('[data-action="responder-descargo"]').forEach(b=>{
+        listEl.querySelectorAll('[data-action="notificar"]').forEach(b=>{
           b.addEventListener('click', async ()=>{
+            const ta = document.getElementById('cf-notif-'+b.dataset.id);
+            const texto = ta ? ta.value.trim() : '';
+            if(!texto){ alert('Escribí la comunicación antes de enviarla.'); return; }
             const casos2 = await loadData('naken-conflictos', []);
             const caso = casos2.find(x=>x.id===b.dataset.id);
             if(!caso) return;
-            const ta = listEl.querySelector(`textarea[data-id="${caso.id}"][data-f="respuestaAdminDescargo"]`);
-            caso.respuestaAdminDescargo = ta.value.trim();
-            caso.respuestaAdminFecha = new Date().toLocaleDateString('es-AR');
-            if(caso.estado==='Descargo recibido' || caso.estado==='Notificado') caso.estado = 'Respuesta enviada';
+            caso.notificacion = texto;
+            caso.estado = 'Notificado';
             await saveData('naken-conflictos', casos2, statusId);
-            flashButtonSuccess(b, '✓ Respuesta enviada');
+            flashButtonSuccess(b, '✓ Enviada');
             refreshConflictosBadge();
             renderList();
           });
         });
-        listEl.querySelectorAll('[data-action="cerrar-caso"]').forEach(b=>{
+        listEl.querySelectorAll('[data-action="cerrar-favorable"]').forEach(b=>{
           b.addEventListener('click', async ()=>{
             const casos2 = await loadData('naken-conflictos', []);
             const caso = casos2.find(x=>x.id===b.dataset.id);
             if(!caso) return;
             caso.estado = 'Resuelto';
+            caso.cierreMotivo = 'El denunciado reconoció la situación y se comprometió a que no se repita.';
             await saveData('naken-conflictos', casos2, statusId);
             flashButtonSuccess(b, '✓ Caso cerrado');
+            refreshConflictosBadge();
+            renderList();
+          });
+        });
+        listEl.querySelectorAll('[data-action="formalizar"]').forEach(b=>{
+          b.addEventListener('click', async ()=>{
+            if(!confirm('¿Formalizar la mediación? A partir de acá, el denunciado va a poder ver la denuncia completa, y ambas partes van a poder elegir si continúan o desisten.')) return;
+            const casos2 = await loadData('naken-conflictos', []);
+            const caso = casos2.find(x=>x.id===b.dataset.id);
+            if(!caso) return;
+            caso.formalizada = true;
+            caso.estado = 'Mediación formal';
+            await saveData('naken-conflictos', casos2, statusId);
+            flashButtonSuccess(b, '✓ Formalizada');
             refreshConflictosBadge();
             renderList();
           });
@@ -2816,7 +2835,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             try{
               await generarPdfMediacion(caso);
             }catch(err){
-              console.error('Error al generar planilla de mediación:', err);
+              console.error('Error al generar acta de mediación:', err);
               alert('No se pudo generar el PDF. Probá de nuevo.');
             }
             b.textContent = original;
@@ -2824,44 +2843,49 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         });
       }
       if(role==='propietario'){
-        listEl.querySelectorAll('[data-action="aceptar"]').forEach(b=>{
-          b.addEventListener('click', async ()=>{
-            const casos2 = await loadData('naken-conflictos', []);
-            const caso = casos2.find(x=>x.id===b.dataset.id);
-            if(!caso) return;
-            const sello = `${currentUser.nombreCompleto} (unidad ${currentUser.unidad}) — ${new Date().toLocaleString('es-AR')}`;
-            if(b.dataset.side==='denunciante') caso.aceptoDenunciante = sello;
-            else caso.aceptoDenunciado = sello;
-            await saveData('naken-conflictos', casos2);
-            renderList();
-          });
-        });
-        listEl.querySelectorAll('[data-action="enviar-descargo"]').forEach(b=>{
+        listEl.querySelectorAll('[data-action="descargo-admite"], [data-action="descargo-niega"]').forEach(b=>{
           b.addEventListener('click', async ()=>{
             const ta = document.getElementById('cf-descargo-'+b.dataset.id);
             const texto = ta ? ta.value.trim() : '';
-            if(!texto) return;
+            const admite = b.dataset.action==='descargo-admite';
+            if(!admite && !texto){ alert('Contanos tu versión antes de enviar.'); return; }
             const casos2 = await loadData('naken-conflictos', []);
             const caso = casos2.find(x=>x.id===b.dataset.id);
             if(!caso) return;
-            caso.descargo = texto;
+            caso.descargo = texto || (admite ? 'El propietario confirmó su compromiso a que no se repita.' : '');
+            caso.descargoTipo = admite ? 'admite' : 'niega';
             caso.descargoFecha = new Date().toLocaleString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-            if(caso.estado==='Notificado' || caso.estado==='En mediación') caso.estado = 'Descargo recibido';
+            caso.estado = 'Descargo recibido';
             await saveData('naken-conflictos', casos2, statusId);
-            flashButtonSuccess(b, '✓ Descargo enviado');
+            flashButtonSuccess(b, '✓ Enviado');
             refreshConflictosBadge();
             renderList();
           });
         });
-        listEl.querySelectorAll('[data-action="decision-acuerdo"], [data-action="decision-zoom"]').forEach(b=>{
+        listEl.querySelectorAll('[data-action="decidir-continuar"], [data-action="decidir-desistir"]').forEach(b=>{
           b.addEventListener('click', async ()=>{
             const casos2 = await loadData('naken-conflictos', []);
             const caso = casos2.find(x=>x.id===b.dataset.id);
             if(!caso) return;
-            const esZoom = b.dataset.action==='decision-zoom';
-            caso.decisionDenunciante = esZoom ? 'Prefiere una reunión por Zoom' : 'De acuerdo';
-            caso.decisionDenuncianteFecha = new Date().toLocaleDateString('es-AR');
-            caso.estado = esZoom ? 'Solicita reunión por Zoom' : 'Conforme — a cerrar';
+            const decision = b.dataset.action==='decidir-continuar' ? 'Continuar' : 'Desistir';
+            const fecha = new Date().toLocaleDateString('es-AR');
+            const esDenunciante = currentUser.unidad===caso.unidadDenunciante;
+            if(esDenunciante){ caso.decisionDenunciante = decision; caso.decisionDenuncianteFecha = fecha; }
+            else { caso.decisionDenunciado = decision; caso.decisionDenunciadoFecha = fecha; }
+
+            // Evaluamos si con esta decisión ya se puede cerrar el caso o pasar a la reunión.
+            if(caso.decisionDenunciante==='Desistir'){
+              caso.estado = 'Cerrado sin acuerdo';
+              caso.cierreMotivo = 'El denunciante decidió no continuar.';
+            } else if(caso.decisionDenunciado==='Desistir'){
+              caso.estado = 'Cerrado sin acuerdo';
+              caso.cierreMotivo = caso.decisionDenunciante==='Continuar'
+                ? 'El denunciante quería continuar, pero el denunciado no aceptó avanzar con la mediación. Queda fuera de la competencia de la administración.'
+                : 'El denunciado no aceptó avanzar con la mediación.';
+            } else if(caso.decisionDenunciante==='Continuar' && caso.decisionDenunciado==='Continuar'){
+              caso.estado = 'Mediación formal';
+            }
+
             await saveData('naken-conflictos', casos2, statusId);
             flashButtonSuccess(b, '✓ Enviado');
             refreshConflictosBadge();
@@ -2878,7 +2902,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             try{
               await generarPdfMediacion(caso);
             }catch(err){
-              console.error('Error al generar planilla de mediación:', err);
+              console.error('Error al generar acta de mediación:', err);
               alert('No se pudo generar el PDF. Probá de nuevo.');
             }
             b.textContent = original;
