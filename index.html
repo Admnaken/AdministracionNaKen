@@ -275,7 +275,6 @@
   .panel-note {
     font-size: 13.5px;
     color: var(--gray-600);
-    max-width: 64ch;
     line-height: 1.55;
     margin: 0 0 24px;
   }
@@ -495,6 +494,41 @@
     grid-template-columns: 1fr 1fr;
     gap: 10px;
     margin-bottom: 10px;
+  }
+  .new-ticket .grid input,
+  .new-ticket .grid select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--gray-200);
+    background: linear-gradient(180deg, #ffffff 0%, #f5f2ea 100%);
+    box-shadow: inset 0 1px 3px rgba(27,42,61,.08), 0 1px 0 rgba(255,255,255,.7);
+    font-family: 'Inter', sans-serif;
+    font-size: 13.5px;
+    color: var(--gray-800);
+    transition: var(--transition);
+  }
+  .new-ticket .grid input:focus,
+  .new-ticket .grid select:focus {
+    outline: none;
+    border-color: var(--gold);
+    box-shadow: 0 0 0 3px rgba(201,168,76,.18), inset 0 1px 3px rgba(27,42,61,.06);
+  }
+  .new-ticket .grid input[readonly] {
+    background: var(--gray-100);
+    color: var(--muted);
+    cursor: not-allowed;
+    box-shadow: inset 0 1px 3px rgba(27,42,61,.05);
+  }
+  .new-ticket .grid select {
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: linear-gradient(180deg, #ffffff 0%, #f5f2ea 100%), url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath fill='%231B2A3D' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: center, right 12px center;
+    padding-right: 32px;
   }
   .new-ticket textarea {
     display: block;
@@ -1100,7 +1134,7 @@
         <div class="panel-head">
           <span class="eyebrow">Consorcistas</span>
           <h2>Reclamos, pedidos y consultas</h2>
-          <p class="panel-note">Los propietarios cargan su pedido o reclamo y siguen el estado. La administración responde y actualiza el estado desde acá.</p>
+          <p class="panel-note">Cada propietario ve sus propios reclamos y los que son "común a todos" — no todos ven todo, para que un reclamo particular no quede expuesto. La administración sí ve todo, y responde y actualiza el estado desde acá.</p>
         </div>
         <div id="reclamos-mount"></div>
       </section>
@@ -1120,7 +1154,7 @@
         <div class="panel-head">
           <span class="eyebrow">Consorcistas</span>
           <h2>Pre-Asamblea</h2>
-          <p class="panel-note">Antes de votar un gasto extraordinario o un aumento fuerte, usá este espacio para explicar el porqué y buscar alternativas entre todos. La previsibilidad ayuda a que cada propietario pueda planificar su economía.</p>
+          <p class="panel-note">Mientras un tema tenga vigencia, cualquier propietario puede preguntar y ver las respuestas de los demás — así se evitan las preguntas repetidas. Al vencer el plazo, queda archivado con su acta en PDF.</p>
         </div>
         <div id="asamblea-mount"></div>
       </section>
@@ -2113,7 +2147,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   /* ---------- Avisos de novedades: Pre-Asamblea y Conflictos ---------- */
   async function computeAsambleaUnseen(){
     const [comunicados, preguntas] = await Promise.all([
-      loadData('naken-asamblea-comunicados', []),
+      loadData('naken-asamblea-temas', []),
       loadData('naken-asamblea-preguntas', [])
     ]);
     const seenKey = seenKeyFor('asamblea');
@@ -2132,7 +2166,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
   async function markAsambleaSeen(){
     const [comunicados, preguntas] = await Promise.all([
-      loadData('naken-asamblea-comunicados', []),
+      loadData('naken-asamblea-temas', []),
       loadData('naken-asamblea-preguntas', [])
     ]);
     const seenKey = seenKeyFor('asamblea');
@@ -2173,6 +2207,89 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   /** Arma la Planilla de Mediación Vecinal en PDF, con los datos ya cargados del caso — mismo criterio
    *  que la plantilla Word que armó la administración: consorcio, partes, origen, instancias, resultado,
    *  marco de buena fe y renglones de firma. */
+  /** Arma el acta en PDF de un tema de Pre-Asamblea ya cerrado: la explicación publicada, cada
+   *  pregunta con su respuesta y fecha/hora, y lo que se resolvió — para archivar junto con el
+   *  libro de actas físico, aunque el tema ya no se muestre activo en la app. */
+  async function generarPdfActaTema(tema, preguntas){
+    if(!window.jspdf){ alert('No se pudo cargar el generador de PDF. Revisá tu conexión e intentá de nuevo.'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const M = 14;
+    let y = 18;
+
+    const edificios = await getEdificios();
+    const edificio = edificios.find(e=>e.id===getActiveConsorcioId());
+
+    function heading(texto){
+      if(y>270){ doc.addPage(); y=18; }
+      doc.setFillColor(27,42,61);
+      doc.rect(M, y, 182, 7, 'F');
+      doc.setTextColor(255,255,255);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(10);
+      doc.text(texto, M+3, y+5);
+      doc.setTextColor(20,20,20);
+      y += 12;
+    }
+    function parrafo(texto, opts={}){
+      doc.setFont('helvetica', opts.bold?'bold':'normal');
+      doc.setFontSize(opts.size||9.5);
+      const lineas = doc.splitTextToSize(texto||'—', 182);
+      if(y + lineas.length*4.6 > 285){ doc.addPage(); y=18; }
+      doc.text(lineas, M, y);
+      y += lineas.length*4.6 + 3;
+    }
+
+    doc.setFont('helvetica','bold');
+    doc.setFontSize(13);
+    doc.text('ADMINISTRACIÓN NAKEN', M, y); y+=6;
+    doc.setFontSize(11);
+    doc.text('Acta de Pre-Asamblea', M, y); y+=5;
+    doc.setFont('helvetica','normal');
+    doc.setFontSize(9);
+    doc.text(edificio ? edificio.nombre : '', M, y); y+=10;
+
+    heading('TEMA');
+    parrafo(tema.tema || '—', {bold:true});
+    parrafo(tema.titulo || '—');
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(90,90,90);
+    doc.text(`Publicado: ${escapeHtmlPdf(tema.creadoFecha ? formatFechaHora(tema.creadoFecha) : '—')}   ·   Vigente hasta: ${escapeHtmlPdf(formatFechaHora(tema.vigenciaHasta))}`, M, y);
+    doc.setTextColor(20,20,20);
+    y += 9;
+
+    heading('EXPLICACIÓN PUBLICADA POR LA ADMINISTRACIÓN');
+    parrafo(tema.contenido || '(sin contenido)');
+
+    heading('PREGUNTAS Y RESPUESTAS');
+    if(preguntas.length===0){
+      parrafo('No se registraron preguntas para este tema.');
+    } else {
+      preguntas.forEach((p,i)=>{
+        parrafo(`${i+1}. Unidad ${p.unidad}${p.propietario ? ' — '+p.propietario : ''} — ${formatFechaHora(p.fechaHora)}`, {bold:true, size:9});
+        parrafo(p.asunto || '');
+        if(p.respuesta){
+          parrafo(`Respuesta de la administración (${formatFechaHora(p.respuestaFechaHora)}):`, {bold:true, size:8.5});
+          parrafo(p.respuesta);
+        } else {
+          parrafo('(sin respuesta de la administración)', {size:8.5});
+        }
+        y += 2;
+      });
+    }
+
+    heading('RESOLUCIÓN DE LA ASAMBLEA');
+    parrafo(tema.resolucion || 'Todavía no se cargó qué se resolvió sobre este tema.');
+    if(tema.resolucionFecha){
+      doc.setFontSize(8.5); doc.setTextColor(90,90,90);
+      doc.text('Cargado: '+formatFechaHora(tema.resolucionFecha), M, y);
+      doc.setTextColor(20,20,20);
+      y += 8;
+    }
+
+    doc.save(`Acta_PreAsamblea_${(tema.tema||'tema').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
+  }
+  function escapeHtmlPdf(s){ return String(s||''); }
+
   async function generarPdfMediacion(c){
     if(!window.jspdf){ alert('No se pudo cargar el generador de PDF. Revisá tu conexión e intentá de nuevo.'); return; }
     const { jsPDF } = window.jspdf;
@@ -3463,8 +3580,24 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
   function uid(){ return Math.random().toString(36).slice(2,9); }
 
-  const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  /** "2026-08-20T09:21" → "20/08/2026 a las 09:21 hs" */
+  function formatFechaHora(iso){
+    if(!iso) return '';
+    const d = new Date(iso);
+    if(isNaN(d.getTime())) return '';
+    const dd = String(d.getDate()).padStart(2,'0');
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const hh = String(d.getHours()).padStart(2,'0');
+    const min = String(d.getMinutes()).padStart(2,'0');
+    return `${dd}/${mm}/${d.getFullYear()} a las ${hh}:${min} hs`;
+  }
+  function temaVigente(tema){
+    if(!tema || !tema.vigenciaHasta) return false;
+    const d = new Date(tema.vigenciaHasta);
+    return !isNaN(d.getTime()) && d.getTime() > Date.now();
+  }
   /** Convierte "08/2026" (o una fecha ISO/Date) en "Agosto 2026". Si no puede interpretarlo, devuelve el texto tal cual. */
+  const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   function formatPeriodo(valor){
     if(!valor) return '—';
     const m = String(valor).trim().match(/^(\d{1,2})\/(\d{4})$/);
@@ -4042,6 +4175,207 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     return 'pendiente';
   }
 
+  /* ---------- Pre-Asamblea: tema con vigencia, preguntas con fecha/hora, y archivo con acta en PDF ---------- */
+  async function mountAsambleaSistema(mountId){
+    const mount = document.getElementById(mountId);
+    mount.innerHTML = `<div class="empty">Cargando…</div>`;
+
+    const [temas, preguntas] = await Promise.all([
+      loadData('naken-asamblea-temas', []),
+      loadData('naken-asamblea-preguntas', [])
+    ]);
+
+    const activo = temas.slice().reverse().find(temaVigente);
+    const archivados = temas.filter(t => t.id !== (activo && activo.id)).slice().reverse();
+    const preguntasDe = (temaId) => preguntas.filter(p=>p.temaId===temaId).sort((a,b)=> new Date(a.fechaHora) - new Date(b.fechaHora));
+
+    function preguntaCardHtml(p){
+      return `
+        <div class="card" style="margin-bottom:10px;">
+          <div class="card-top">
+            <div>
+              <div class="card-meta">Unidad ${escapeHtml(p.unidad)}${p.propietario ? ' — '+escapeHtml(p.propietario) : ''} · ${escapeHtml(formatFechaHora(p.fechaHora))}</div>
+            </div>
+            <span class="badge ${p.respuesta?'resuelto':'pendiente'}">${p.respuesta?'Respondida':'Sin responder'}</span>
+          </div>
+          <div style="margin-top:4px;">${escapeHtml(p.asunto)}</div>
+          ${role==='admin' ? `
+            <span class="card-field-label">Respuesta de la administración</span>
+            <textarea data-id="${p.id}" class="preg-respuesta" rows="3" placeholder="Escribí la respuesta…">${escapeHtml(p.respuesta||'')}</textarea>
+            <div class="toolbar" style="margin-top:6px;"><span></span><button class="btn primary preg-responder" data-id="${p.id}" style="font-size:11px;">Enviar respuesta</button></div>
+          ` : (p.respuesta ? `
+            <span class="card-field-label">Respuesta de la administración — ${escapeHtml(formatFechaHora(p.respuestaFechaHora))}</span>
+            <div style="font-size:13.5px;margin-top:4px;">${escapeHtml(p.respuesta)}</div>
+          ` : '')}
+        </div>
+      `;
+    }
+
+    let html = '';
+
+    // -------- Formulario para nuevo tema (solo admin) --------
+    if(role==='admin'){
+      html += `
+        <div class="new-ticket" style="margin-bottom:24px;">
+          <h3>Publicar un tema nuevo</h3>
+          <p class="panel-note" style="margin:0 0 10px;">Mientras haya un tema con vigencia activa, los propietarios pueden preguntar. Al vencer, se archiva solo y pasa a "Temas anteriores" — sigue disponible como acta en PDF.</p>
+          <div class="field-grid">
+            <div><label>Tema</label><input type="text" id="at-tema" placeholder="Ej: Aumento de expensas"></div>
+            <div><label>Vigente hasta</label><input type="datetime-local" id="at-vigencia"></div>
+          </div>
+          <label>Título</label><input type="text" id="at-titulo" placeholder="Ej: Por qué se necesita este gasto">
+          <label>Explicación</label>
+          <textarea id="at-contenido" rows="6" placeholder="Explicá el motivo del gasto o aumento, el costo estimado y qué alternativas se evaluaron" style="width:100%;box-sizing:border-box;border:1px solid var(--line,#ccc);border-radius:6px;padding:10px;font-family:'Inter',sans-serif;font-size:13.5px;"></textarea>
+          <div class="toolbar" style="margin-top:10px;"><span></span><button class="btn primary" id="at-publicar">Publicar tema</button></div>
+        </div>
+      `;
+    }
+
+    // -------- Tema vigente --------
+    if(activo){
+      const misPreguntas = preguntasDe(activo.id);
+      html += `
+        <div class="dash-card" style="margin-bottom:20px;border-color:var(--gold);">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+            <div>
+              <span class="badge resuelto" style="text-transform:none;">Tema vigente</span>
+              <h3 style="margin:8px 0 2px;">${escapeHtml(activo.tema)}</h3>
+              <p class="panel-note" style="margin:0 0 4px;">${escapeHtml(activo.titulo)}</p>
+            </div>
+            ${role==='admin' ? `<button class="btn ghost" id="at-cerrar-ahora" data-id="${activo.id}" style="font-size:11px;white-space:nowrap;">Cerrar consulta ahora</button>` : ''}
+          </div>
+          <div style="font-size:13.5px;white-space:pre-wrap;margin:8px 0;">${escapeHtml(activo.contenido)}</div>
+          <div class="card-meta">Publicado ${escapeHtml(formatFechaHora(activo.creadoFecha))} · Se puede preguntar hasta ${escapeHtml(formatFechaHora(activo.vigenciaHasta))}</div>
+
+          <div class="subhead" style="margin-top:18px;">Preguntas y respuestas (${misPreguntas.length})</div>
+          <p class="panel-note" style="margin:0 0 10px;font-size:12px;">Fijate si ya alguien preguntó lo mismo antes de escribir la tuya.</p>
+          ${misPreguntas.length===0 ? `<div class="empty">Todavía no hay preguntas sobre este tema.</div>` : misPreguntas.map(preguntaCardHtml).join('')}
+
+          ${role==='propietario' ? `
+            <div class="new-ticket" style="margin-top:16px;">
+              <h3>Hacer una pregunta o proponer una alternativa</h3>
+              <textarea id="at-pregunta" placeholder="¿Qué querés consultar, o qué alternativa te gustaría proponer?"></textarea>
+              <div class="toolbar" style="margin-top:10px;"><span></span><button class="btn primary" id="at-pregunta-enviar">Enviar</button></div>
+            </div>
+          ` : `
+            <div class="subhead" style="margin-top:18px;">Resolución de la Asamblea</div>
+            <p class="panel-note" style="margin:0 0 8px;font-size:12px;">Si se resolvió este tema en una asamblea, transcribí acá lo que quedó asentado en el libro de actas.</p>
+            <textarea id="at-resolucion" rows="4" placeholder="Ej: Se aprobó por mayoría realizar el gasto en 3 cuotas..." style="width:100%;box-sizing:border-box;border:1px solid var(--line,#ccc);border-radius:6px;padding:10px;font-family:'Inter',sans-serif;font-size:13.5px;">${escapeHtml(activo.resolucion||'')}</textarea>
+            <div class="toolbar" style="margin-top:8px;"><span></span><button class="btn primary" id="at-resolucion-guardar" data-id="${activo.id}" style="font-size:12px;">Guardar resolución</button></div>
+          `}
+        </div>
+      `;
+    } else if(role==='propietario'){
+      html += `<div class="empty" style="margin-bottom:20px;">No hay ningún tema en consulta en este momento. Cuando la administración publique uno nuevo, vas a poder preguntar acá.</div>`;
+    }
+
+    // -------- Temas anteriores (archivados) --------
+    html += `<div class="subhead" style="margin-top:8px;">Temas anteriores</div>`;
+    if(archivados.length===0){
+      html += `<div class="empty">Todavía no hay temas archivados.</div>`;
+    } else {
+      html += `<div class="cards">` + archivados.map(t=>`
+        <div class="card">
+          <div class="card-top">
+            <div>
+              <b>${escapeHtml(t.tema)}</b>
+              <div class="card-meta">${escapeHtml(t.titulo)} · venció ${escapeHtml(formatFechaHora(t.vigenciaHasta))} · ${preguntasDe(t.id).length} pregunta(s)</div>
+            </div>
+            <button class="btn ghost at-pdf" data-id="${t.id}" style="font-size:11px;white-space:nowrap;">Ver acta (PDF) ↓</button>
+          </div>
+        </div>
+      `).join('') + `</div>`;
+    }
+
+    mount.innerHTML = html;
+
+    // -------- Wiring --------
+    if(role==='admin'){
+      const btnPublicar = document.getElementById('at-publicar');
+      if(btnPublicar) btnPublicar.addEventListener('click', async ()=>{
+        const tema = document.getElementById('at-tema').value.trim();
+        const titulo = document.getElementById('at-titulo').value.trim();
+        const contenido = document.getElementById('at-contenido').value.trim();
+        const vigencia = document.getElementById('at-vigencia').value;
+        if(!tema || !vigencia){ alert('Completá al menos el tema y hasta cuándo queda vigente.'); return; }
+        const lista = await loadData('naken-asamblea-temas', []);
+        lista.push({
+          id: uid(), creadoFecha: new Date().toISOString(),
+          tema, titulo, contenido, vigenciaHasta: new Date(vigencia).toISOString(),
+          resolucion: '', resolucionFecha: ''
+        });
+        await saveData('naken-asamblea-temas', lista);
+        flashButtonSuccess(btnPublicar, '✓ Publicado');
+        setTimeout(()=>mountAsambleaSistema(mountId), 700);
+      });
+
+      const btnCerrar = document.getElementById('at-cerrar-ahora');
+      if(btnCerrar) btnCerrar.addEventListener('click', async ()=>{
+        if(!confirm('¿Cerrar la consulta de este tema ahora? Nadie va a poder escribir nuevas preguntas.')) return;
+        const lista = await loadData('naken-asamblea-temas', []);
+        const t = lista.find(x=>x.id===btnCerrar.dataset.id);
+        if(t) t.vigenciaHasta = new Date(Date.now()-1000).toISOString();
+        await saveData('naken-asamblea-temas', lista);
+        mountAsambleaSistema(mountId);
+      });
+
+      const btnResolucion = document.getElementById('at-resolucion-guardar');
+      if(btnResolucion) btnResolucion.addEventListener('click', async ()=>{
+        const lista = await loadData('naken-asamblea-temas', []);
+        const t = lista.find(x=>x.id===btnResolucion.dataset.id);
+        if(t){
+          t.resolucion = document.getElementById('at-resolucion').value.trim();
+          t.resolucionFecha = new Date().toISOString();
+        }
+        await saveData('naken-asamblea-temas', lista);
+        flashButtonSuccess(btnResolucion, '✓ Guardado');
+      });
+
+      mount.querySelectorAll('.preg-responder').forEach(b=>{
+        b.addEventListener('click', async ()=>{
+          const ta = mount.querySelector(`.preg-respuesta[data-id="${b.dataset.id}"]`);
+          const lista = await loadData('naken-asamblea-preguntas', []);
+          const p = lista.find(x=>x.id===b.dataset.id);
+          if(p){ p.respuesta = ta.value.trim(); p.respuestaFechaHora = new Date().toISOString(); }
+          await saveData('naken-asamblea-preguntas', lista);
+          flashButtonSuccess(b, '✓ Enviada');
+          refreshAsambleaBadge();
+          setTimeout(()=>mountAsambleaSistema(mountId), 700);
+        });
+      });
+    }
+
+    if(role==='propietario'){
+      const btnPreguntar = document.getElementById('at-pregunta-enviar');
+      if(btnPreguntar) btnPreguntar.addEventListener('click', async ()=>{
+        const texto = document.getElementById('at-pregunta').value.trim();
+        if(!texto || !activo) return;
+        const lista = await loadData('naken-asamblea-preguntas', []);
+        lista.push({
+          id: uid(), temaId: activo.id,
+          unidad: currentUser.unidad, propietario: currentUser.nombreCompleto,
+          fechaHora: new Date().toISOString(),
+          asunto: texto, estado:'Pendiente', respuesta:'', respuestaFechaHora:''
+        });
+        await saveData('naken-asamblea-preguntas', lista);
+        flashButtonSuccess(btnPreguntar, '✓ Enviada');
+        markAsambleaSeen();
+        setTimeout(()=>mountAsambleaSistema(mountId), 700);
+      });
+    }
+
+    mount.querySelectorAll('.at-pdf').forEach(b=>{
+      b.addEventListener('click', async ()=>{
+        const original = b.textContent;
+        b.textContent = 'Generando…';
+        const t = temas.find(x=>x.id===b.dataset.id);
+        try{ await generarPdfActaTema(t, preguntasDe(t.id)); }
+        catch(err){ console.error(err); alert('No se pudo generar el PDF.'); }
+        b.textContent = original;
+      });
+    });
+  }
+
   function mountTickets(mountId, storageKey, opts){
     const mount = document.getElementById(mountId);
     const statusId = mountId+'-status';
@@ -4065,6 +4399,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         </div>
         <span class="card-field-label">${opts.contentLabel}</span>
         <textarea id="${mountId}-asunto" placeholder="${opts.placeholder}"></textarea>
+        ${opts.hasAlcance ? `
+        <div style="margin:10px 0 0;padding:10px 12px;background:var(--paper,#faf8f3);border-left:3px solid var(--gold);border-radius:6px;">
+          <span class="card-field-label" style="margin-top:0;">¿A quién afecta esto?</span>
+          <div style="display:flex;gap:18px;margin-top:6px;flex-wrap:wrap;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:normal;cursor:pointer;">
+              <input type="radio" name="${mountId}-alcance" value="Particular" checked> Algo particular mío
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:normal;cursor:pointer;">
+              <input type="radio" name="${mountId}-alcance" value="Común a todos"> Espacio común / afecta a todos
+            </label>
+          </div>
+          <p class="panel-note" style="margin:6px 0 0;font-size:11.5px;">"Común a todos" es algo como el palier, el ascensor, la terraza, o un tema que les convenga saber a los demás propietarios — eso sí lo van a poder ver. Lo "particular" solo lo ves vos y la administración.</p>
+        </div>
+        ` : ''}
         <div class="toolbar" style="margin-top:10px;">
           <button class="btn primary" id="${mountId}-submit">${opts.submitLabel}</button>
           <div>${statusEl(statusId)}</div>
@@ -4075,19 +4423,26 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     const cardsEl = document.getElementById(mountId+'-cards');
 
+    function visibleItems(){
+      if(!opts.hasAlcance) return items; // preguntas de asamblea: las ve todo el mundo, sin cambios
+      if(role==='admin') return items;
+      return items.filter(i => i.alcance==='Común a todos' || (currentUser && i.unidad===currentUser.unidad));
+    }
+
     function render(){
       cardsEl.innerHTML = '';
-      if(items.length===0){
+      const visibles = visibleItems();
+      if(visibles.length===0){
         cardsEl.innerHTML = `<div class="empty">${opts.emptyText}</div>`;
         return;
       }
-      items.slice().reverse().forEach(item=>{
+      visibles.slice().reverse().forEach(item=>{
         const card = document.createElement('div');
         card.className = 'card';
         card.innerHTML = `
           <div class="card-top">
             <div>
-              <div class="card-meta">${escapeHtml(item.fecha)} · Unidad ${escapeHtml(item.unidad)} · ${escapeHtml(item.tipo)}</div>
+              <div class="card-meta">${escapeHtml(item.fecha)} · Unidad ${escapeHtml(item.unidad)} · ${escapeHtml(item.tipo)}${item.alcance ? ' · <span class="badge '+(item.alcance==='Común a todos'?'proceso':'pendiente')+'" style="text-transform:none;">'+escapeHtml(item.alcance)+'</span>' : ''}</div>
             </div>
             <span class="badge ${badgeClass(item.estado)}">${item.estado}</span>
           </div>
@@ -4131,10 +4486,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const tipo = document.getElementById(mountId+'-tipo').value;
         const asunto = document.getElementById(mountId+'-asunto').value.trim();
         if(!unidad || !asunto) return;
+        const alcanceInput = opts.hasAlcance ? mount.querySelector(`input[name="${mountId}-alcance"]:checked`) : null;
         items.push({
           id: uid(),
           fecha: new Date().toLocaleDateString('es-AR'),
           unidad, tipo, asunto,
+          alcance: alcanceInput ? alcanceInput.value : '',
           estado: 'Pendiente', respuesta: ''
         });
         document.getElementById(mountId+'-asunto').value='';
@@ -5398,32 +5755,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       contentLabel:'Detalle',
       placeholder:'Describí la situación con el mayor detalle posible…',
       submitLabel:'Enviar a la administración',
-      emptyText:'No hay reclamos ni consultas cargadas.'
+      emptyText:'No hay reclamos ni consultas cargadas.',
+      hasAlcance: true
     });
 
     mountFacturasVivo('facturas-mount');
 
-    // Pre-Asamblea: explicaciones/propuestas (admin) + preguntas y alternativas (propietarios)
-    document.getElementById('asamblea-mount').innerHTML = `
-      <h3 style="font-family:'Zilla Slab',serif;font-size:16px;margin:0 0 10px;">Explicaciones y propuestas</h3>
-      <div id="asamblea-comunicados"></div>
-      <h3 style="font-family:'Zilla Slab',serif;font-size:16px;margin:26px 0 10px;">Preguntas y alternativas de los propietarios</h3>
-      <div id="asamblea-preguntas"></div>
-    `;
-    mountLedger('asamblea-comunicados', 'naken-asamblea-comunicados', [
-      {key:'fecha', label:'Fecha', placeholder:'DD/MM/AAAA'},
-      {key:'tema', label:'Tema', placeholder:'Ej: Aumento de expensas / Reparación ascensor'},
-      {key:'titulo', label:'Título', placeholder:'Ej: Por qué se necesita este gasto'},
-      {key:'contenido', label:'Explicación', type:'textarea', placeholder:'Explicá el motivo del gasto o aumento, el costo estimado y qué alternativas se evaluaron'},
-    ], {emptyText:'Todavía no hay explicaciones publicadas.'});
-    mountTickets('asamblea-preguntas', 'naken-asamblea-preguntas', {
-      newLabel:'Hacer una pregunta o proponer una alternativa',
-      tipos:['Pregunta sobre un gasto','Alternativa propuesta','Otra consulta'],
-      contentLabel:'Detalle',
-      placeholder:'¿Qué querés consultar, o qué alternativa te gustaría proponer?',
-      submitLabel:'Enviar',
-      emptyText:'No hay preguntas ni propuestas cargadas.'
-    });
+    mountAsambleaSistema('asamblea-mount');
 
     mountConflictos('conflictos-mount');
 
