@@ -1052,6 +1052,7 @@
       <button class="navbtn" data-panel="honorarios">Honorarios</button>
       <button class="navbtn" data-panel="prorrateo">Estado de cuenta y prorrateo</button>
       <button class="navbtn" data-panel="conciliaciones">Libro Banco y Conciliación bancaria</button>
+      <button class="navbtn" data-panel="caja">Libro de Caja</button>
       <button class="navbtn" data-panel="segurosdepositos">Seguros y depósitos</button>
       <button class="navbtn" data-panel="proveedores">Proveedores y servicios</button>
     </div>
@@ -1195,7 +1196,7 @@
         <div class="panel-head">
           <span class="eyebrow">Transparencia</span>
           <h2>Fondo de reserva</h2>
-          <p class="panel-note">Aportes y usos del fondo de reserva, con saldo acumulado.</p>
+          <p class="panel-note" style="max-width:none;">El Fondo de Reserva se administra en una subcuenta bancaria propia, separada de la cuenta corriente del consorcio, con su propio Libro Banco y su propia conciliación mensual — así queda completo el control de fondos exigido por la normativa vigente.</p>
         </div>
         <div id="reserva-mount"></div>
       </section>
@@ -1228,6 +1229,16 @@
           <p class="panel-note" style="max-width:none;">Herramienta de control de integridad de fondos. El Libro Banco registra cada movimiento de la cuenta del consorcio; la Conciliación mensual coteja el saldo del Libro Banco contra el saldo del extracto bancario, identifica las partidas pendientes (cheques no cobrados, transferencias no acreditadas, débitos no contabilizados), vuelca a la liquidación del mes lo que corresponda, y archiva la hoja firmada junto con el detalle del extracto bancario.</p>
         </div>
         <div id="conciliaciones-mount"></div>
+      </section>
+
+      <!-- LIBRO DE CAJA -->
+      <section class="panel" id="panel-caja">
+        <div class="panel-head">
+          <span class="eyebrow">Transparencia</span>
+          <h2>Libro de Caja</h2>
+          <p class="panel-note" style="max-width:none;">Registro de los movimientos en efectivo del consorcio — uno de los libros obligatorios del administrador según la Ley 941 de CABA. Como el efectivo no tiene un extracto bancario que lo respalde, el control se hace mediante arqueos periódicos: se cuenta el efectivo físico y se compara contra el saldo que arroja este libro.</p>
+        </div>
+        <div id="caja-mount"></div>
       </section>
 
       <!-- SEGUROS Y DEPÓSITOS -->
@@ -5452,10 +5463,22 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     'Impuesto no contabilizado',
     'Otro'
   ];
+  const RESERVA_TIPOS_MOVIMIENTO = [
+    'Aporte mensual de expensas',
+    'Interés generado (plazo fijo / caja de ahorro)',
+    'Uso del fondo — reparación extraordinaria',
+    'Otro ingreso',
+    'Otro egreso'
+  ];
+  const RESERVA_NOTA_INTRO = 'El Fondo de Reserva se rige por el Código Civil y Comercial: los propietarios deben contribuir a su integración (art. 2046 inc. d), y su constitución y porcentaje los define la asamblea (arts. 2056, 2058 y 2060). Para que el administrador disponga total o parcialmente del fondo ante gastos imprevistos y mayores que los ordinarios, necesita autorización previa del Consejo de Propietarios (arts. 2064 inc. c y 2067) — dejá esa autorización documentada (acta del Consejo) antes de registrar el egreso.';
+  const RESERVA_NOTA_LEGAL_PDF = 'Nota: este período incluye egresos del Fondo de Reserva. Conforme a los arts. 2064 inc. c) y 2067 del Código Civil y Comercial, la disposición del fondo ante gastos imprevistos y mayores que los ordinarios requiere autorización previa del Consejo de Propietarios — verificar que esa autorización esté documentada en el acta correspondiente.';
 
-  function mountLibroBancoConciliacion(mountId, movKey, concKey){
+  function mountLibroBancoConciliacion(mountId, movKey, concKey, opts={}){
     const mount = document.getElementById(mountId);
     const isAdmin = role==='admin';
+    const movTipos = opts.movTipos || null; // ej: ['Aporte de expensas','Interés generado','Uso del fondo — reparación extraordinaria']
+    const tituloCorto = opts.tituloCorto || 'la cuenta';
+    const pdfPrefijo = opts.pdfPrefijo || 'Conciliacion';
     let movRows = [];
     let periodos = [];
     let currentPeriodId = null;
@@ -5474,15 +5497,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     let cuentaBancaria = {};
 
     mount.innerHTML = `
+      ${opts.notaIntro ? `<p class="panel-note" style="margin-top:0;background:var(--paper-deep,#f8f9fa);border:1px dashed var(--gray-200);border-radius:6px;padding:10px 12px;">${opts.notaIntro}</p>` : ''}
       <div class="subhead" style="margin-top:0;">Datos de la cuenta bancaria</div>
       <div id="${mountId}-cuenta-wrap"></div>
 
       <div id="${mountId}-kpi-mov" class="kpi-row"></div>
 
-      <div class="subhead">Libro Banco — movimientos de la cuenta</div>
+      <div class="subhead">Libro Banco — movimientos de ${tituloCorto}</div>
       <table class="ledger">
         <thead><tr>
-          <th>Fecha</th><th>Concepto</th><th>Ingreso ($)</th><th>Egreso ($)</th><th>Saldo acumulado</th>
+          <th>Fecha</th><th>Concepto</th>${movTipos ? '<th>Tipo</th>' : ''}<th>Ingreso ($)</th><th>Egreso ($)</th><th>Saldo acumulado</th>
           ${isAdmin ? '<th class="row-del"></th>' : ''}
         </tr></thead>
         <tbody id="${mountId}-mov-body"></tbody>
@@ -5505,7 +5529,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     /* ----- Datos de la cuenta bancaria (globales, por consorcio) ----- */
     const cuentaWrap = document.getElementById(mountId+'-cuenta-wrap');
-    const CUENTA_KEY = 'naken-cuenta-bancaria';
+    const CUENTA_KEY = opts.cuentaKey || (movKey+'-cuenta');
 
     function renderCuenta(){
       const disabled = isAdmin ? '' : 'disabled';
@@ -5524,6 +5548,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <select id="${mountId}-cta-tipo" ${disabled}>
               <option ${cuentaBancaria.tipoCuenta==='Caja de ahorro'?'selected':''}>Caja de ahorro</option>
               <option ${cuentaBancaria.tipoCuenta==='Cuenta corriente'?'selected':''}>Cuenta corriente</option>
+              <option ${cuentaBancaria.tipoCuenta==='Plazo fijo'?'selected':''}>Plazo fijo</option>
+              <option ${cuentaBancaria.tipoCuenta==='Fondo común de inversión'?'selected':''}>Fondo común de inversión</option>
             </select>
           </div>
           <div>
@@ -5562,16 +5588,25 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     function renderMovKpi(){
       const kpi = document.getElementById(mountId+'-kpi-mov');
       const saldo = movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0);
+      let extra = '';
+      if(movTipos){
+        extra = movTipos.map(t=>{
+          const total = movRows.filter(r=>r.tipo===t).reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0);
+          return `<div class="kpi"><div class="label">${escapeHtml(t)}</div><div class="value" style="font-size:15px;">${fmt(total)}</div></div>`;
+        }).join('');
+      }
       kpi.innerHTML = `
         <div class="kpi highlight"><div class="label">Saldo actual s/Libro Banco</div><div class="value">${fmt(saldo)}</div></div>
         <div class="kpi"><div class="label">Movimientos cargados</div><div class="value">${movRows.length}</div></div>
+        ${extra}
       `;
     }
 
     function renderMov(){
       movBody.innerHTML = '';
+      const colspan = (isAdmin?1:0) + (movTipos?1:0) + 5;
       if(movRows.length===0){
-        movBody.innerHTML = `<tr><td colspan="${isAdmin?6:5}"><div class="empty">Sin movimientos cargados.</div></td></tr>`;
+        movBody.innerHTML = `<tr><td colspan="${colspan}"><div class="empty">Sin movimientos cargados.</div></td></tr>`;
         renderMovKpi();
         return;
       }
@@ -5584,6 +5619,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         tr.innerHTML = `
           <td><input type="text" data-field="fecha" value="${escapeHtml(row.fecha)}" placeholder="DD/MM/AAAA" ${disabled}></td>
           <td><input type="text" data-field="concepto" value="${escapeHtml(row.concepto)}" ${disabled}></td>
+          ${movTipos ? `<td><select data-field="tipo" ${disabled}>${movTipos.map(t=>`<option ${row.tipo===t?'selected':''}>${escapeHtml(t)}</option>`).join('')}</select></td>` : ''}
           <td class="num"><input type="text" data-field="ingreso" value="${escapeHtml(row.ingreso)}" placeholder="0" ${disabled}></td>
           <td class="num"><input type="text" data-field="egreso" value="${escapeHtml(row.egreso)}" placeholder="0" ${disabled}></td>
           <td class="num"><input type="text" data-saldo value="${fmt(saldo)}" disabled></td>
@@ -5600,19 +5636,37 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         saldo += num(tr.querySelector('[data-field="ingreso"]').value) - num(tr.querySelector('[data-field="egreso"]').value);
         tr.querySelector('[data-saldo]').value = fmt(saldo);
       });
-      const highlightVal = document.querySelector(`#${mountId}-kpi-mov .kpi.highlight .value`);
-      if(highlightVal) highlightVal.textContent = fmt(saldo);
+      if(movTipos){
+        renderMovKpi(); // hay desgloses por tipo — más simple recalcular todo el bloque de KPIs
+        // pero readMovRows aún no refleja los inputs actuales, así que se recalcula a partir del DOM:
+        const kpi = document.getElementById(mountId+'-kpi-mov');
+        const rowsNow = readMovRows();
+        let extra = movTipos.map(t=>{
+          const total = rowsNow.filter(r=>r.tipo===t).reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0);
+          return `<div class="kpi"><div class="label">${escapeHtml(t)}</div><div class="value" style="font-size:15px;">${fmt(total)}</div></div>`;
+        }).join('');
+        kpi.innerHTML = `
+          <div class="kpi highlight"><div class="label">Saldo actual s/Libro Banco</div><div class="value">${fmt(saldo)}</div></div>
+          <div class="kpi"><div class="label">Movimientos cargados</div><div class="value">${rowsNow.length}</div></div>
+          ${extra}
+        `;
+      } else {
+        const highlightVal = document.querySelector(`#${mountId}-kpi-mov .kpi.highlight .value`);
+        if(highlightVal) highlightVal.textContent = fmt(saldo);
+      }
     }
 
     function readMovRows(){
       const out = [];
       movBody.querySelectorAll('tr[data-idx]').forEach(tr=>{
-        out.push({
+        const row = {
           fecha: tr.querySelector('[data-field="fecha"]').value,
           concepto: tr.querySelector('[data-field="concepto"]').value,
           ingreso: tr.querySelector('[data-field="ingreso"]').value,
           egreso: tr.querySelector('[data-field="egreso"]').value,
-        });
+        };
+        if(movTipos){ const tipoEl = tr.querySelector('[data-field="tipo"]'); row.tipo = tipoEl ? tipoEl.value : ''; }
+        out.push(row);
       });
       return out;
     }
@@ -5627,13 +5681,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     if(isAdmin){
       movBody.addEventListener('input', ()=>{ recalcMovSaldos(); scheduleMovSave(); });
+      movBody.addEventListener('change', ()=>{ recalcMovSaldos(); scheduleMovSave(); });
       movBody.addEventListener('click', e=>{
         const b = e.target.closest('[data-action="mov-del"]');
         if(b){ movRows = readMovRows(); movRows.splice(+b.closest('tr').dataset.idx,1); renderMov(); scheduleMovSave(); }
       });
       document.getElementById(mountId+'-mov-add').addEventListener('click', ()=>{
         movRows = readMovRows();
-        movRows.push({fecha:'',concepto:'',ingreso:'',egreso:''});
+        movRows.push(movTipos ? {fecha:'',concepto:'',tipo:movTipos[0],ingreso:'',egreso:''} : {fecha:'',concepto:'',ingreso:'',egreso:''});
         renderMov();
         scheduleMovSave();
         const lastInput = movBody.querySelector('tr:last-child input');
@@ -5791,12 +5846,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             const edificios = await getEdificios();
             const edificioActivo = edificios.find(ed=>ed.id===getActiveConsorcioId());
             const nombreConsorcio = (currentUser && currentUser.consorcio) || (edificioActivo ? edificioActivo.nombre : '') || 'Sin consorcio';
-            const subfolder = `${nombreConsorcio} - Conciliaciones bancarias`;
+            const nombreCuenta = opts.nombreCuenta || 'Cuenta Corriente';
+            const subfolder = `${nombreConsorcio} - Conciliaciones bancarias - ${nombreCuenta}`;
 
             // Nombre de archivo prolijo y autoexplicativo (no hace falta que vos lo escribas así, lo arma la app)
             const slug = s => (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'');
             const ext = (file.name||'').includes('.') ? file.name.split('.').pop() : (file.type.includes('pdf')?'pdf':'jpg');
-            const nombreProlijo = `Extracto_${slug(nombreConsorcio)}_${slug(p.periodo)||'periodo'}.${ext}`;
+            const nombreProlijo = `Extracto_${slug(nombreConsorcio)}_${slug(nombreCuenta)}_${slug(p.periodo)||'periodo'}.${ext}`;
             const fileParaSubir = new File([file], nombreProlijo, {type: file.type});
 
             const url = await window.uploadFileToDrive(fileParaSubir, subfolder);
@@ -6149,7 +6205,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       doc.setTextColor(...COLOR_PRINCIPAL);
       doc.text('ADMINISTRACIÓN NAKEN', M, y); y+=6;
       doc.setFontSize(11);
-      doc.text(`Hoja de Conciliación Bancaria N° ${p.numero||'—'}`, M, y); y+=5;
+      doc.text(`Hoja de Conciliación Bancaria — ${opts.nombreCuenta || 'Cuenta Corriente'} N° ${p.numero||'—'}`, M, y); y+=5;
       doc.setFont('helvetica','normal');
       doc.setFontSize(9);
       doc.setTextColor(...COLOR_TEXTO);
@@ -6215,10 +6271,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         let saldoAcum = 0;
         doc.autoTable({
           ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', styles:{...AUTOTABLE_BASE.styles, fontSize:8.5},
-          head:[['Fecha','Concepto','Ingreso','Egreso']],
+          head:[movTipos ? ['Fecha','Concepto','Tipo','Ingreso','Egreso'] : ['Fecha','Concepto','Ingreso','Egreso']],
           body: movsDelPeriodo.map(r=>{
             saldoAcum += num(r.ingreso) - num(r.egreso);
-            return [r.fecha||'—', r.concepto||'—', num(r.ingreso)?fmt(num(r.ingreso)):'—', num(r.egreso)?fmt(num(r.egreso)):'—'];
+            return movTipos
+              ? [r.fecha||'—', r.concepto||'—', r.tipo||'—', num(r.ingreso)?fmt(num(r.ingreso)):'—', num(r.egreso)?fmt(num(r.egreso)):'—']
+              : [r.fecha||'—', r.concepto||'—', num(r.ingreso)?fmt(num(r.ingreso)):'—', num(r.egreso)?fmt(num(r.egreso)):'—'];
           })
         });
         y = doc.lastAutoTable.finalY + 8;
@@ -6271,10 +6329,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       heading('PASO 4 — RESULTADO Y ARCHIVO DE LA CONCILIACIÓN');
       parrafo(`Estado: ${ok ? 'CONCILIA — el saldo del Libro Banco ajustado por las partidas en tránsito coincide con el saldo del extracto bancario.' : 'NO CONCILIA — queda una diferencia de '+fmt(diferencia)+' sin explicar, a revisar antes de archivar.'}`, {bold:true, acento: !ok});
       parrafo('La presente hoja de conciliación bancaria fue elaborada por la administración del consorcio a partir del Libro Banco y el extracto bancario del período indicado, como constancia de control de integridad de fondos. Queda archivada en el legajo del consorcio, adjunta a la rendición mensual.', {size:8.5});
+      if(opts.notaLegal){
+        const huboEgresos = movsDelPeriodo.some(r=>num(r.egreso)>0);
+        if(huboEgresos) parrafo(opts.notaLegal, {size:8, acento:true});
+      }
       y += 3;
       parrafo(CONCILIACION_ADMIN_FIRMA, {bold:true, size:9});
 
-      const fileName = `Conciliacion_N${String(p.numero||0).padStart(3,'0')}_${(p.periodo||'periodo').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`;
+      const fileName = `${pdfPrefijo}_N${String(p.numero||0).padStart(3,'0')}_${(p.periodo||'periodo').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`;
       const reportBytes = doc.output('arraybuffer');
 
       /* ----- Fusión con el extracto bancario adjunto, si hay uno disponible ----- */
@@ -6355,6 +6417,584 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       renderMov();
       if(periodos.length>0) currentPeriodId = periodos[periodos.length-1].id;
       renderConcWrap();
+      renderHistorial();
+    });
+  }
+
+  /* ---------- Libro de Caja + Arqueo de caja ----------
+     Ley 941 CABA exige llevar Libro de Caja como uno de los libros obligatorios
+     del administrador (junto con Administración, Sueldos, Actas, Registro de Firmas,
+     Inventario). A diferencia del Libro Banco, el efectivo no tiene un "extracto" que
+     lo respalde — el control se hace mediante arqueos periódicos: contar el efectivo
+     físico y compararlo contra el saldo que arroja el Libro de Caja a esa fecha. */
+  const CAJA_TIPOS_MOVIMIENTO = [
+    'Cobro de expensas en efectivo',
+    'Retiro de banco para caja chica',
+    'Pago de gasto menor',
+    'Otro ingreso',
+    'Otro egreso'
+  ];
+  const CAJA_NOTA_INTRO = 'El Libro de Caja es uno de los libros obligatorios del administrador según la Ley 941 de CABA (junto con los de Administración, Sueldos, Actas de Asamblea, Actas del Consejo, Registro de Firmas e Inventario). A diferencia del Libro Banco, el efectivo no tiene un extracto bancario que lo respalde — el control se hace con arqueos periódicos: contar el efectivo físico y compararlo contra el saldo que arroja este libro a esa fecha.';
+
+  function mountLibroCaja(mountId, movKey, arqueoKey){
+    const mount = document.getElementById(mountId);
+    const isAdmin = role==='admin';
+    let movRows = [];
+    let arqueos = [];
+    let currentArqueoId = null;
+    const evidenciaCache = {};
+
+    function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); }
+    function uid(){ return 'k'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+    function saldoActualCaja(){ return movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0); }
+    function blankArqueo(){ return { id:uid(), numero:0, fecha:'', saldoLibroCaja:String(saldoActualCaja()), efectivoContado:'', observaciones:'', evidenciaUrl:'', evidenciaNombre:'', evidenciaMimeType:'', cerrado:false, fechaCierre:'' }; }
+    function getCurrentArqueo(){ return arqueos.find(a=>a.id===currentArqueoId) || null; }
+    function calcDiferenciaArqueo(a){ return num(a.efectivoContado) - num(a.saldoLibroCaja); }
+
+    mount.innerHTML = `
+      <p class="panel-note" style="margin-top:0;background:var(--paper-deep,#f8f9fa);border:1px dashed var(--gray-200);border-radius:6px;padding:10px 12px;">${CAJA_NOTA_INTRO}</p>
+
+      <div id="${mountId}-kpi-mov" class="kpi-row"></div>
+
+      <div class="subhead">Libro de Caja — movimientos en efectivo</div>
+      <table class="ledger">
+        <thead><tr>
+          <th>Fecha</th><th>Concepto</th><th>Tipo</th><th>Ingreso ($)</th><th>Egreso ($)</th><th>Saldo acumulado</th>
+          ${isAdmin ? '<th class="row-del"></th>' : ''}
+        </tr></thead>
+        <tbody id="${mountId}-mov-body"></tbody>
+      </table>
+      <div class="toolbar">
+        ${isAdmin ? `<button class="btn" id="${mountId}-mov-add">+ Agregar movimiento</button>` : '<span></span>'}
+        <div style="display:flex;align-items:center;gap:12px;">
+          ${statusEl(mountId+'-mov-status')}
+          ${isAdmin ? `<button class="btn primary" id="${mountId}-mov-save">Guardar cambios</button>` : ''}
+        </div>
+      </div>
+      <p class="panel-note" style="margin-top:-6px;">El saldo acumulado se calcula fila por fila en el orden en que están cargados los movimientos — cargalos en orden cronológico.</p>
+
+      <div class="subhead">Arqueo de caja</div>
+      <div id="${mountId}-arq-wrap"></div>
+
+      <div class="subhead">Historial de arqueos</div>
+      <div id="${mountId}-historial"></div>
+    `;
+
+    /* ----- Libro de Caja ----- */
+    const movBody = document.getElementById(mountId+'-mov-body');
+
+    function renderMovKpi(){
+      const kpi = document.getElementById(mountId+'-kpi-mov');
+      kpi.innerHTML = `
+        <div class="kpi highlight"><div class="label">Saldo actual en Caja</div><div class="value">${fmt(saldoActualCaja())}</div></div>
+        <div class="kpi"><div class="label">Movimientos cargados</div><div class="value">${movRows.length}</div></div>
+      `;
+    }
+
+    function renderMov(){
+      movBody.innerHTML = '';
+      if(movRows.length===0){
+        movBody.innerHTML = `<tr><td colspan="${isAdmin?7:6}"><div class="empty">Sin movimientos cargados.</div></td></tr>`;
+        renderMovKpi();
+        return;
+      }
+      let saldo = 0;
+      movRows.forEach((row,i)=>{
+        saldo += num(row.ingreso) - num(row.egreso);
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-idx', i);
+        const disabled = isAdmin ? '' : 'disabled';
+        tr.innerHTML = `
+          <td><input type="text" data-field="fecha" value="${escapeHtml(row.fecha)}" placeholder="DD/MM/AAAA" ${disabled}></td>
+          <td><input type="text" data-field="concepto" value="${escapeHtml(row.concepto)}" ${disabled}></td>
+          <td><select data-field="tipo" ${disabled}>${CAJA_TIPOS_MOVIMIENTO.map(t=>`<option ${row.tipo===t?'selected':''}>${t}</option>`).join('')}</select></td>
+          <td class="num"><input type="text" data-field="ingreso" value="${escapeHtml(row.ingreso)}" placeholder="0" ${disabled}></td>
+          <td class="num"><input type="text" data-field="egreso" value="${escapeHtml(row.egreso)}" placeholder="0" ${disabled}></td>
+          <td class="num"><input type="text" data-saldo value="${fmt(saldo)}" disabled></td>
+          ${isAdmin ? `<td class="row-del"><button data-action="mov-del" title="Eliminar">✕</button></td>` : ''}
+        `;
+        movBody.appendChild(tr);
+      });
+      renderMovKpi();
+    }
+
+    function recalcMovSaldos(){
+      let saldo = 0;
+      movBody.querySelectorAll('tr[data-idx]').forEach(tr=>{
+        saldo += num(tr.querySelector('[data-field="ingreso"]').value) - num(tr.querySelector('[data-field="egreso"]').value);
+        tr.querySelector('[data-saldo]').value = fmt(saldo);
+      });
+      const highlightVal = document.querySelector(`#${mountId}-kpi-mov .kpi.highlight .value`);
+      if(highlightVal) highlightVal.textContent = fmt(saldo);
+    }
+
+    function readMovRows(){
+      const out = [];
+      movBody.querySelectorAll('tr[data-idx]').forEach(tr=>{
+        out.push({
+          fecha: tr.querySelector('[data-field="fecha"]').value,
+          concepto: tr.querySelector('[data-field="concepto"]').value,
+          tipo: tr.querySelector('[data-field="tipo"]').value,
+          ingreso: tr.querySelector('[data-field="ingreso"]').value,
+          egreso: tr.querySelector('[data-field="egreso"]').value,
+        });
+      });
+      return out;
+    }
+
+    let movSaveTimer;
+    function scheduleMovSave(){
+      if(!isAdmin) return;
+      setStatus(mountId+'-mov-status','saving');
+      clearTimeout(movSaveTimer);
+      movSaveTimer = setTimeout(()=>{ movRows = readMovRows(); saveData(movKey, movRows, mountId+'-mov-status'); }, 700);
+    }
+
+    if(isAdmin){
+      movBody.addEventListener('input', ()=>{ recalcMovSaldos(); scheduleMovSave(); });
+      movBody.addEventListener('change', ()=>{ recalcMovSaldos(); scheduleMovSave(); });
+      movBody.addEventListener('click', e=>{
+        const b = e.target.closest('[data-action="mov-del"]');
+        if(b){ movRows = readMovRows(); movRows.splice(+b.closest('tr').dataset.idx,1); renderMov(); scheduleMovSave(); }
+      });
+      document.getElementById(mountId+'-mov-add').addEventListener('click', ()=>{
+        movRows = readMovRows();
+        movRows.push({fecha:'',concepto:'',tipo:CAJA_TIPOS_MOVIMIENTO[0],ingreso:'',egreso:''});
+        renderMov();
+        scheduleMovSave();
+        const lastInput = movBody.querySelector('tr:last-child input');
+        if(lastInput) lastInput.focus();
+      });
+      document.getElementById(mountId+'-mov-save').addEventListener('click', ()=>{
+        movRows = readMovRows(); saveData(movKey, movRows, mountId+'-mov-status');
+      });
+    }
+
+    /* ----- Arqueo de caja ----- */
+    function renderArqWrap(){
+      const wrap = document.getElementById(mountId+'-arq-wrap');
+      const selectorHtml = `
+        <div class="field-grid" style="grid-template-columns:2fr 1fr;align-items:end;">
+          <div>
+            <label>Arqueo</label>
+            <select id="${mountId}-arq-select">
+              <option value="">Elegí un arqueo…</option>
+              ${arqueos.map(a=>`<option value="${a.id}" ${a.id===currentArqueoId?'selected':''}>N° ${a.numero||'—'} — ${escapeHtml(a.fecha||'(sin fecha)')}${a.cerrado?' — Archivado':''}</option>`).join('')}
+            </select>
+          </div>
+          <div>${isAdmin ? `<button class="btn" id="${mountId}-arq-add" style="width:100%;">+ Nuevo arqueo</button>` : ''}</div>
+        </div>
+      `;
+
+      const a = getCurrentArqueo();
+      if(!a){
+        wrap.innerHTML = selectorHtml + `<div class="empty">Elegí un arqueo existente o creá uno nuevo para contar el efectivo.</div>`;
+        document.getElementById(mountId+'-arq-select').addEventListener('change', e=>{ currentArqueoId = e.target.value || null; renderArqWrap(); });
+        if(isAdmin) document.getElementById(mountId+'-arq-add').addEventListener('click', addArqueo);
+        return;
+      }
+
+      const editable = isAdmin && !a.cerrado;
+      const disabled = editable ? '' : 'disabled';
+      const diferencia = calcDiferenciaArqueo(a);
+      const ok = Math.abs(diferencia) < 0.01;
+
+      wrap.innerHTML = selectorHtml + `
+        <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:16px 18px;background:#fff;margin:14px 0 16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-family:'Playfair Display',serif;font-size:18px;color:var(--primary);">Arqueo N° ${a.numero||'—'}</span>
+              <span class="badge ${a.cerrado?'resuelto':'pendiente'}">${a.cerrado?'Archivado — firmado':'Borrador'}</span>
+            </div>
+            ${isAdmin && a.cerrado ? `<button class="btn ghost" id="${mountId}-arq-reabrir" style="font-size:11px;">Reabrir para editar</button>` : ''}
+          </div>
+
+          <div class="field-grid" style="grid-template-columns:repeat(2,1fr);">
+            <div>
+              <label>Fecha del arqueo</label>
+              <input type="text" id="${mountId}-a-fecha" value="${escapeHtml(a.fecha)}" placeholder="DD/MM/AAAA" ${disabled}>
+            </div>
+            <div>
+              <label>Saldo según Libro de Caja a esa fecha</label>
+              <input type="text" id="${mountId}-a-saldoLibroCaja" value="${escapeHtml(a.saldoLibroCaja)}" placeholder="0" ${disabled}>
+            </div>
+            <div>
+              <label>Efectivo contado físicamente</label>
+              <input type="text" id="${mountId}-a-efectivoContado" value="${escapeHtml(a.efectivoContado)}" placeholder="0" ${disabled}>
+            </div>
+            <div>
+              <label>Observaciones</label>
+              <input type="text" id="${mountId}-a-observaciones" value="${escapeHtml(a.observaciones)}" placeholder="Opcional" ${disabled}>
+            </div>
+          </div>
+
+          <div class="kpi-row" id="${mountId}-a-kpi" style="margin-bottom:16px;"></div>
+
+          <div class="subhead" style="margin-top:0;">Evidencia del arqueo (foto, opcional)</div>
+          <div id="${mountId}-a-evidencia-wrap"></div>
+
+          <div class="toolbar" style="margin-top:18px;border-top:1px solid var(--gray-200);padding-top:14px;">
+            <button class="btn ghost" id="${mountId}-a-pdf">Generar acta de arqueo (PDF)</button>
+            ${editable ? `<button class="btn primary" id="${mountId}-a-cerrar">Cerrar y archivar arqueo</button>` : ''}
+          </div>
+        </div>
+      `;
+
+      updateArqKpi();
+      renderEvidencia();
+      wireArqEvents(a, editable);
+    }
+
+    function updateArqKpi(){
+      const a = getCurrentArqueo();
+      if(!a) return;
+      const saldoInput = document.getElementById(mountId+'-a-saldoLibroCaja');
+      const contadoInput = document.getElementById(mountId+'-a-efectivoContado');
+      const tempA = {
+        saldoLibroCaja: saldoInput ? saldoInput.value : a.saldoLibroCaja,
+        efectivoContado: contadoInput ? contadoInput.value : a.efectivoContado,
+      };
+      const diferencia = calcDiferenciaArqueo(tempA);
+      const ok = Math.abs(diferencia) < 0.01;
+      const kpi = document.getElementById(mountId+'-a-kpi');
+      if(kpi){
+        kpi.innerHTML = `
+          <div class="kpi"><div class="label">Saldo s/Libro de Caja</div><div class="value">${fmt(num(tempA.saldoLibroCaja))}</div></div>
+          <div class="kpi"><div class="label">Efectivo contado</div><div class="value">${fmt(num(tempA.efectivoContado))}</div></div>
+          <div class="kpi ${ok?'':'highlight'}"><div class="label">Diferencia</div><div class="value">${fmt(diferencia)}</div></div>
+          <div class="kpi ${ok?'highlight':''}"><div class="label">Estado</div><div class="value" style="font-size:15px;">${ok?'✓ Coincide':'⚠ No coincide'}</div></div>
+        `;
+      }
+    }
+
+    function renderEvidencia(){
+      const a = getCurrentArqueo();
+      if(!a) return;
+      const wrap = document.getElementById(mountId+'-a-evidencia-wrap');
+      if(!wrap) return;
+      const editable = isAdmin && !a.cerrado;
+      const tieneArchivo = !!a.evidenciaUrl;
+      wrap.innerHTML = `
+        ${tieneArchivo ? `
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+            <a href="${escapeHtml(a.evidenciaUrl)}" target="_blank" rel="noopener" class="btn ghost" style="text-decoration:none;">Ver evidencia adjunta ↗</a>
+            <span style="font-size:12.5px;color:var(--muted);">${escapeHtml(a.evidenciaNombre||'')}</span>
+          </div>
+        ` : ''}
+        ${editable ? `
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <input type="file" id="${mountId}-a-evidencia-file" accept="application/pdf,image/*">
+            <span id="${mountId}-a-evidencia-status" style="font-size:12.5px;color:var(--muted);"></span>
+          </div>
+        ` : (!tieneArchivo ? `<div class="empty">Sin evidencia adjunta.</div>` : '')}
+      `;
+      if(editable){
+        document.getElementById(mountId+'-a-evidencia-file').addEventListener('change', async (e)=>{
+          const file = e.target.files[0];
+          const statusEl2 = document.getElementById(mountId+'-a-evidencia-status');
+          if(!file) return;
+          const sizeMB = (file.size/1024/1024).toFixed(1);
+          if(file.size > 20*1024*1024){
+            statusEl2.textContent = `Este archivo pesa ${sizeMB} MB — es demasiado grande.`;
+            statusEl2.style.color = 'var(--danger)';
+            return;
+          }
+          statusEl2.textContent = `Subiendo (${sizeMB} MB)...`;
+          statusEl2.style.color = 'var(--brass)';
+          try{
+            const bytes = await file.arrayBuffer();
+            evidenciaCache[a.id] = { bytes, mimeType: file.type || '', nombre: file.name || '' };
+            const edificios = await getEdificios();
+            const edificioActivo = edificios.find(ed=>ed.id===getActiveConsorcioId());
+            const nombreConsorcio = (currentUser && currentUser.consorcio) || (edificioActivo ? edificioActivo.nombre : '') || 'Sin consorcio';
+            const subfolder = `${nombreConsorcio} - Arqueos de caja`;
+            const slug = s => (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+            const ext = (file.name||'').includes('.') ? file.name.split('.').pop() : (file.type.includes('pdf')?'pdf':'jpg');
+            const nombreProlijo = `Arqueo_${slug(nombreConsorcio)}_${slug(a.fecha)||'fecha'}.${ext}`;
+            const fileParaSubir = new File([file], nombreProlijo, {type: file.type});
+            const url = await window.uploadFileToDrive(fileParaSubir, subfolder);
+            a.evidenciaUrl = url;
+            a.evidenciaNombre = nombreProlijo;
+            a.evidenciaMimeType = file.type || '';
+            saveArqueos();
+            renderEvidencia();
+          }catch(err){
+            console.error('Error al subir evidencia de arqueo:', err);
+            statusEl2.textContent = 'No se pudo subir. Detalle: ' + (err && err.message ? err.message : 'error desconocido');
+            statusEl2.style.color = 'var(--danger)';
+          }
+        });
+      }
+    }
+
+    function syncArqueoFromDom(){
+      const a = getCurrentArqueo();
+      if(!a) return;
+      ['fecha','saldoLibroCaja','efectivoContado','observaciones'].forEach(f=>{
+        const el = document.getElementById(mountId+'-a-'+f);
+        if(el) a[f] = el.value;
+      });
+    }
+
+    function saveArqueos(){
+      saveData(arqueoKey, arqueos, mountId+'-a-status');
+      renderHistorial();
+    }
+
+    function addArqueo(){
+      const na = blankArqueo();
+      na.numero = arqueos.length + 1;
+      arqueos.push(na);
+      currentArqueoId = na.id;
+      saveArqueos();
+      renderArqWrap();
+    }
+
+    function wireArqEvents(a, editable){
+      document.getElementById(mountId+'-arq-select').addEventListener('change', e=>{
+        currentArqueoId = e.target.value || null; renderArqWrap();
+      });
+      if(isAdmin){
+        const addBtn = document.getElementById(mountId+'-arq-add');
+        if(addBtn) addBtn.addEventListener('click', addArqueo);
+      }
+      if(a.cerrado && isAdmin){
+        const reabrirBtn = document.getElementById(mountId+'-arq-reabrir');
+        if(reabrirBtn) reabrirBtn.addEventListener('click', ()=>{
+          if(!confirm('¿Reabrir este arqueo para editarlo?')) return;
+          a.cerrado = false; a.fechaCierre = '';
+          saveArqueos();
+          renderArqWrap();
+        });
+      }
+
+      document.getElementById(mountId+'-a-pdf').addEventListener('click', ()=> generarPdfArqueo(a));
+
+      if(!editable) return;
+
+      let aSaveTimer;
+      function scheduleASave(){
+        clearTimeout(aSaveTimer);
+        aSaveTimer = setTimeout(()=>{ syncArqueoFromDom(); saveArqueos(); }, 700);
+      }
+      ['fecha','saldoLibroCaja','efectivoContado','observaciones'].forEach(f=>{
+        const el = document.getElementById(mountId+'-a-'+f);
+        if(el) el.addEventListener('input', ()=>{ updateArqKpi(); scheduleASave(); });
+      });
+
+      document.getElementById(mountId+'-a-cerrar').addEventListener('click', ()=>{
+        if(!confirm('¿Cerrar y archivar este arqueo? No se va a poder editar sin reabrirlo.')) return;
+        syncArqueoFromDom();
+        a.cerrado = true;
+        a.fechaCierre = new Date().toLocaleString('es-AR');
+        saveArqueos();
+        renderArqWrap();
+        renderHistorial();
+      });
+    }
+
+    function renderHistorial(){
+      const el = document.getElementById(mountId+'-historial');
+      if(!el) return;
+      if(arqueos.length===0){
+        el.innerHTML = `<div class="empty">Todavía no se hizo ningún arqueo de caja.</div>`;
+        return;
+      }
+      el.innerHTML = `
+        <table class="ledger">
+          <thead><tr><th>N°</th><th>Fecha</th><th>Estado</th><th>Archivado el</th><th></th></tr></thead>
+          <tbody>
+            ${[...arqueos].reverse().map(a=>{
+              const ok = Math.abs(calcDiferenciaArqueo(a)) < 0.01;
+              return `<tr>
+                <td>${a.numero||'—'}</td>
+                <td>${escapeHtml(a.fecha||'—')}</td>
+                <td><span class="badge ${a.cerrado ? (ok?'resuelto':'escalado') : 'pendiente'}">${a.cerrado ? (ok?'Archivado — Coincide':'Archivado — Con diferencia') : 'Borrador'}</span></td>
+                <td>${escapeHtml(a.fechaCierre||'—')}</td>
+                <td><button class="btn ghost" data-action="ver-arqueo" data-id="${a.id}" style="font-size:11px;">Ver</button></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      `;
+      el.querySelectorAll('[data-action="ver-arqueo"]').forEach(b=>{
+        b.addEventListener('click', ()=>{
+          currentArqueoId = b.dataset.id;
+          renderArqWrap();
+          const target = document.getElementById(mountId+'-arq-wrap');
+          if(target) window.scrollTo({top: target.offsetTop - 80, behavior:'smooth'});
+        });
+      });
+    }
+
+    async function generarPdfArqueo(a){
+      if(!window.jspdf){ alert('No se pudo cargar el generador de PDF. Revisá tu conexión e intentá de nuevo.'); return; }
+      syncArqueoFromDom();
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      const M = 14;
+      let y = 18;
+
+      const COLOR_PRINCIPAL = [11,42,74];
+      const COLOR_SECUNDARIO = [44,62,80];
+      const COLOR_ACENTO = [201,169,78];
+      const COLOR_FONDO_ALT = [248,249,250];
+      const COLOR_TEXTO = [51,51,51];
+      const AUTOTABLE_BASE = {
+        styles: { fontSize: 9, textColor: COLOR_TEXTO, lineColor: COLOR_SECUNDARIO, lineWidth: 0.1 },
+        headStyles: { fillColor: COLOR_PRINCIPAL, textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: COLOR_FONDO_ALT }
+      };
+
+      const edificios = await getEdificios();
+      const consorcioId = getActiveConsorcioId();
+      const edificio = edificios.find(e=>e.id===consorcioId);
+      const nombreConsorcio = edificio ? edificio.nombre : '';
+
+      function heading(texto){
+        if(y>270){ doc.addPage(); y=18; }
+        doc.setFillColor(...COLOR_PRINCIPAL);
+        doc.rect(M, y, 182, 7, 'F');
+        doc.setTextColor(255,255,255);
+        doc.setFont('helvetica','bold');
+        doc.setFontSize(10);
+        doc.text(texto, M+3, y+5);
+        doc.setTextColor(...COLOR_TEXTO);
+        y += 12;
+      }
+      function parrafo(texto, opts={}){
+        doc.setFont('helvetica', opts.bold?'bold':'normal');
+        doc.setFontSize(opts.size||9.5);
+        doc.setTextColor(...(opts.acento ? COLOR_ACENTO : COLOR_TEXTO));
+        const lineas = doc.splitTextToSize(texto||'—', 182);
+        if(y + lineas.length*4.6 > 285){ doc.addPage(); y=18; }
+        doc.text(lineas, M, y);
+        y += lineas.length*4.6 + 3;
+        doc.setTextColor(...COLOR_TEXTO);
+      }
+
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(13);
+      doc.setTextColor(...COLOR_PRINCIPAL);
+      doc.text('ADMINISTRACIÓN NAKEN', M, y); y+=6;
+      doc.setFontSize(11);
+      doc.text(`Acta de Arqueo de Caja N° ${a.numero||'—'}`, M, y); y+=5;
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(9);
+      doc.setTextColor(...COLOR_TEXTO);
+      doc.text('Registro del Libro de Caja (Ley 941 CABA)', M, y); y+=5;
+      doc.text('Administrador: Lic. Sebastián R. Espeche - Mat. RPA 20066', M, y); y+=10;
+
+      heading('DATOS DEL ARQUEO');
+      const diferencia = calcDiferenciaArqueo(a);
+      const ok = Math.abs(diferencia) < 0.01;
+      doc.autoTable({
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+        body: [
+          ['N° de arqueo', String(a.numero||'—'), 'Consorcio', nombreConsorcio||'—'],
+          ['Fecha del arqueo', a.fecha||'—', 'Estado', a.cerrado ? 'Archivado' : 'Borrador'],
+        ]
+      });
+      y = doc.lastAutoTable.finalY + 8;
+
+      heading('COTEJO DE SALDOS');
+      doc.autoTable({
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+        head: [['Concepto', 'Importe']],
+        body: [
+          ['Saldo según Libro de Caja', fmt(num(a.saldoLibroCaja))],
+          ['Efectivo contado físicamente', fmt(num(a.efectivoContado))],
+          ['Diferencia', fmt(diferencia)],
+        ]
+      });
+      y = doc.lastAutoTable.finalY + 8;
+
+      if(a.observaciones){
+        heading('OBSERVACIONES');
+        parrafo(a.observaciones, {size:9});
+      }
+
+      heading('RESULTADO');
+      parrafo(`Estado: ${ok ? 'COINCIDE — el efectivo contado coincide con el saldo del Libro de Caja.' : 'NO COINCIDE — hay una diferencia de '+fmt(diferencia)+' a investigar.'}`, {bold:true, acento: !ok});
+      parrafo('La presente acta de arqueo fue elaborada por la administración del consorcio como constancia de control del efectivo en caja, conforme al Libro de Caja llevado según la Ley 941 de CABA. Queda archivada en el legajo del consorcio.', {size:8.5});
+      if(a.evidenciaUrl){
+        parrafo(`Evidencia fotográfica del arqueo: ${a.evidenciaNombre||'(ver archivo adjunto)'} — se incluye a continuación de esta hoja como parte del mismo documento.`, {size:8});
+      }
+      y += 3;
+      parrafo(CONCILIACION_ADMIN_FIRMA, {bold:true, size:9});
+
+      const fileName = `Arqueo_Caja_N${String(a.numero||0).padStart(3,'0')}_${(a.fecha||'fecha').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`;
+      const reportBytes = doc.output('arraybuffer');
+
+      let evidencia = evidenciaCache[a.id] || null;
+      if(!evidencia && a.evidenciaUrl){
+        try{
+          const res = await fetch(a.evidenciaUrl);
+          if(res.ok){
+            const bytes = await res.arrayBuffer();
+            evidencia = { bytes, mimeType: a.evidenciaMimeType || res.headers.get('content-type') || '', nombre: a.evidenciaNombre||'' };
+          }
+        }catch(err){
+          console.warn('No se pudo recuperar la evidencia adjunta para fusionarla:', err);
+        }
+      }
+
+      if(!evidencia || !window.PDFLib){
+        doc.save(fileName);
+        if(a.evidenciaUrl && !evidencia){
+          alert('Se generó el acta de arqueo, pero no se pudo recuperar automáticamente la evidencia adjunta para fusionarla. Podés abrirla por separado con el botón "Ver evidencia adjunta".');
+        }
+        return;
+      }
+
+      try{
+        const { PDFDocument } = window.PDFLib;
+        const merged = await PDFDocument.load(reportBytes);
+        const esImagen = /^image\//.test(evidencia.mimeType);
+        const esPdf = evidencia.mimeType==='application/pdf' || /\.pdf$/i.test(evidencia.nombre||'');
+
+        if(esPdf){
+          const evidenciaDoc = await PDFDocument.load(evidencia.bytes);
+          const copiedPages = await merged.copyPages(evidenciaDoc, evidenciaDoc.getPageIndices());
+          copiedPages.forEach(pg => merged.addPage(pg));
+        } else if(esImagen){
+          const img = /png/i.test(evidencia.mimeType) ? await merged.embedPng(evidencia.bytes) : await merged.embedJpg(evidencia.bytes);
+          const pageW = 595.28, pageH = 841.89;
+          const margin = 28;
+          const maxW = pageW - margin*2, maxH = pageH - margin*2;
+          const scale = Math.min(maxW/img.width, maxH/img.height, 1);
+          const w = img.width*scale, h = img.height*scale;
+          const page = merged.addPage([pageW, pageH]);
+          page.drawImage(img, { x:(pageW-w)/2, y:(pageH-h)/2, width:w, height:h });
+        } else {
+          doc.save(fileName);
+          return;
+        }
+
+        const mergedBytes = await merged.save();
+        const blob = new Blob([mergedBytes], {type:'application/pdf'});
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url; link.download = fileName;
+        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      }catch(err){
+        console.error('Error al fusionar la evidencia en el PDF:', err);
+        doc.save(fileName);
+      }
+    }
+
+    /* ----- Carga inicial ----- */
+    Promise.all([loadData(movKey, []), loadData(arqueoKey, [])]).then(([mv, arq])=>{
+      movRows = mv;
+      arqueos = arq;
+      let migrado = false;
+      arqueos.forEach((a,i)=>{ if(!a.numero){ a.numero = i+1; migrado = true; } });
+      if(migrado && isAdmin) saveData(arqueoKey, arqueos);
+      renderMov();
+      if(arqueos.length>0) currentArqueoId = arqueos[arqueos.length-1].id;
+      renderArqWrap();
       renderHistorial();
     });
   }
@@ -6626,9 +7266,24 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       {key:'estado', label:'Estado', placeholder:'En trámite / Sentencia / Archivado'},
     ], {emptyText:'No hay juicios cargados.'});
 
-    mountReserva('reserva-mount', 'naken-reserva');
+    mountLibroBancoConciliacion('reserva-mount', 'naken-reserva-movimientos', 'naken-reserva-conciliacion', {
+      cuentaKey: 'naken-reserva-cuenta-bancaria',
+      tituloCorto: 'el Fondo de Reserva',
+      nombreCuenta: 'Fondo de Reserva',
+      pdfPrefijo: 'ConciliacionFondoReserva',
+      movTipos: RESERVA_TIPOS_MOVIMIENTO,
+      notaIntro: RESERVA_NOTA_INTRO,
+      notaLegal: RESERVA_NOTA_LEGAL_PDF,
+    });
 
-    mountLibroBancoConciliacion('conciliaciones-mount', 'naken-movimientos', 'naken-conciliacion-bancaria');
+    mountLibroBancoConciliacion('conciliaciones-mount', 'naken-movimientos', 'naken-conciliacion-bancaria', {
+      cuentaKey: 'naken-cuenta-bancaria',
+      tituloCorto: 'la cuenta corriente',
+      nombreCuenta: 'Cuenta Corriente',
+      pdfPrefijo: 'Conciliacion',
+    });
+
+    mountLibroCaja('caja-mount', 'naken-caja-movimientos', 'naken-caja-arqueos');
 
     mountLedger('polizas-mount', 'naken-polizas', [
       {key:'proveedor', label:'Proveedor', placeholder:''},
