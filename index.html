@@ -682,6 +682,106 @@
   }
   .profile-banner button:hover { background: rgba(255, 255, 255, 0.22); }
 
+  /* ---------- NOVEDADES FLOTANTES (cartel de avisos del administrador) ---------- */
+  .novedades-flotantes {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 500;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 340px;
+    max-width: calc(100vw - 32px);
+    pointer-events: none;
+  }
+  .novedad-card {
+    pointer-events: auto;
+    position: relative;
+    background: linear-gradient(155deg, #16283c 0%, var(--primary) 55%, #0a1521 100%);
+    color: #fff;
+    border-radius: 14px;
+    padding: 16px 18px 14px;
+    box-shadow: 0 14px 34px rgba(15, 30, 46, 0.38), 0 2px 8px rgba(15, 30, 46, 0.22), inset 0 1px 0 rgba(255,255,255,0.08);
+    border: 1px solid rgba(232, 213, 163, 0.25);
+    animation: novedadIn .45s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .novedad-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; bottom: 0;
+    width: 5px;
+    border-radius: 14px 0 0 14px;
+    background: var(--gold);
+  }
+  .novedad-card.tipo-urgente::before { background: var(--danger); }
+  .novedad-card.tipo-informativo::before { background: var(--ok); }
+  @keyframes novedadIn {
+    from { opacity: 0; transform: translateY(16px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .novedad-card .novedad-tag {
+    font-family: 'Inter', monospace;
+    font-size: 9.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--gold-light);
+    display: block;
+    margin-bottom: 5px;
+  }
+  .novedad-card.tipo-urgente .novedad-tag { color: #ff9d9d; }
+  .novedad-card.tipo-informativo .novedad-tag { color: #a8e0f5; }
+  .novedad-card .novedad-titulo {
+    font-family: 'Playfair Display', serif;
+    font-size: 16.5px;
+    line-height: 1.3;
+    margin: 0 22px 6px 0;
+  }
+  .novedad-card .novedad-mensaje {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: rgba(255,255,255,0.86);
+    margin: 0;
+    white-space: pre-wrap;
+  }
+  .novedad-card .novedad-vigencia {
+    font-family: 'Inter', monospace;
+    font-size: 10px;
+    color: rgba(255,255,255,0.45);
+    margin-top: 10px;
+  }
+  .novedad-card .novedad-cerrar {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+  }
+  .novedad-card .novedad-cerrar:hover { background: rgba(255,255,255,0.22); }
+  @media (max-width: 640px) {
+    .novedades-flotantes {
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: auto;
+      max-width: none;
+      padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+      gap: 8px;
+    }
+    .novedad-card { border-radius: 14px; }
+  }
+
   /* ---------- LOGIN GATE ---------- */
   .gate-wrap { max-width: 420px; margin: 40px auto; }
   .gate-tabs {
@@ -1058,6 +1158,7 @@
 
     <div class="navgroup">
       <div class="group-label">Herramientas del administrador</div>
+      <button class="navbtn admin-only" data-panel="novedades">Tablero de Novedades</button>
       <button class="navbtn admin-only" data-panel="asistencia">Registro de asamblea</button>
       <button class="navbtn admin-only" data-panel="usuarios">Usuarios y accesos</button>
       <button class="navbtn admin-only" data-panel="liquidaciones">Liquidación de sueldos</button>
@@ -1248,9 +1349,20 @@
         <div class="panel-head">
           <span class="eyebrow">Transparencia</span>
           <h2>Proveedores y servicios regulares</h2>
-          <p class="panel-note">Ascensores, matafuegos, oblea QR de la AGC, desinfección, y demás servicios con visitas técnicas periódicas. La columna "Estado" avisa sola cuando se acerca el vencimiento.</p>
+          <p class="panel-note" style="max-width:none;">Las obleas QR de CABA (ascensores, unidades térmicas, fachada, instalaciones fijas contra incendio y campanas de extracción) quedan documentadas y disponibles para consulta abajo. Más abajo, el listado de proveedores y servicios con visitas técnicas periódicas — la columna "Estado" avisa sola cuando se acerca el vencimiento.</p>
         </div>
+        <div id="obleas-qr-mount"></div>
         <div id="proveedores-mount"></div>
+      </section>
+
+      <!-- TABLERO DE NOVEDADES -->
+      <section class="panel" id="panel-novedades">
+        <div class="panel-head">
+          <span class="eyebrow">Herramientas del administrador</span>
+          <h2>Tablero de Novedades</h2>
+          <p class="panel-note" style="max-width:none;">Avisos que se muestran como un cartel flotante a los propietarios en toda la aplicación mientras estén vigentes (por ejemplo, un corte de luz programado o un aviso de mantenimiento). Definí el período de vigencia; podés editarlo mientras esté activo, y archivarlo antes de tiempo si ya no aplica.</p>
+        </div>
+        <div id="novedades-mount"></div>
       </section>
 
       <!-- REGISTRO DE ASAMBLEA -->
@@ -1374,6 +1486,7 @@
 
     </div>
   </main>
+  <div id="novedades-flotantes-mount" class="novedades-flotantes"></div>
 </div>
 
 <script>
@@ -1510,6 +1623,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     juicios: '<line x1="12" y1="3" x2="12" y2="21"></line><line x1="5" y1="7" x2="19" y2="7"></line><path d="M5 7l-3 6a3 3 0 0 0 6 0z"></path><path d="M19 7l-3 6a3 3 0 0 0 6 0z"></path><line x1="8" y1="21" x2="16" y2="21"></line>',
     movimientos: '<polyline points="17 3 21 7 17 11"></polyline><line x1="21" y1="7" x2="3" y2="7"></line><polyline points="7 13 3 17 7 21"></polyline><line x1="3" y1="17" x2="21" y2="17"></line>',
     conciliaciones: '<rect x="4" y="4" width="16" height="16" rx="2"></rect><polyline points="8 12 11 15 16 9"></polyline>',
+    caja: '<rect x="3" y="9" width="18" height="11" rx="1.5"></rect><path d="M3 9l3-5h12l3 5"></path><line x1="9" y1="13" x2="15" y2="13"></line>',
+    novedades: '<path d="M4 4h13l3 4-3 4H4z"></path><line x1="4" y1="4" x2="4" y2="20"></line>',
     segurosdepositos: '<path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6z"></path>',
     proveedores: '<path d="M14.5 6.5a4 4 0 0 1-5.3 4.9L4 16.6V20h3.4l5.2-5.2a4 4 0 0 1 4.9-5.3l-2.7 2.7-1.9-1.9z"></path>',
     reserva: '<rect x="4" y="8" width="16" height="12" rx="2"></rect><circle cx="12" cy="14" r="2.5"></circle><line x1="8" y1="8" x2="8" y2="5"></line><line x1="16" y1="8" x2="16" y2="5"></line>',
@@ -1526,7 +1641,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   const ICON_COLORS = {
     resumen:'#7FB8FF', expensas:'#FFD166', formapago:'#FF9F7F', reclamos:'#C792EA',
     facturas:'#7FCBFF', asamblea:'#FF7FA8', conflictos:'#F0A0A0', deudas:'#FFB37F', juicios:'#E0A8FF',
-    movimientos:'#8FA8FF', conciliaciones:'#FFAF8F', segurosdepositos:'#8FE0FF',
+    movimientos:'#8FA8FF', conciliaciones:'#FFAF8F', caja:'#A8D8C8', novedades:'#FFB3D1', segurosdepositos:'#8FE0FF',
     proveedores:'#FFD1A8', reserva:'#D1A8FF', honorarios:'#FFE08F', asistencia:'#A8C8FF',
     usuarios:'#FFA8C8', liquidaciones:'#C8A8FF', personal:'#A8FFE0', manual:'#FFC8A8', remocion:'#D8A8FF', calchonorarios:'#B8E0A8'
   };
@@ -1566,6 +1681,130 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     if(!dt) return null;
     const today = new Date(); today.setHours(0,0,0,0);
     return Math.round((dt - today) / 86400000);
+  }
+
+  /* ---------- Obleas QR y certificaciones obligatorias de CABA ---------- */
+  const OBLEAS_QR_CATEGORIAS = [
+    { key:'ascensores', nombre:'Ascensores' },
+    { key:'termicas', nombre:'Unidades térmicas (calderas)' },
+    { key:'fachada', nombre:'Fachada' },
+    { key:'incendio', nombre:'Instalaciones fijas de lucha contra incendio' },
+    { key:'campanas', nombre:'Campanas de extracción' },
+  ];
+
+  function mountObleasQR(mountId, storageKey){
+    const mount = document.getElementById(mountId);
+    const isAdmin = role==='admin';
+    let datos = {};
+    const archivoCache = {};
+
+    function estadoOblea(fechaVencimiento){
+      const days = daysUntil(fechaVencimiento);
+      if(days === null) return { texto:'Sin fecha cargada', clase:'pendiente' };
+      if(days < 0) return { texto:`🔴 Vencida (${Math.abs(days)} d)`, clase:'escalado' };
+      if(days <= 30) return { texto:`🟡 Por vencer (${days} d)`, clase:'pendiente' };
+      return { texto:'🟢 Vigente', clase:'resuelto' };
+    }
+
+    mount.innerHTML = `
+      <div class="subhead" style="margin-top:0;">Obleas QR y certificaciones (CABA)</div>
+      <p class="panel-note" style="margin-top:-4px;">CABA exige exhibir la oblea con código QR de ascensores, unidades térmicas, fachada, instalaciones fijas de lucha contra incendio y campanas de extracción. Acá queda el respaldo documental de cada una, con su fecha de vencimiento.</p>
+      <div id="${mountId}-cards"></div>
+    `;
+
+    function renderCards(){
+      const cardsEl = document.getElementById(mountId+'-cards');
+      cardsEl.innerHTML = OBLEAS_QR_CATEGORIAS.map(cat=>{
+        const d = datos[cat.key] || {};
+        const estado = estadoOblea(d.fechaVencimiento);
+        const editable = isAdmin;
+        return `
+          <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px 16px;background:#fff;margin-bottom:12px;" data-cat="${cat.key}">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+              <b style="font-family:'Playfair Display',serif;font-size:15.5px;color:var(--primary);">${cat.nombre}</b>
+              <span class="badge ${estado.clase}">${estado.texto}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:${editable?'10px':'0'};">
+              ${d.archivoUrl ? `
+                <a href="${escapeHtml(d.archivoUrl)}" target="_blank" rel="noopener" class="btn ghost" style="text-decoration:none;font-size:12px;">Ver documento ↗</a>
+                <span style="font-size:12px;color:var(--muted);">${escapeHtml(d.archivoNombre||'')}</span>
+              ` : `<span style="font-size:12.5px;color:var(--muted);">Sin documento cargado.</span>`}
+            </div>
+            ${editable ? `
+              <div class="field-grid" style="grid-template-columns:1fr 1fr;margin-bottom:0;">
+                <div>
+                  <label>Fecha de vencimiento</label>
+                  <input type="text" data-field="fechaVencimiento" value="${escapeHtml(d.fechaVencimiento||'')}" placeholder="DD/MM/AAAA">
+                </div>
+                <div>
+                  <label>Subir / reemplazar documento</label>
+                  <input type="file" data-field="archivo" accept="application/pdf,image/*">
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
+                <span data-status style="font-size:12px;color:var(--muted);"></span>
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+
+      if(isAdmin){
+        cardsEl.querySelectorAll('[data-cat]').forEach(card=>{
+          const catKey = card.dataset.cat;
+          if(!datos[catKey]) datos[catKey] = {};
+
+          let fechaTimer;
+          const fechaInput = card.querySelector('[data-field="fechaVencimiento"]');
+          fechaInput.addEventListener('input', ()=>{
+            clearTimeout(fechaTimer);
+            fechaTimer = setTimeout(async ()=>{
+              datos[catKey].fechaVencimiento = fechaInput.value;
+              await saveData(storageKey, datos);
+              renderCards();
+            }, 700);
+          });
+
+          const fileInput = card.querySelector('[data-field="archivo"]');
+          fileInput.addEventListener('change', async (e)=>{
+            const file = e.target.files[0];
+            const statusSpan = card.querySelector('[data-status]');
+            if(!file) return;
+            if(file.size > 20*1024*1024){
+              statusSpan.textContent = 'Este archivo es demasiado grande (máx. 20 MB).';
+              statusSpan.style.color = 'var(--danger)';
+              return;
+            }
+            statusSpan.textContent = 'Subiendo…';
+            statusSpan.style.color = 'var(--brass)';
+            try{
+              const edificios = await getEdificios();
+              const edificioActivo = edificios.find(ed=>ed.id===getActiveConsorcioId());
+              const nombreConsorcio = (currentUser && currentUser.consorcio) || (edificioActivo ? edificioActivo.nombre : '') || 'Sin consorcio';
+              const subfolder = `${nombreConsorcio} - Obleas QR y certificaciones`;
+              const slug = s => (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+              const ext = (file.name||'').includes('.') ? file.name.split('.').pop() : (file.type.includes('pdf')?'pdf':'jpg');
+              const catNombre = OBLEAS_QR_CATEGORIAS.find(c=>c.key===catKey).nombre;
+              const nombreProlijo = `Oblea_${slug(nombreConsorcio)}_${slug(catNombre)}.${ext}`;
+              const fileParaSubir = new File([file], nombreProlijo, {type: file.type});
+              const url = await window.uploadFileToDrive(fileParaSubir, subfolder);
+              datos[catKey].archivoUrl = url;
+              datos[catKey].archivoNombre = nombreProlijo;
+              datos[catKey].archivoMimeType = file.type || '';
+              datos[catKey].actualizadoEl = new Date().toLocaleString('es-AR');
+              await saveData(storageKey, datos);
+              renderCards();
+            }catch(err){
+              console.error('Error al subir oblea/certificación:', err);
+              statusSpan.textContent = 'No se pudo subir. Detalle: ' + (err && err.message ? err.message : 'error desconocido');
+              statusSpan.style.color = 'var(--danger)';
+            }
+          });
+        });
+      }
+    }
+
+    loadData(storageKey, {}).then(d=>{ datos = d || {}; renderCards(); });
   }
 
   /* ---------- Proveedores y servicios (con alertas de vencimiento) ---------- */
@@ -3335,6 +3574,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       mainContent.style.display = 'none';
       sidebarEl.style.display = 'none';
       document.getElementById('consorcio-switcher').style.display = 'none';
+      const novedadesMount = document.getElementById('novedades-flotantes-mount');
+      if(novedadesMount) novedadesMount.innerHTML = '';
       renderAdminOverview();
     } else if(role==='propietario' && currentUser){
       whoami.textContent = 'Sesión de propietario iniciada';
@@ -3347,6 +3588,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       document.getElementById('consorcio-switcher').style.display = 'none';
       renderProfileBanner();
       renderAll();
+      renderNovedadesFlotantes();
     } else {
       whoami.textContent = 'Acceso';
       mainContent.style.display = 'none';
@@ -3356,6 +3598,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       globalLogoutBtn.style.display = 'none';
       globalRefreshBtn.style.display = 'none';
       document.getElementById('consorcio-switcher').style.display = 'none';
+      const novedadesMount2 = document.getElementById('novedades-flotantes-mount');
+      if(novedadesMount2) novedadesMount2.innerHTML = '';
       gateScreen.style.display = 'block';
       renderLoginGate();
     }
@@ -3617,7 +3861,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       btn.textContent = 'Actualizando…';
       btn.disabled = true;
       clearAppCache();
-      try{ await Promise.resolve(renderAll()); } finally { btn.textContent = original; btn.disabled = false; }
+      try{ await Promise.resolve(renderAll()); renderNovedadesFlotantes(); } finally { btn.textContent = original; btn.disabled = false; }
     });
 
     const [datos, edificios, liq] = await Promise.all([
@@ -5461,9 +5705,63 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   const RESERVA_NOTA_INTRO = 'El Fondo de Reserva se rige por el Código Civil y Comercial: los propietarios deben contribuir a su integración (art. 2046 inc. d), y su constitución y porcentaje los define la asamblea (arts. 2056, 2058 y 2060). Para que el administrador disponga total o parcialmente del fondo ante gastos imprevistos y mayores que los ordinarios, necesita autorización previa del Consejo de Propietarios (arts. 2064 inc. c y 2067) — dejá esa autorización documentada (acta del Consejo) antes de registrar el egreso.';
   const RESERVA_NOTA_LEGAL_PDF = 'Nota: este período incluye egresos del Fondo de Reserva. Conforme a los arts. 2064 inc. c) y 2067 del Código Civil y Comercial, la disposición del fondo ante gastos imprevistos y mayores que los ordinarios requiere autorización previa del Consejo de Propietarios — verificar que esa autorización esté documentada en el acta correspondiente.';
 
+  /* ----- Vista simplificada para propietarios: saldo + último resultado, sin el detalle operativo ----- */
+  function mountCuentaResumenPropietario(mountId, movKey, concKey, opts={}){
+    const mount = document.getElementById(mountId);
+    function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); }
+    function calcDiferencia(p){
+      const partidasSum = (p.partidas||[]).reduce((acc,it)=> acc + (it.signo==='-' ? -num(it.importe) : num(it.importe)), 0);
+      return num(p.saldoExtracto) - (num(p.saldoLibroBanco) + partidasSum);
+    }
+    const cuentaKey = opts.cuentaKey || (movKey+'-cuenta');
+    const nombreCuenta = opts.nombreCuenta || 'Cuenta Corriente';
+
+    mount.innerHTML = `<div class="empty">Cargando…</div>`;
+
+    Promise.all([loadData(movKey, []), loadData(concKey, []), loadData(cuentaKey, {})]).then(([movRows, periodos, cuenta])=>{
+      const saldo = movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0);
+      const archivadas = periodos.filter(p=>p.cerrado);
+      const ultima = archivadas.length ? archivadas[archivadas.length-1] : null;
+
+      let cartelUltima = '';
+      if(ultima){
+        const ok = Math.abs(calcDiferencia(ultima)) < 0.01;
+        cartelUltima = `
+          <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:16px 18px;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;">
+            <div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Última conciliación realizada</div>
+              <div style="font-family:'Playfair Display',serif;font-size:17px;color:var(--primary);">N° ${ultima.numero||'—'} — ${escapeHtml(ultima.periodo||'—')}</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:2px;">Archivada el ${escapeHtml(ultima.fechaCierre||'—')}</div>
+            </div>
+            <span class="badge ${ok?'resuelto':'escalado'}" style="font-size:11.5px;">${ok?'✓ Concilia':'⚠ Con diferencia'}</span>
+          </div>
+        `;
+      } else {
+        cartelUltima = `<div class="empty">Todavía no hay conciliaciones archivadas para ${escapeHtml(nombreCuenta)}.</div>`;
+      }
+
+      mount.innerHTML = `
+        <div class="kpi-row" style="margin-bottom:18px;">
+          <div class="kpi highlight"><div class="label">Saldo actual s/Libro Banco — ${escapeHtml(nombreCuenta)}</div><div class="value">${fmt(saldo)}</div></div>
+          ${cuenta.banco ? `<div class="kpi"><div class="label">Banco</div><div class="value" style="font-size:15px;">${escapeHtml(cuenta.banco)}${cuenta.tipoCuenta?' — '+escapeHtml(cuenta.tipoCuenta):''}</div></div>` : ''}
+          <div class="kpi"><div class="label">Conciliaciones archivadas</div><div class="value">${archivadas.length}</div></div>
+        </div>
+        ${cartelUltima}
+        <p class="panel-note" style="margin-top:14px;">La administración controla y concilia esta cuenta contra el extracto bancario todos los meses. Si el Consejo de Propietarios necesita el detalle completo (movimientos, partidas y extracto), la administración lo provee bajo pedido.</p>
+      `;
+    });
+  }
+
   function mountLibroBancoConciliacion(mountId, movKey, concKey, opts={}){
     const mount = document.getElementById(mountId);
     const isAdmin = role==='admin';
+
+    if(!isAdmin){
+      mountCuentaResumenPropietario(mountId, movKey, concKey, opts);
+      return;
+    }
+
     const movTipos = opts.movTipos || null; // ej: ['Aporte de expensas','Interés generado','Uso del fondo — reparación extraordinaria']
     const tituloCorto = opts.tituloCorto || 'la cuenta';
     const pdfPrefijo = opts.pdfPrefijo || 'Conciliacion';
@@ -6424,9 +6722,56 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   ];
   const CAJA_NOTA_INTRO = 'El Libro de Caja es uno de los libros obligatorios del administrador según la Ley 941 de CABA (junto con los de Administración, Sueldos, Actas de Asamblea, Actas del Consejo, Registro de Firmas e Inventario). A diferencia del Libro Banco, el efectivo no tiene un extracto bancario que lo respalde — el control se hace con arqueos periódicos: contar el efectivo físico y compararlo contra el saldo que arroja este libro a esa fecha.';
 
+  function mountCajaResumenPropietario(mountId, movKey, arqueoKey){
+    const mount = document.getElementById(mountId);
+    function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); }
+    function calcDiferenciaArqueo(a){ return num(a.efectivoContado) - num(a.saldoLibroCaja); }
+
+    mount.innerHTML = `<div class="empty">Cargando…</div>`;
+
+    Promise.all([loadData(movKey, []), loadData(arqueoKey, [])]).then(([movRows, arqueos])=>{
+      const saldo = movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0);
+      const archivados = arqueos.filter(a=>a.cerrado);
+      const ultimo = archivados.length ? archivados[archivados.length-1] : null;
+
+      let cartelUltimo = '';
+      if(ultimo){
+        const ok = Math.abs(calcDiferenciaArqueo(ultimo)) < 0.01;
+        cartelUltimo = `
+          <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:16px 18px;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;">
+            <div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Último arqueo de caja realizado</div>
+              <div style="font-family:'Playfair Display',serif;font-size:17px;color:var(--primary);">N° ${ultimo.numero||'—'} — ${escapeHtml(ultimo.fecha||'—')}</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:2px;">Archivado el ${escapeHtml(ultimo.fechaCierre||'—')}</div>
+            </div>
+            <span class="badge ${ok?'resuelto':'escalado'}" style="font-size:11.5px;">${ok?'✓ Coincide':'⚠ Con diferencia'}</span>
+          </div>
+        `;
+      } else {
+        cartelUltimo = `<div class="empty">Todavía no hay arqueos de caja archivados.</div>`;
+      }
+
+      mount.innerHTML = `
+        <div class="kpi-row" style="margin-bottom:18px;">
+          <div class="kpi highlight"><div class="label">Saldo actual en Caja</div><div class="value">${fmt(saldo)}</div></div>
+          <div class="kpi"><div class="label">Arqueos archivados</div><div class="value">${archivados.length}</div></div>
+        </div>
+        ${cartelUltimo}
+        <p class="panel-note" style="margin-top:14px;">La administración controla el efectivo en caja con arqueos periódicos. Si el Consejo de Propietarios necesita el detalle completo, la administración lo provee bajo pedido.</p>
+      `;
+    });
+  }
+
   function mountLibroCaja(mountId, movKey, arqueoKey){
     const mount = document.getElementById(mountId);
     const isAdmin = role==='admin';
+
+    if(!isAdmin){
+      mountCajaResumenPropietario(mountId, movKey, arqueoKey);
+      return;
+    }
+
     let movRows = [];
     let arqueos = [];
     let currentArqueoId = null;
@@ -6987,6 +7332,221 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     });
   }
 
+  /* ---------- Tablero de Novedades ----------
+     El admin escribe avisos con vigencia (fecha inicio/fin). Mientras estén vigentes
+     (y no se hayan archivado antes de tiempo), aparecen como un cartel flotante para
+     los propietarios en toda la aplicación. Se guardan en 'naken-novedades'. */
+  const NOVEDAD_TIPOS = ['Informativo', 'Importante', 'Urgente'];
+
+  function hoyISO(){
+    const d = new Date();
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+  function novedadEstaVigente(n){
+    if(!n || n.archivadoAntes) return false;
+    const hoy = hoyISO();
+    if(n.fechaInicio && hoy < n.fechaInicio) return false;
+    if(n.fechaFin && hoy > n.fechaFin) return false;
+    return true;
+  }
+  function fmtFechaCorta(iso){
+    if(!iso) return '—';
+    const [y,m,d] = iso.split('-');
+    return d && m ? `${d}/${m}/${y}` : iso;
+  }
+
+  function mountNovedades(mountId, storageKey){
+    const mount = document.getElementById(mountId);
+    let novedades = [];
+
+    function uid(){ return 'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+    function blankNovedad(){ return { id:uid(), titulo:'', mensaje:'', tipo:'Informativo', fechaInicio: hoyISO(), fechaFin:'', archivadoAntes:false, fechaArchivado:'', creadoEl:new Date().toLocaleString('es-AR') }; }
+
+    mount.innerHTML = `
+      <div class="subhead" style="margin-top:0;">Nueva novedad</div>
+      <div class="field-grid" style="grid-template-columns:repeat(2,1fr);">
+        <div style="grid-column:1/-1;">
+          <label>Título</label>
+          <input type="text" id="${mountId}-titulo" placeholder="Ej: Corte de luz programado">
+        </div>
+        <div style="grid-column:1/-1;">
+          <label>Mensaje</label>
+          <textarea id="${mountId}-mensaje" rows="3" placeholder="Detalle para los propietarios..."></textarea>
+        </div>
+        <div>
+          <label>Tipo</label>
+          <select id="${mountId}-tipo">${NOVEDAD_TIPOS.map(t=>`<option>${t}</option>`).join('')}</select>
+        </div>
+        <div></div>
+        <div>
+          <label>Vigente desde</label>
+          <input type="date" id="${mountId}-fechaInicio" value="${hoyISO()}">
+        </div>
+        <div>
+          <label>Vigente hasta</label>
+          <input type="date" id="${mountId}-fechaFin">
+        </div>
+      </div>
+      <div class="toolbar" style="margin-top:0;">
+        <span></span>
+        <button class="btn primary" id="${mountId}-crear">Publicar novedad</button>
+      </div>
+
+      <div class="subhead">Novedades activas y programadas</div>
+      <div id="${mountId}-activas"></div>
+
+      <div class="subhead">Archivadas</div>
+      <div id="${mountId}-archivadas"></div>
+    `;
+
+    function tarjetaEditable(n){
+      const vigente = novedadEstaVigente(n);
+      const vencida = !n.archivadoAntes && n.fechaFin && hoyISO() > n.fechaFin;
+      const estadoBadge = n.archivadoAntes ? '<span class="badge escalado">Archivada antes de tiempo</span>'
+        : vencida ? '<span class="badge escalado">Vencida</span>'
+        : vigente ? '<span class="badge resuelto">Visible ahora</span>'
+        : '<span class="badge pendiente">Programada</span>';
+      return `
+        <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px 16px;background:#fff;margin-bottom:12px;" data-id="${n.id}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="badge ${n.tipo==='Urgente'?'escalado':(n.tipo==='Importante'?'pendiente':'proceso')}">${escapeHtml(n.tipo)}</span>
+              ${estadoBadge}
+            </div>
+            ${(!n.archivadoAntes) ? `<button class="btn ghost" data-action="archivar" style="font-size:11px;">Archivar ahora</button>` : ''}
+          </div>
+          <div class="field-grid" style="grid-template-columns:repeat(2,1fr);">
+            <div style="grid-column:1/-1;">
+              <label>Título</label>
+              <input type="text" data-field="titulo" value="${escapeHtml(n.titulo)}" ${n.archivadoAntes?'disabled':''}>
+            </div>
+            <div style="grid-column:1/-1;">
+              <label>Mensaje</label>
+              <textarea data-field="mensaje" rows="2" ${n.archivadoAntes?'disabled':''}>${escapeHtml(n.mensaje)}</textarea>
+            </div>
+            <div>
+              <label>Tipo</label>
+              <select data-field="tipo" ${n.archivadoAntes?'disabled':''}>${NOVEDAD_TIPOS.map(t=>`<option ${n.tipo===t?'selected':''}>${t}</option>`).join('')}</select>
+            </div>
+            <div></div>
+            <div>
+              <label>Vigente desde</label>
+              <input type="date" data-field="fechaInicio" value="${n.fechaInicio||''}" ${n.archivadoAntes?'disabled':''}>
+            </div>
+            <div>
+              <label>Vigente hasta</label>
+              <input type="date" data-field="fechaFin" value="${n.fechaFin||''}" ${n.archivadoAntes?'disabled':''}>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function tarjetaArchivada(n){
+      return `
+        <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px 16px;background:var(--paper-deep,#f8f9fa);margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+            <b style="font-size:13.5px;">${escapeHtml(n.titulo||'(sin título)')}</b>
+            <span class="badge ${n.tipo==='Urgente'?'escalado':(n.tipo==='Importante'?'pendiente':'proceso')}">${escapeHtml(n.tipo)}</span>
+          </div>
+          <p style="font-size:12.5px;color:var(--muted);margin:0 0 6px;white-space:pre-wrap;">${escapeHtml(n.mensaje)}</p>
+          <p style="font-size:11px;color:var(--muted);margin:0;">Vigencia: ${fmtFechaCorta(n.fechaInicio)} — ${fmtFechaCorta(n.fechaFin)}${n.archivadoAntes ? ' · Archivada manualmente el '+escapeHtml(n.fechaArchivado||'') : ''}</p>
+        </div>
+      `;
+    }
+
+    function render(){
+      const activas = novedades.filter(n=>!n.archivadoAntes && !(n.fechaFin && hoyISO() > n.fechaFin));
+      const archivadas = novedades.filter(n=>n.archivadoAntes || (n.fechaFin && hoyISO() > n.fechaFin));
+
+      const elActivas = document.getElementById(mountId+'-activas');
+      elActivas.innerHTML = activas.length===0 ? `<div class="empty">No hay novedades activas ni programadas.</div>` : activas.map(tarjetaEditable).join('');
+
+      const elArchivadas = document.getElementById(mountId+'-archivadas');
+      elArchivadas.innerHTML = archivadas.length===0 ? `<div class="empty">Sin novedades archivadas.</div>` : [...archivadas].reverse().map(tarjetaArchivada).join('');
+
+      elActivas.querySelectorAll('[data-id]').forEach(card=>{
+        const id = card.dataset.id;
+        const n = novedades.find(x=>x.id===id);
+        if(!n) return;
+        let saveTimer;
+        function schedule(){
+          clearTimeout(saveTimer);
+          saveTimer = setTimeout(()=>{
+            n.titulo = card.querySelector('[data-field="titulo"]').value;
+            n.mensaje = card.querySelector('[data-field="mensaje"]').value;
+            n.tipo = card.querySelector('[data-field="tipo"]').value;
+            n.fechaInicio = card.querySelector('[data-field="fechaInicio"]').value;
+            n.fechaFin = card.querySelector('[data-field="fechaFin"]').value;
+            saveData(storageKey, novedades);
+          }, 600);
+        }
+        card.querySelectorAll('[data-field]').forEach(el=>{
+          el.addEventListener('input', schedule);
+          el.addEventListener('change', schedule);
+        });
+        const btnArchivar = card.querySelector('[data-action="archivar"]');
+        if(btnArchivar) btnArchivar.addEventListener('click', ()=>{
+          if(!confirm('¿Archivar esta novedad ahora? Va a dejar de mostrarse a los propietarios de inmediato.')) return;
+          n.archivadoAntes = true;
+          n.fechaArchivado = new Date().toLocaleString('es-AR');
+          saveData(storageKey, novedades);
+          render();
+        });
+      });
+    }
+
+    document.getElementById(mountId+'-crear').addEventListener('click', async ()=>{
+      const titulo = document.getElementById(mountId+'-titulo').value.trim();
+      const mensaje = document.getElementById(mountId+'-mensaje').value.trim();
+      if(!titulo || !mensaje){ alert('Completá el título y el mensaje.'); return; }
+      const n = blankNovedad();
+      n.titulo = titulo;
+      n.mensaje = mensaje;
+      n.tipo = document.getElementById(mountId+'-tipo').value;
+      n.fechaInicio = document.getElementById(mountId+'-fechaInicio').value || hoyISO();
+      n.fechaFin = document.getElementById(mountId+'-fechaFin').value;
+      novedades.push(n);
+      await saveData(storageKey, novedades);
+      document.getElementById(mountId+'-titulo').value = '';
+      document.getElementById(mountId+'-mensaje').value = '';
+      document.getElementById(mountId+'-fechaFin').value = '';
+      render();
+    });
+
+    loadData(storageKey, []).then(d=>{ novedades = d; render(); });
+  }
+
+  /* ----- Cartel flotante para propietarios ----- */
+  const novedadesDescartadas = new Set(); // solo en memoria — reaparecen al recargar la página, como pidió el admin
+  async function renderNovedadesFlotantes(){
+    const mount = document.getElementById('novedades-flotantes-mount');
+    if(!mount) return;
+    const todas = await loadData('naken-novedades', []);
+    const vigentes = todas.filter(novedadEstaVigente).filter(n=>!novedadesDescartadas.has(n.id)).slice(0,3);
+    if(vigentes.length===0){ mount.innerHTML = ''; return; }
+    mount.innerHTML = vigentes.map(n=>`
+      <div class="novedad-card tipo-${n.tipo==='Urgente'?'urgente':(n.tipo==='Importante'?'importante':'informativo')}" data-id="${n.id}">
+        <button class="novedad-cerrar" data-action="cerrar" title="Cerrar">✕</button>
+        <span class="novedad-tag">${escapeHtml(n.tipo)} · Administración NAKEN</span>
+        <p class="novedad-titulo">${escapeHtml(n.titulo)}</p>
+        <p class="novedad-mensaje">${escapeHtml(n.mensaje)}</p>
+        <div class="novedad-vigencia">Vigente hasta ${fmtFechaCorta(n.fechaFin) || 'nuevo aviso'}</div>
+      </div>
+    `).join('');
+    mount.querySelectorAll('[data-action="cerrar"]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const card = btn.closest('.novedad-card');
+        const id = card.dataset.id;
+        novedadesDescartadas.add(id);
+        card.style.transition = 'opacity .25s ease, transform .25s ease';
+        card.style.opacity = '0';
+        card.style.transform = 'translateY(8px) scale(0.97)';
+        setTimeout(()=>card.remove(), 250);
+      });
+    });
+  }
+
   /* ---------- Liquidación de sueldos ---------- */
   function mountLiquidaciones(mountId, storageKey){
     const mount = document.getElementById(mountId);
@@ -7273,6 +7833,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     mountLibroCaja('caja-mount', 'naken-caja-movimientos', 'naken-caja-arqueos');
 
+    mountNovedades('novedades-mount', 'naken-novedades');
+
     mountLedger('polizas-mount', 'naken-polizas', [
       {key:'proveedor', label:'Proveedor', placeholder:''},
       {key:'numeroPoliza', label:'N° de póliza', placeholder:''},
@@ -7285,6 +7847,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       {key:'concepto', label:'Concepto', placeholder:''},
       {key:'importe', label:'Importe ($)', numeric:true, placeholder:'0'},
     ], {emptyText:'No hay depósitos sin identificar.'});
+
+    mountObleasQR('obleas-qr-mount', 'naken-obleas-qr');
 
     mountProveedores('proveedores-mount', 'naken-proveedores');
 
