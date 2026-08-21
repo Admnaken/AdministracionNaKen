@@ -959,7 +959,21 @@
     background: #fff;
     transition: var(--transition);
   }
-  .field-grid input:focus, .field-grid select:focus {
+  .field-grid textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--gray-200);
+    border-radius: 5px;
+    padding: 10px 12px;
+    font-family: 'Inter', sans-serif;
+    font-size: 13.5px;
+    line-height: 1.5;
+    background: #fff;
+    transition: var(--transition);
+    resize: vertical;
+    min-height: 200px;
+  }
+  .field-grid input:focus, .field-grid select:focus, .field-grid textarea:focus {
     outline: none;
     border-color: var(--gold);
     box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.14);
@@ -3589,6 +3603,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       renderProfileBanner();
       renderAll();
       renderNovedadesFlotantes();
+      if(!window._novedadesInterval){
+        window._novedadesInterval = setInterval(()=>{ if(role==='propietario') renderNovedadesFlotantes(); }, 60000);
+      }
     } else {
       whoami.textContent = 'Acceso';
       mainContent.style.display = 'none';
@@ -7371,7 +7388,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         </div>
         <div style="grid-column:1/-1;">
           <label>Mensaje</label>
-          <textarea id="${mountId}-mensaje" rows="3" placeholder="Detalle para los propietarios..."></textarea>
+          <textarea id="${mountId}-mensaje" rows="10" placeholder="Detalle para los propietarios..."></textarea>
         </div>
         <div>
           <label>Tipo</label>
@@ -7389,7 +7406,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       </div>
       <div class="toolbar" style="margin-top:0;">
         <span></span>
-        <button class="btn primary" id="${mountId}-crear">Publicar novedad</button>
+        <div style="display:flex;align-items:center;gap:12px;">
+          ${statusEl(mountId+'-crear-status')}
+          <button class="btn primary" id="${mountId}-crear">Publicar novedad</button>
+        </div>
       </div>
 
       <div class="subhead">Novedades activas y programadas</div>
@@ -7422,7 +7442,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             </div>
             <div style="grid-column:1/-1;">
               <label>Mensaje</label>
-              <textarea data-field="mensaje" rows="2" ${n.archivadoAntes?'disabled':''}>${escapeHtml(n.mensaje)}</textarea>
+              <textarea data-field="mensaje" rows="10" ${n.archivadoAntes?'disabled':''}>${escapeHtml(n.mensaje)}</textarea>
             </div>
             <div>
               <label>Tipo</label>
@@ -7507,11 +7527,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       n.fechaInicio = document.getElementById(mountId+'-fechaInicio').value || hoyISO();
       n.fechaFin = document.getElementById(mountId+'-fechaFin').value;
       novedades.push(n);
-      await saveData(storageKey, novedades);
-      document.getElementById(mountId+'-titulo').value = '';
-      document.getElementById(mountId+'-mensaje').value = '';
-      document.getElementById(mountId+'-fechaFin').value = '';
-      render();
+      try{
+        await saveData(storageKey, novedades, mountId+'-crear-status');
+        document.getElementById(mountId+'-titulo').value = '';
+        document.getElementById(mountId+'-mensaje').value = '';
+        document.getElementById(mountId+'-fechaFin').value = '';
+        render();
+      }catch(err){
+        novedades.pop(); // no se guardó, no la dejamos en la lista en memoria
+        console.error('Error al publicar la novedad:', err);
+        alert('No se pudo publicar la novedad. Detalle: ' + (err && err.message ? err.message : 'error desconocido'));
+      }
     });
 
     loadData(storageKey, []).then(d=>{ novedades = d; render(); });
