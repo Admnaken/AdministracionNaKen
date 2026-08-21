@@ -685,14 +685,17 @@
   /* ---------- NOVEDADES FLOTANTES (cartel de avisos del administrador) ---------- */
   .novedades-flotantes {
     position: fixed;
-    right: 24px;
-    bottom: 24px;
-    z-index: 500;
+    top: 50%;
+    right: 18px;
+    transform: translateY(-50%);
+    z-index: 600;
     display: flex;
     flex-direction: column;
     gap: 12px;
-    width: 340px;
+    width: 320px;
     max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
     pointer-events: none;
   }
   .novedad-card {
@@ -717,8 +720,8 @@
   .novedad-card.tipo-urgente::before { background: var(--danger); }
   .novedad-card.tipo-informativo::before { background: var(--ok); }
   @keyframes novedadIn {
-    from { opacity: 0; transform: translateY(16px) scale(0.97); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
+    from { opacity: 0; transform: translateX(24px) scale(0.97); }
+    to { opacity: 1; transform: translateX(0) scale(1); }
   }
   .novedad-card .novedad-tag {
     font-family: 'Inter', monospace;
@@ -771,15 +774,18 @@
   .novedad-card .novedad-cerrar:hover { background: rgba(255,255,255,0.22); }
   @media (max-width: 640px) {
     .novedades-flotantes {
+      top: 0;
       left: 0;
       right: 0;
-      bottom: 0;
+      bottom: auto;
+      transform: none;
       width: auto;
       max-width: none;
-      padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+      max-height: 70vh;
+      padding: calc(10px + env(safe-area-inset-top)) 10px 10px;
       gap: 8px;
     }
-    .novedad-card { border-radius: 14px; }
+    .novedad-card { border-radius: 0 0 14px 14px; }
   }
 
   /* ---------- LOGIN GATE ---------- */
@@ -7405,12 +7411,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         </div>
       </div>
       <div class="toolbar" style="margin-top:0;">
-        <span></span>
+        <button class="btn ghost" id="${mountId}-preview" type="button">Vista previa del cartel</button>
         <div style="display:flex;align-items:center;gap:12px;">
           ${statusEl(mountId+'-crear-status')}
           <button class="btn primary" id="${mountId}-crear">Publicar novedad</button>
         </div>
       </div>
+      <div id="${mountId}-preview-wrap"></div>
 
       <div class="subhead">Novedades activas y programadas</div>
       <div id="${mountId}-activas"></div>
@@ -7516,6 +7523,25 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
     }
 
+    document.getElementById(mountId+'-preview').addEventListener('click', ()=>{
+      const titulo = document.getElementById(mountId+'-titulo').value.trim() || '(Título de ejemplo)';
+      const mensaje = document.getElementById(mountId+'-mensaje').value.trim() || 'Así se va a ver el mensaje para los propietarios.';
+      const tipo = document.getElementById(mountId+'-tipo').value;
+      const wrap = document.getElementById(mountId+'-preview-wrap');
+      wrap.innerHTML = `
+        <p class="panel-note" style="margin:14px 0 8px;">Así se ve el cartel para el propietario (esto es solo una vista previa, no se publica):</p>
+        <div style="position:relative;width:320px;max-width:100%;">
+          <div class="novedad-card tipo-${tipo==='Urgente'?'urgente':(tipo==='Importante'?'importante':'informativo')}">
+            <button class="novedad-cerrar" type="button" title="Cerrar">✕</button>
+            <span class="novedad-tag">${escapeHtml(tipo)} · Administración NAKEN</span>
+            <p class="novedad-titulo">${escapeHtml(titulo)}</p>
+            <p class="novedad-mensaje">${escapeHtml(mensaje)}</p>
+            <div class="novedad-vigencia">Vigente hasta nuevo aviso</div>
+          </div>
+        </div>
+      `;
+    });
+
     document.getElementById(mountId+'-crear').addEventListener('click', async ()=>{
       const titulo = document.getElementById(mountId+'-titulo').value.trim();
       const mensaje = document.getElementById(mountId+'-mensaje').value.trim();
@@ -7550,6 +7576,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     if(!mount) return;
     const todas = await loadData('naken-novedades', []);
     const vigentes = todas.filter(novedadEstaVigente).filter(n=>!novedadesDescartadas.has(n.id)).slice(0,3);
+    console.log('[Novedades] rol:', role, '· consorcio activo:', getActiveConsorcioId(), '· total guardadas:', todas.length, '· vigentes ahora:', vigentes.length, todas);
     if(vigentes.length===0){ mount.innerHTML = ''; return; }
     mount.innerHTML = vigentes.map(n=>`
       <div class="novedad-card tipo-${n.tipo==='Urgente'?'urgente':(n.tipo==='Importante'?'importante':'informativo')}" data-id="${n.id}">
