@@ -1009,6 +1009,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 </head>
 <body>
   <div id="splash-screen" style="position:fixed;inset:0;background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;transition:opacity .35s ease;">
@@ -5458,11 +5459,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     let movRows = [];
     let periodos = [];
     let currentPeriodId = null;
+    const extractoArchivoCache = {}; // { [periodoId]: { bytes: ArrayBuffer, mimeType, nombre } } — solo dura la sesión
 
     function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
     function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); }
     function uid(){ return 'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
-    function blankPeriodo(){ return { id:uid(), numero:0, periodo:'', fechaExtracto:'', saldoLibroBanco:'', saldoExtracto:'', partidas:[], extractoMovs:[], extractoArchivoUrl:'', extractoArchivoNombre:'', cerrado:false, fechaCierre:'' }; }
+    function blankPeriodo(){ return { id:uid(), numero:0, periodo:'', fechaExtracto:'', saldoLibroBanco:'', saldoExtracto:'', partidas:[], extractoMovs:[], extractoArchivoUrl:'', extractoArchivoNombre:'', extractoArchivoMimeType:'', cerrado:false, fechaCierre:'' }; }
     function getCurrentPeriodo(){ return periodos.find(p=>p.id===currentPeriodId) || null; }
     function calcDiferencia(p){
       const partidasSum = (p.partidas||[]).reduce((acc,it)=> acc + (it.signo==='-' ? -num(it.importe) : num(it.importe)), 0);
@@ -5782,9 +5784,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           statusEl2.textContent = `Subiendo (${sizeMB} MB)... puede tardar unos segundos.`;
           statusEl2.style.color = 'var(--brass)';
           try{
+            const bytes = await file.arrayBuffer();
+            extractoArchivoCache[p.id] = { bytes, mimeType: file.type || '', nombre: file.name || '' };
             const url = await window.uploadFileToDrive(file, currentUser ? currentUser.consorcio : '');
             p.extractoArchivoUrl = url;
             p.extractoArchivoNombre = file.name || '';
+            p.extractoArchivoMimeType = file.type || '';
             savePeriodos();
             renderExtractoArchivo();
           }catch(err){
@@ -6218,7 +6223,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         y = doc.lastAutoTable.finalY + 8;
       }
       if(p.extractoArchivoUrl){
-        parrafo(`Extracto bancario original adjunto en la aplicación: ${p.extractoArchivoNombre||'(ver archivo)'} — ${p.extractoArchivoUrl}`, {size:8});
+        parrafo(`Extracto bancario original: ${p.extractoArchivoNombre||'(ver archivo adjunto)'} — se incluye a continuación de esta hoja como parte del mismo documento.`, {size:8});
       } else {
         parrafo('No hay un archivo del extracto bancario adjunto para este período en la aplicación.', {size:8});
       }
@@ -6256,7 +6261,69 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       y += 3;
       parrafo(CONCILIACION_ADMIN_FIRMA, {bold:true, size:9});
 
-      doc.save(`Conciliacion_N${String(p.numero||0).padStart(3,'0')}_${(p.periodo||'periodo').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
+      const fileName = `Conciliacion_N${String(p.numero||0).padStart(3,'0')}_${(p.periodo||'periodo').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`;
+      const reportBytes = doc.output('arraybuffer');
+
+      /* ----- Fusión con el extracto bancario adjunto, si hay uno disponible ----- */
+      let extracto = extractoArchivoCache[p.id] || null;
+      if(!extracto && p.extractoArchivoUrl){
+        try{
+          const res = await fetch(p.extractoArchivoUrl);
+          if(res.ok){
+            const bytes = await res.arrayBuffer();
+            extracto = { bytes, mimeType: p.extractoArchivoMimeType || res.headers.get('content-type') || '', nombre: p.extractoArchivoNombre||'' };
+          }
+        }catch(err){
+          console.warn('No se pudo recuperar el extracto adjunto para fusionarlo (posible restricción de acceso del link):', err);
+        }
+      }
+
+      if(!extracto || !window.PDFLib){
+        // Sin extracto para fusionar (o falta la librería) — se descarga solo la hoja de conciliación.
+        doc.save(fileName);
+        if(p.extractoArchivoUrl && !extracto){
+          alert('Se generó la hoja de conciliación, pero no se pudo recuperar automáticamente el extracto adjunto para fusionarlo en el mismo PDF (puede deberse a permisos del archivo en Drive). Podés abrirlo por separado con el botón "Ver extracto adjunto".');
+        }
+        return;
+      }
+
+      try{
+        const { PDFDocument } = window.PDFLib;
+        const merged = await PDFDocument.load(reportBytes);
+        const esImagen = /^image\//.test(extracto.mimeType);
+        const esPdf = extracto.mimeType==='application/pdf' || /\.pdf$/i.test(extracto.nombre||'');
+
+        if(esPdf){
+          const extractoDoc = await PDFDocument.load(extracto.bytes);
+          const copiedPages = await merged.copyPages(extractoDoc, extractoDoc.getPageIndices());
+          copiedPages.forEach(pg => merged.addPage(pg));
+        } else if(esImagen){
+          const img = /png/i.test(extracto.mimeType) ? await merged.embedPng(extracto.bytes) : await merged.embedJpg(extracto.bytes);
+          const pageW = 595.28, pageH = 841.89; // A4 en puntos
+          const margin = 28;
+          const maxW = pageW - margin*2, maxH = pageH - margin*2;
+          const scale = Math.min(maxW/img.width, maxH/img.height, 1);
+          const w = img.width*scale, h = img.height*scale;
+          const page = merged.addPage([pageW, pageH]);
+          page.drawImage(img, { x:(pageW-w)/2, y:(pageH-h)/2, width:w, height:h });
+        } else {
+          doc.save(fileName);
+          alert('Se generó la hoja de conciliación, pero el archivo adjunto no es un PDF ni una imagen reconocible, así que no se pudo fusionar. Podés abrirlo por separado con el botón "Ver extracto adjunto".');
+          return;
+        }
+
+        const mergedBytes = await merged.save();
+        const blob = new Blob([mergedBytes], {type:'application/pdf'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = fileName;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      }catch(err){
+        console.error('Error al fusionar el extracto bancario en el PDF:', err);
+        doc.save(fileName);
+        alert('Se generó la hoja de conciliación, pero hubo un problema al fusionar el extracto adjunto en el mismo PDF. Podés abrirlo por separado con el botón "Ver extracto adjunto".');
+      }
     }
 
     /* ----- Carga inicial ----- */
