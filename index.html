@@ -5786,9 +5786,22 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           try{
             const bytes = await file.arrayBuffer();
             extractoArchivoCache[p.id] = { bytes, mimeType: file.type || '', nombre: file.name || '' };
-            const url = await window.uploadFileToDrive(file, currentUser ? currentUser.consorcio : '');
+
+            // Carpeta: usa el consorcio activo (funciona para el admin, no solo para propietarios logueados)
+            const edificios = await getEdificios();
+            const edificioActivo = edificios.find(ed=>ed.id===getActiveConsorcioId());
+            const nombreConsorcio = (currentUser && currentUser.consorcio) || (edificioActivo ? edificioActivo.nombre : '') || 'Sin consorcio';
+            const subfolder = `${nombreConsorcio} - Conciliaciones bancarias`;
+
+            // Nombre de archivo prolijo y autoexplicativo (no hace falta que vos lo escribas así, lo arma la app)
+            const slug = s => (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+            const ext = (file.name||'').includes('.') ? file.name.split('.').pop() : (file.type.includes('pdf')?'pdf':'jpg');
+            const nombreProlijo = `Extracto_${slug(nombreConsorcio)}_${slug(p.periodo)||'periodo'}.${ext}`;
+            const fileParaSubir = new File([file], nombreProlijo, {type: file.type});
+
+            const url = await window.uploadFileToDrive(fileParaSubir, subfolder);
             p.extractoArchivoUrl = url;
-            p.extractoArchivoNombre = file.name || '';
+            p.extractoArchivoNombre = nombreProlijo;
             p.extractoArchivoMimeType = file.type || '';
             savePeriodos();
             renderExtractoArchivo();
