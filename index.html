@@ -7365,45 +7365,78 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
 
   /* ---------- Tablero de Novedades ----------
-     El admin escribe avisos con vigencia (fecha inicio/fin). Mientras estén vigentes
-     (y no se hayan archivado antes de tiempo), aparecen como un cartel flotante para
-     los propietarios en toda la aplicación. Se guardan en 'naken-novedades'. */
+     Avisos con vigencia (fecha inicio/fin) que el admin publica y que se muestran
+     como cartel flotante a los propietarios mientras estén vigentes. Se guardan en
+     'naken-novedades', un array por consorcio.
+
+     Diseño defensivo: cada vez que se leen los datos pasan por sanearNovedades(),
+     que corrige cualquier entrada inconsistente. En particular: "archivada=true sin
+     archivadaEl" es una combinación que nunca puede darse por una acción real del
+     administrador (que siempre graba la fecha al archivar), así que si aparece se
+     trata como dato corrupto y se revierte a activa automáticamente — esto también
+     repara solos los datos viejos que hayan quedado mal por versiones anteriores. */
   const NOVEDAD_TIPOS = ['Informativo', 'Importante', 'Urgente'];
 
   function hoyISO(){
     const d = new Date();
     return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   }
-  function fmtFechaHoraManual(d){
+  function fmtFechaHora(d){
     const dd = String(d.getDate()).padStart(2,'0');
     const mm = String(d.getMonth()+1).padStart(2,'0');
     const hh = String(d.getHours()).padStart(2,'0');
     const min = String(d.getMinutes()).padStart(2,'0');
     return `${dd}/${mm}/${d.getFullYear()} ${hh}:${min} hs`;
   }
-  function novedadEstaVigente(n){
-    if(!n || n.archivadoAntes) return false;
+  function fmtFechaCorta(iso){
+    if(!iso) return '—';
+    const [y,m,d] = (iso||'').split('-');
+    return (d && m) ? `${d}/${m}/${y}` : iso;
+  }
+  function novedadVigente(n){
+    if(!n || n.archivada) return false;
     const hoy = hoyISO();
     if(n.fechaInicio && hoy < n.fechaInicio) return false;
     if(n.fechaFin && hoy > n.fechaFin) return false;
     return true;
   }
-  function fmtFechaCorta(iso){
-    if(!iso) return '—';
-    const [y,m,d] = iso.split('-');
-    return d && m ? `${d}/${m}/${y}` : iso;
+  /* Migra el esquema viejo (archivadoAntes/fechaArchivado) al nuevo (archivada/archivadaEl)
+     y corrige la firma de dato corrupto (archivada sin fecha real de archivado). */
+  function sanearNovedades(lista){
+    let cambios = false;
+    const limpio = (lista||[]).map((n,i)=>{
+      const c = {...n};
+      if(c.archivada === undefined && c.archivadoAntes !== undefined){
+        c.archivada = !!c.archivadoAntes && !!c.fechaArchivado;
+        c.archivadaEl = c.fechaArchivado || '';
+        delete c.archivadoAntes;
+        delete c.fechaArchivado;
+        cambios = true;
+      }
+      if(!c.numero){ c.numero = i+1; cambios = true; }
+      if(c.archivada && !c.archivadaEl){ c.archivada = false; cambios = true; }
+      return c;
+    });
+    return { lista: limpio, cambios };
   }
 
   function mountNovedades(mountId, storageKey){
     const mount = document.getElementById(mountId);
-    let novedades = [];
-    console.log('[Novedades][mount] mountNovedades() se está inicializando de nuevo. Si ves este log más de una vez sin haber recargado la página, hay algo re-montando el panel de más.');
 
     function uid(){ return 'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
-    function blankNovedad(){ return { id:uid(), titulo:'', mensaje:'', tipo:'Informativo', fechaInicio: hoyISO(), fechaFin:'', archivadoAntes:false, fechaArchivado:'', creadoEl:new Date().toLocaleString('es-AR') }; }
+    function blank(){
+      return { id:uid(), numero:0, titulo:'', mensaje:'', tipo:'Informativo', fechaInicio:hoyISO(), fechaFin:'', archivada:false, archivadaEl:'', creadaEl:fmtFechaHora(new Date()) };
+    }
+    async function leerFrescas(){
+      const raw = await loadData(storageKey, []);
+      const { lista, cambios } = sanearNovedades(raw);
+      if(cambios) await saveData(storageKey, lista); // persiste la reparación, si hizo falta
+      return lista;
+    }
 
     mount.innerHTML = `
-      <div id="${mountId}-consorcio-activo" style="background:var(--primary);color:#fff;border-radius:8px;padding:10px 16px;margin-bottom:18px;font-family:'Inter',monospace;font-size:12.5px;letter-spacing:.02em;">Verificando consorcio activo…</div>
+      <div id="${mountId}-banner" style="background:var(--primary);color:#fff;border-radius:8px;padding:10px 16px;margin-bottom:18px;font-family:'Inter',monospace;font-size:12.5px;letter-spacing:.02em;">Cargando…</div>
+
       <div class="subhead" style="margin-top:0;">Nueva novedad</div>
       <div class="field-grid" style="grid-template-columns:repeat(2,1fr);">
         <div style="grid-column:1/-1;">
@@ -7429,58 +7462,56 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         </div>
       </div>
       <div class="toolbar" style="margin-top:0;">
-        <button class="btn ghost" id="${mountId}-preview" type="button">Vista previa del cartel</button>
+        <button class="btn ghost" id="${mountId}-preview" type="button">Vista previa</button>
         <div style="display:flex;align-items:center;gap:12px;">
-          ${statusEl(mountId+'-crear-status')}
+          ${statusEl(mountId+'-status')}
           <button class="btn primary" id="${mountId}-crear">Publicar novedad</button>
         </div>
       </div>
       <div id="${mountId}-preview-wrap"></div>
 
-      <div class="subhead">Novedades activas y programadas</div>
+      <div class="subhead">Activas y programadas</div>
       <div id="${mountId}-activas"></div>
 
       <div class="subhead">Archivadas</div>
       <div id="${mountId}-archivadas"></div>
     `;
 
-    function tarjetaEditable(n){
-      const vigente = novedadEstaVigente(n);
-      const vencida = !n.archivadoAntes && n.fechaFin && hoyISO() > n.fechaFin;
-      const estadoBadge = n.archivadoAntes ? '<span class="badge escalado">Archivada antes de tiempo</span>'
-        : vencida ? '<span class="badge escalado">Vencida</span>'
-        : vigente ? '<span class="badge resuelto">Visible ahora</span>'
-        : '<span class="badge pendiente">Programada</span>';
+    function tarjetaActiva(n){
+      const vigente = novedadVigente(n);
+      const vencida = !n.archivada && n.fechaFin && hoyISO() > n.fechaFin;
+      const badge = vencida ? '<span class="badge escalado">Vencida</span>' : vigente ? '<span class="badge resuelto">Visible ahora</span>' : '<span class="badge pendiente">Programada</span>';
       return `
         <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px 16px;background:#fff;margin-bottom:12px;" data-id="${n.id}">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
             <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-family:'Inter',monospace;font-size:11px;color:var(--muted);">N° ${n.numero}</span>
               <span class="badge ${n.tipo==='Urgente'?'escalado':(n.tipo==='Importante'?'pendiente':'proceso')}">${escapeHtml(n.tipo)}</span>
-              ${estadoBadge}
+              ${badge}
             </div>
-            ${(!n.archivadoAntes) ? `<button class="btn ghost" data-action="archivar" style="font-size:11px;">Archivar ahora</button>` : ''}
+            <button class="btn ghost" data-action="archivar" style="font-size:11px;">Archivar ahora</button>
           </div>
           <div class="field-grid" style="grid-template-columns:repeat(2,1fr);">
             <div style="grid-column:1/-1;">
               <label>Título</label>
-              <input type="text" data-field="titulo" value="${escapeHtml(n.titulo)}" ${n.archivadoAntes?'disabled':''}>
+              <input type="text" data-field="titulo" value="${escapeHtml(n.titulo)}">
             </div>
             <div style="grid-column:1/-1;">
               <label>Mensaje</label>
-              <textarea data-field="mensaje" rows="10" ${n.archivadoAntes?'disabled':''}>${escapeHtml(n.mensaje)}</textarea>
+              <textarea data-field="mensaje" rows="10">${escapeHtml(n.mensaje)}</textarea>
             </div>
             <div>
               <label>Tipo</label>
-              <select data-field="tipo" ${n.archivadoAntes?'disabled':''}>${NOVEDAD_TIPOS.map(t=>`<option ${n.tipo===t?'selected':''}>${t}</option>`).join('')}</select>
+              <select data-field="tipo">${NOVEDAD_TIPOS.map(t=>`<option ${n.tipo===t?'selected':''}>${t}</option>`).join('')}</select>
             </div>
             <div></div>
             <div>
               <label>Vigente desde</label>
-              <input type="date" data-field="fechaInicio" value="${n.fechaInicio||''}" ${n.archivadoAntes?'disabled':''}>
+              <input type="date" data-field="fechaInicio" value="${n.fechaInicio||''}">
             </div>
             <div>
               <label>Vigente hasta</label>
-              <input type="date" data-field="fechaFin" value="${n.fechaFin||''}" ${n.archivadoAntes?'disabled':''}>
+              <input type="date" data-field="fechaFin" value="${n.fechaFin||''}">
             </div>
           </div>
         </div>
@@ -7491,34 +7522,36 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return `
         <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px 16px;background:var(--paper-deep,#f8f9fa);margin-bottom:10px;" data-id="${n.id}">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
-            <b style="font-size:13.5px;">${escapeHtml(n.titulo||'(sin título)')}</b>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-family:'Inter',monospace;font-size:11px;color:var(--muted);">N° ${n.numero}</span>
+              <b style="font-size:13.5px;">${escapeHtml(n.titulo||'(sin título)')}</b>
+            </div>
             <div style="display:flex;align-items:center;gap:8px;">
               <span class="badge ${n.tipo==='Urgente'?'escalado':(n.tipo==='Importante'?'pendiente':'proceso')}">${escapeHtml(n.tipo)}</span>
-              ${n.archivadoAntes ? `<button class="btn ghost" data-action="reabrir" style="font-size:11px;">Reabrir</button>` : ''}
+              <button class="btn ghost" data-action="reabrir" style="font-size:11px;">Reabrir</button>
             </div>
           </div>
           <p style="font-size:12.5px;color:var(--muted);margin:0 0 6px;white-space:pre-wrap;">${escapeHtml(n.mensaje)}</p>
-          <p style="font-size:11px;color:var(--muted);margin:0;">Vigencia: ${fmtFechaCorta(n.fechaInicio)} — ${fmtFechaCorta(n.fechaFin)}${n.archivadoAntes ? ' · Archivada manualmente el '+escapeHtml(n.fechaArchivado||'(fecha no registrada)') : ' · Venció automáticamente'}</p>
+          <p style="font-size:11px;color:var(--muted);margin:0;">Vigencia: ${fmtFechaCorta(n.fechaInicio)} — ${fmtFechaCorta(n.fechaFin)} · Archivada el ${escapeHtml(n.archivadaEl||'—')}</p>
         </div>
       `;
     }
 
-    function render(){
-      const activas = novedades.filter(n=>!n.archivadoAntes && !(n.fechaFin && hoyISO() > n.fechaFin));
-      const archivadas = novedades.filter(n=>n.archivadoAntes || (n.fechaFin && hoyISO() > n.fechaFin));
+    async function render(){
+      const novedades = await leerFrescas();
+      const activas = novedades.filter(n=>!n.archivada);
+      const archivadas = novedades.filter(n=>n.archivada);
 
       const elActivas = document.getElementById(mountId+'-activas');
-      elActivas.innerHTML = activas.length===0 ? `<div class="empty">No hay novedades activas ni programadas.</div>` : activas.map(tarjetaEditable).join('');
+      elActivas.innerHTML = activas.length===0 ? `<div class="empty">No hay novedades activas ni programadas.</div>` : activas.map(tarjetaActiva).join('');
 
       const elArchivadas = document.getElementById(mountId+'-archivadas');
       elArchivadas.innerHTML = archivadas.length===0 ? `<div class="empty">Sin novedades archivadas.</div>` : [...archivadas].reverse().map(tarjetaArchivada).join('');
 
       elActivas.querySelectorAll('[data-id]').forEach(card=>{
         const id = card.dataset.id;
-        const n = novedades.find(x=>x.id===id);
-        if(!n) return;
         let saveTimer;
-        function schedule(){
+        function guardar(){
           clearTimeout(saveTimer);
           saveTimer = setTimeout(async ()=>{
             const campos = {
@@ -7528,50 +7561,34 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               fechaInicio: card.querySelector('[data-field="fechaInicio"]').value,
               fechaFin: card.querySelector('[data-field="fechaFin"]').value,
             };
-            // Relee la lista más reciente antes de guardar, para no pisar cambios hechos
-            // desde otra pestaña/sesión mientras esta estaba abierta sin interactuar.
-            const fresca = await loadData(storageKey, novedades);
-            const freshN = fresca.find(x=>x.id===id);
-            if(freshN) Object.assign(freshN, campos);
-            novedades = fresca;
-            await saveData(storageKey, novedades);
-          }, 600);
+            const fresca = await leerFrescas();
+            const item = fresca.find(x=>x.id===id);
+            if(item) Object.assign(item, campos);
+            await saveData(storageKey, fresca, mountId+'-status');
+          }, 700);
         }
         card.querySelectorAll('[data-field]').forEach(el=>{
-          el.addEventListener('input', schedule);
-          el.addEventListener('change', schedule);
+          el.addEventListener('input', guardar);
+          el.addEventListener('change', guardar);
         });
-        const btnArchivar = card.querySelector('[data-action="archivar"]');
-        if(btnArchivar) btnArchivar.addEventListener('click', async ()=>{
-          if(!confirm('¿Archivar esta novedad ahora? Va a dejar de mostrarse a los propietarios de inmediato.')) return;
-          console.trace('[Novedades][ARCHIVAR] Se está archivando por click confirmado en "Archivar ahora":', n.titulo, n.id);
-          const fresca = await loadData(storageKey, novedades);
-          const freshN = fresca.find(x=>x.id===id);
-          if(freshN){
-            freshN.archivadoAntes = true;
-            freshN.fechaArchivado = fmtFechaHoraManual(new Date());
-          }
-          novedades = fresca;
-          await saveData(storageKey, novedades);
+        card.querySelector('[data-action="archivar"]').addEventListener('click', async ()=>{
+          if(!confirm('¿Archivar esta novedad ahora? Deja de mostrarse a los propietarios de inmediato.')) return;
+          const fresca = await leerFrescas();
+          const item = fresca.find(x=>x.id===id);
+          if(item){ item.archivada = true; item.archivadaEl = fmtFechaHora(new Date()); }
+          await saveData(storageKey, fresca, mountId+'-status');
           render();
         });
       });
 
       elArchivadas.querySelectorAll('[data-id]').forEach(card=>{
         const id = card.dataset.id;
-        const n = novedades.find(x=>x.id===id);
-        if(!n) return;
-        const btnReabrir = card.querySelector('[data-action="reabrir"]');
-        if(btnReabrir) btnReabrir.addEventListener('click', async ()=>{
-          if(!confirm('¿Reabrir esta novedad? Va a volver a mostrarse a los propietarios si su fecha de vigencia todavía no pasó.')) return;
-          const fresca = await loadData(storageKey, novedades);
-          const freshN = fresca.find(x=>x.id===id);
-          if(freshN){
-            freshN.archivadoAntes = false;
-            freshN.fechaArchivado = '';
-          }
-          novedades = fresca;
-          await saveData(storageKey, novedades);
+        card.querySelector('[data-action="reabrir"]').addEventListener('click', async ()=>{
+          if(!confirm('¿Reabrir esta novedad? Vuelve a mostrarse a los propietarios si su vigencia todavía no pasó.')) return;
+          const fresca = await leerFrescas();
+          const item = fresca.find(x=>x.id===id);
+          if(item){ item.archivada = false; item.archivadaEl = ''; }
+          await saveData(storageKey, fresca, mountId+'-status');
           render();
         });
       });
@@ -7586,7 +7603,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <p class="panel-note" style="margin:14px 0 8px;">Así se ve el cartel para el propietario (esto es solo una vista previa, no se publica):</p>
         <div style="position:relative;width:320px;max-width:100%;">
           <div class="novedad-card tipo-${tipo==='Urgente'?'urgente':(tipo==='Importante'?'importante':'informativo')}">
-            <button class="novedad-cerrar" type="button" title="Cerrar" id="${mountId}-preview-cerrar">✕</button>
+            <button class="novedad-cerrar" type="button" id="${mountId}-preview-x" title="Cerrar">✕</button>
             <span class="novedad-tag">${escapeHtml(tipo)} · Administración NAKEN</span>
             <p class="novedad-titulo">${escapeHtml(titulo)}</p>
             <p class="novedad-mensaje">${escapeHtml(mensaje)}</p>
@@ -7594,27 +7611,27 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           </div>
         </div>
       `;
-      document.getElementById(mountId+'-preview-cerrar').addEventListener('click', ()=>{ wrap.innerHTML = ''; });
+      document.getElementById(mountId+'-preview-x').addEventListener('click', ()=>{ wrap.innerHTML = ''; });
     });
 
     document.getElementById(mountId+'-crear').addEventListener('click', async ()=>{
-      const btnCrear = document.getElementById(mountId+'-crear');
+      const btn = document.getElementById(mountId+'-crear');
       const titulo = document.getElementById(mountId+'-titulo').value.trim();
       const mensaje = document.getElementById(mountId+'-mensaje').value.trim();
       if(!titulo || !mensaje){ alert('Completá el título y el mensaje.'); return; }
-      if(btnCrear.disabled) return; // evita doble clic / doble publicación
-      btnCrear.disabled = true;
-      const n = blankNovedad();
-      n.titulo = titulo;
-      n.mensaje = mensaje;
-      n.tipo = document.getElementById(mountId+'-tipo').value;
-      n.fechaInicio = document.getElementById(mountId+'-fechaInicio').value || hoyISO();
-      n.fechaFin = document.getElementById(mountId+'-fechaFin').value;
+      if(btn.disabled) return;
+      btn.disabled = true;
       try{
-        // trae la lista más reciente antes de guardar, por si se publicó algo desde otra pestaña/sesión mientras tanto
-        novedades = await loadData(storageKey, novedades);
-        novedades.push(n);
-        await saveData(storageKey, novedades, mountId+'-crear-status');
+        const fresca = await leerFrescas();
+        const n = blank();
+        n.numero = fresca.length + 1;
+        n.titulo = titulo;
+        n.mensaje = mensaje;
+        n.tipo = document.getElementById(mountId+'-tipo').value;
+        n.fechaInicio = document.getElementById(mountId+'-fechaInicio').value || hoyISO();
+        n.fechaFin = document.getElementById(mountId+'-fechaFin').value;
+        fresca.push(n);
+        await saveData(storageKey, fresca, mountId+'-status');
         document.getElementById(mountId+'-titulo').value = '';
         document.getElementById(mountId+'-mensaje').value = '';
         document.getElementById(mountId+'-fechaFin').value = '';
@@ -7623,36 +7640,36 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         console.error('Error al publicar la novedad:', err);
         alert('No se pudo publicar la novedad. Detalle: ' + (err && err.message ? err.message : 'error desconocido'));
       }finally{
-        btnCrear.disabled = false;
+        btn.disabled = false;
       }
     });
 
-    loadData(storageKey, []).then(d=>{ novedades = d; render(); });
-
     (async ()=>{
-      const consorcioEl = document.getElementById(mountId+'-consorcio-activo');
-      if(!consorcioEl) return;
+      const banner = document.getElementById(mountId+'-banner');
       const idActivo = getActiveConsorcioId();
       if(!idActivo){
-        consorcioEl.textContent = '⚠ No hay ningún consorcio seleccionado — elegí uno en el selector de arriba a la izquierda antes de publicar, o las novedades pueden guardarse en el lugar equivocado.';
-        consorcioEl.style.background = 'var(--danger)';
-        return;
+        banner.textContent = '⚠ No hay ningún consorcio seleccionado — elegí uno arriba a la izquierda.';
+        banner.style.background = 'var(--danger)';
+      } else {
+        const edificios = await getEdificios();
+        const ed = edificios.find(e=>e.id===idActivo);
+        banner.textContent = ed ? `📍 Publicando novedades para: ${ed.nombre}` : `⚠ Consorcio no encontrado (id: ${idActivo})`;
+        if(!ed) banner.style.background = 'var(--danger)';
       }
-      const edificios = await getEdificios();
-      const ed = edificios.find(e=>e.id===idActivo);
-      consorcioEl.textContent = `📍 Estás viendo y publicando novedades para: ${ed ? ed.nombre : '(consorcio no encontrado — id: '+idActivo+')'}`;
-      if(!ed) consorcioEl.style.background = 'var(--danger)';
     })();
+
+    render();
   }
 
   /* ----- Cartel flotante para propietarios ----- */
-  const novedadesDescartadas = new Set(); // solo en memoria — reaparecen al recargar la página, como pidió el admin
+  const novedadesDescartadas = new Set(); // solo en memoria — reaparecen al recargar la página, a propósito
   async function renderNovedadesFlotantes(){
     const mount = document.getElementById('novedades-flotantes-mount');
     if(!mount) return;
-    const todas = await loadData('naken-novedades', []);
-    const vigentes = todas.filter(novedadEstaVigente).filter(n=>!novedadesDescartadas.has(n.id)).slice(0,3);
-    console.log('[Novedades] rol:', role, '· consorcio activo:', getActiveConsorcioId(), '· total guardadas:', todas.length, '· vigentes ahora:', vigentes.length, todas);
+    const raw = await loadData('naken-novedades', []);
+    const { lista, cambios } = sanearNovedades(raw);
+    if(cambios) await saveData('naken-novedades', lista);
+    const vigentes = lista.filter(novedadVigente).filter(n=>!novedadesDescartadas.has(n.id)).slice(0,3);
     if(vigentes.length===0){ mount.innerHTML = ''; return; }
     mount.innerHTML = vigentes.map(n=>`
       <div class="novedad-card tipo-${n.tipo==='Urgente'?'urgente':(n.tipo==='Importante'?'importante':'informativo')}" data-id="${n.id}">
@@ -7666,11 +7683,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     mount.querySelectorAll('[data-action="cerrar"]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const card = btn.closest('.novedad-card');
-        const id = card.dataset.id;
-        novedadesDescartadas.add(id);
+        novedadesDescartadas.add(card.dataset.id);
         card.style.transition = 'opacity .25s ease, transform .25s ease';
         card.style.opacity = '0';
-        card.style.transform = 'translateY(8px) scale(0.97)';
+        card.style.transform = 'translateX(20px) scale(0.97)';
         setTimeout(()=>card.remove(), 250);
       });
     });
