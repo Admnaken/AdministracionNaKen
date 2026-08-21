@@ -7962,7 +7962,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     mountLibroCaja('caja-mount', 'naken-caja-movimientos', 'naken-caja-arqueos');
 
-    mountNovedades('novedades-mount', 'naken-novedades');
+    if(role==='admin'){
+      mountNovedades('novedades-mount', 'naken-novedades');
+    }
 
     mountLedger('polizas-mount', 'naken-polizas', [
       {key:'proveedor', label:'Proveedor', placeholder:''},
