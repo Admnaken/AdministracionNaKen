@@ -7520,13 +7520,21 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         let saveTimer;
         function schedule(){
           clearTimeout(saveTimer);
-          saveTimer = setTimeout(()=>{
-            n.titulo = card.querySelector('[data-field="titulo"]').value;
-            n.mensaje = card.querySelector('[data-field="mensaje"]').value;
-            n.tipo = card.querySelector('[data-field="tipo"]').value;
-            n.fechaInicio = card.querySelector('[data-field="fechaInicio"]').value;
-            n.fechaFin = card.querySelector('[data-field="fechaFin"]').value;
-            saveData(storageKey, novedades);
+          saveTimer = setTimeout(async ()=>{
+            const campos = {
+              titulo: card.querySelector('[data-field="titulo"]').value,
+              mensaje: card.querySelector('[data-field="mensaje"]').value,
+              tipo: card.querySelector('[data-field="tipo"]').value,
+              fechaInicio: card.querySelector('[data-field="fechaInicio"]').value,
+              fechaFin: card.querySelector('[data-field="fechaFin"]').value,
+            };
+            // Relee la lista más reciente antes de guardar, para no pisar cambios hechos
+            // desde otra pestaña/sesión mientras esta estaba abierta sin interactuar.
+            const fresca = await loadData(storageKey, novedades);
+            const freshN = fresca.find(x=>x.id===id);
+            if(freshN) Object.assign(freshN, campos);
+            novedades = fresca;
+            await saveData(storageKey, novedades);
           }, 600);
         }
         card.querySelectorAll('[data-field]').forEach(el=>{
@@ -7534,12 +7542,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           el.addEventListener('change', schedule);
         });
         const btnArchivar = card.querySelector('[data-action="archivar"]');
-        if(btnArchivar) btnArchivar.addEventListener('click', ()=>{
+        if(btnArchivar) btnArchivar.addEventListener('click', async ()=>{
           if(!confirm('¿Archivar esta novedad ahora? Va a dejar de mostrarse a los propietarios de inmediato.')) return;
           console.trace('[Novedades][ARCHIVAR] Se está archivando por click confirmado en "Archivar ahora":', n.titulo, n.id);
-          n.archivadoAntes = true;
-          n.fechaArchivado = fmtFechaHoraManual(new Date());
-          saveData(storageKey, novedades);
+          const fresca = await loadData(storageKey, novedades);
+          const freshN = fresca.find(x=>x.id===id);
+          if(freshN){
+            freshN.archivadoAntes = true;
+            freshN.fechaArchivado = fmtFechaHoraManual(new Date());
+          }
+          novedades = fresca;
+          await saveData(storageKey, novedades);
           render();
         });
       });
@@ -7549,11 +7562,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const n = novedades.find(x=>x.id===id);
         if(!n) return;
         const btnReabrir = card.querySelector('[data-action="reabrir"]');
-        if(btnReabrir) btnReabrir.addEventListener('click', ()=>{
+        if(btnReabrir) btnReabrir.addEventListener('click', async ()=>{
           if(!confirm('¿Reabrir esta novedad? Va a volver a mostrarse a los propietarios si su fecha de vigencia todavía no pasó.')) return;
-          n.archivadoAntes = false;
-          n.fechaArchivado = '';
-          saveData(storageKey, novedades);
+          const fresca = await loadData(storageKey, novedades);
+          const freshN = fresca.find(x=>x.id===id);
+          if(freshN){
+            freshN.archivadoAntes = false;
+            freshN.fechaArchivado = '';
+          }
+          novedades = fresca;
+          await saveData(storageKey, novedades);
           render();
         });
       });
@@ -7568,7 +7586,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <p class="panel-note" style="margin:14px 0 8px;">Así se ve el cartel para el propietario (esto es solo una vista previa, no se publica):</p>
         <div style="position:relative;width:320px;max-width:100%;">
           <div class="novedad-card tipo-${tipo==='Urgente'?'urgente':(tipo==='Importante'?'importante':'informativo')}">
-            <button class="novedad-cerrar" type="button" title="Cerrar">✕</button>
+            <button class="novedad-cerrar" type="button" title="Cerrar" id="${mountId}-preview-cerrar">✕</button>
             <span class="novedad-tag">${escapeHtml(tipo)} · Administración NAKEN</span>
             <p class="novedad-titulo">${escapeHtml(titulo)}</p>
             <p class="novedad-mensaje">${escapeHtml(mensaje)}</p>
@@ -7576,6 +7594,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           </div>
         </div>
       `;
+      document.getElementById(mountId+'-preview-cerrar').addEventListener('click', ()=>{ wrap.innerHTML = ''; });
     });
 
     document.getElementById(mountId+'-crear').addEventListener('click', async ()=>{
