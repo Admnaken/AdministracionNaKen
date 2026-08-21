@@ -3806,8 +3806,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     let saved = null;
     try{ saved = localStorage.getItem('naken-admin-active-consorcio'); }catch(e){}
+    let validoLocal = saved && edificios.find(e=>e.id===saved);
+    if(!validoLocal){
+      // localStorage no tenía nada usable — probamos el respaldo en storage compartido
+      const respaldo = await loadData('naken-admin-ultimo-consorcio', null);
+      if(respaldo && edificios.find(e=>e.id===respaldo)){ saved = respaldo; validoLocal = true; }
+    }
     const preferido = preferId && edificios.find(e=>e.id===preferId);
-    const valido = saved && edificios.find(e=>e.id===saved);
+    const valido = validoLocal;
     const idInicial = preferido ? preferId : (valido ? saved : edificios[0].id);
 
     sel.innerHTML = edificios.map(e=>`<option value="${e.id}">${escapeHtml(e.nombre)}${e.estado==='pendiente' ? ' (nuevo)' : ''}</option>`).join('');
@@ -4325,12 +4331,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
      EXCEPTO las que son inherentemente compartidas entre los 15 edificios
      (el índice mismo, el login de administrador, y la lista única de
      propietarios que ya se filtra por el campo "consorcio"/"consorcioId"). */
-  const GLOBAL_KEYS = ['naken-edificios', 'naken-admin-username', 'naken-admin-code', 'naken-usuarios', 'naken-cotizaciones-honorarios'];
+  const GLOBAL_KEYS = ['naken-edificios', 'naken-admin-username', 'naken-admin-code', 'naken-usuarios', 'naken-cotizaciones-honorarios', 'naken-admin-ultimo-consorcio'];
   let activeConsorcioId = null; // id del consorcio cuyos datos se están viendo/editando ahora
   function getActiveConsorcioId(){ return activeConsorcioId; }
   function setActiveConsorcioId(id){
     activeConsorcioId = id || null;
     try{ if(id) localStorage.setItem('naken-admin-active-consorcio', id); }catch(e){}
+    // Respaldo además en el storage compartido, por si localStorage está bloqueado (modo privado,
+    // configuración del navegador, etc.) — así no se pierde el "último consorcio" al recargar.
+    if(id) saveData('naken-admin-ultimo-consorcio', id);
   }
   function nsKey(key){
     if (GLOBAL_KEYS.indexOf(key) !== -1) return key;
@@ -7388,11 +7397,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   function mountNovedades(mountId, storageKey){
     const mount = document.getElementById(mountId);
     let novedades = [];
+    console.log('[Novedades][mount] mountNovedades() se está inicializando de nuevo. Si ves este log más de una vez sin haber recargado la página, hay algo re-montando el panel de más.');
 
     function uid(){ return 'n'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
     function blankNovedad(){ return { id:uid(), titulo:'', mensaje:'', tipo:'Informativo', fechaInicio: hoyISO(), fechaFin:'', archivadoAntes:false, fechaArchivado:'', creadoEl:new Date().toLocaleString('es-AR') }; }
 
     mount.innerHTML = `
+      <div id="${mountId}-consorcio-activo" style="background:var(--primary);color:#fff;border-radius:8px;padding:10px 16px;margin-bottom:18px;font-family:'Inter',monospace;font-size:12.5px;letter-spacing:.02em;">Verificando consorcio activo…</div>
       <div class="subhead" style="margin-top:0;">Nueva novedad</div>
       <div class="field-grid" style="grid-template-columns:repeat(2,1fr);">
         <div style="grid-column:1/-1;">
@@ -7525,6 +7536,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const btnArchivar = card.querySelector('[data-action="archivar"]');
         if(btnArchivar) btnArchivar.addEventListener('click', ()=>{
           if(!confirm('¿Archivar esta novedad ahora? Va a dejar de mostrarse a los propietarios de inmediato.')) return;
+          console.trace('[Novedades][ARCHIVAR] Se está archivando por click confirmado en "Archivar ahora":', n.titulo, n.id);
           n.archivadoAntes = true;
           n.fechaArchivado = fmtFechaHoraManual(new Date());
           saveData(storageKey, novedades);
@@ -7597,6 +7609,21 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     });
 
     loadData(storageKey, []).then(d=>{ novedades = d; render(); });
+
+    (async ()=>{
+      const consorcioEl = document.getElementById(mountId+'-consorcio-activo');
+      if(!consorcioEl) return;
+      const idActivo = getActiveConsorcioId();
+      if(!idActivo){
+        consorcioEl.textContent = '⚠ No hay ningún consorcio seleccionado — elegí uno en el selector de arriba a la izquierda antes de publicar, o las novedades pueden guardarse en el lugar equivocado.';
+        consorcioEl.style.background = 'var(--danger)';
+        return;
+      }
+      const edificios = await getEdificios();
+      const ed = edificios.find(e=>e.id===idActivo);
+      consorcioEl.textContent = `📍 Estás viendo y publicando novedades para: ${ed ? ed.nombre : '(consorcio no encontrado — id: '+idActivo+')'}`;
+      if(!ed) consorcioEl.style.background = 'var(--danger)';
+    })();
   }
 
   /* ----- Cartel flotante para propietarios ----- */
