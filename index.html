@@ -7365,6 +7365,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const d = new Date();
     return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   }
+  function fmtFechaHoraManual(d){
+    const dd = String(d.getDate()).padStart(2,'0');
+    const mm = String(d.getMonth()+1).padStart(2,'0');
+    const hh = String(d.getHours()).padStart(2,'0');
+    const min = String(d.getMinutes()).padStart(2,'0');
+    return `${dd}/${mm}/${d.getFullYear()} ${hh}:${min} hs`;
+  }
   function novedadEstaVigente(n){
     if(!n || n.archivadoAntes) return false;
     const hoy = hoyISO();
@@ -7471,13 +7478,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     function tarjetaArchivada(n){
       return `
-        <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px 16px;background:var(--paper-deep,#f8f9fa);margin-bottom:10px;">
+        <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px 16px;background:var(--paper-deep,#f8f9fa);margin-bottom:10px;" data-id="${n.id}">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
             <b style="font-size:13.5px;">${escapeHtml(n.titulo||'(sin título)')}</b>
-            <span class="badge ${n.tipo==='Urgente'?'escalado':(n.tipo==='Importante'?'pendiente':'proceso')}">${escapeHtml(n.tipo)}</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="badge ${n.tipo==='Urgente'?'escalado':(n.tipo==='Importante'?'pendiente':'proceso')}">${escapeHtml(n.tipo)}</span>
+              ${n.archivadoAntes ? `<button class="btn ghost" data-action="reabrir" style="font-size:11px;">Reabrir</button>` : ''}
+            </div>
           </div>
           <p style="font-size:12.5px;color:var(--muted);margin:0 0 6px;white-space:pre-wrap;">${escapeHtml(n.mensaje)}</p>
-          <p style="font-size:11px;color:var(--muted);margin:0;">Vigencia: ${fmtFechaCorta(n.fechaInicio)} — ${fmtFechaCorta(n.fechaFin)}${n.archivadoAntes ? ' · Archivada manualmente el '+escapeHtml(n.fechaArchivado||'') : ''}</p>
+          <p style="font-size:11px;color:var(--muted);margin:0;">Vigencia: ${fmtFechaCorta(n.fechaInicio)} — ${fmtFechaCorta(n.fechaFin)}${n.archivadoAntes ? ' · Archivada manualmente el '+escapeHtml(n.fechaArchivado||'(fecha no registrada)') : ' · Venció automáticamente'}</p>
         </div>
       `;
     }
@@ -7516,7 +7526,21 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         if(btnArchivar) btnArchivar.addEventListener('click', ()=>{
           if(!confirm('¿Archivar esta novedad ahora? Va a dejar de mostrarse a los propietarios de inmediato.')) return;
           n.archivadoAntes = true;
-          n.fechaArchivado = new Date().toLocaleString('es-AR');
+          n.fechaArchivado = fmtFechaHoraManual(new Date());
+          saveData(storageKey, novedades);
+          render();
+        });
+      });
+
+      elArchivadas.querySelectorAll('[data-id]').forEach(card=>{
+        const id = card.dataset.id;
+        const n = novedades.find(x=>x.id===id);
+        if(!n) return;
+        const btnReabrir = card.querySelector('[data-action="reabrir"]');
+        if(btnReabrir) btnReabrir.addEventListener('click', ()=>{
+          if(!confirm('¿Reabrir esta novedad? Va a volver a mostrarse a los propietarios si su fecha de vigencia todavía no pasó.')) return;
+          n.archivadoAntes = false;
+          n.fechaArchivado = '';
           saveData(storageKey, novedades);
           render();
         });
@@ -7543,26 +7567,32 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     });
 
     document.getElementById(mountId+'-crear').addEventListener('click', async ()=>{
+      const btnCrear = document.getElementById(mountId+'-crear');
       const titulo = document.getElementById(mountId+'-titulo').value.trim();
       const mensaje = document.getElementById(mountId+'-mensaje').value.trim();
       if(!titulo || !mensaje){ alert('Completá el título y el mensaje.'); return; }
+      if(btnCrear.disabled) return; // evita doble clic / doble publicación
+      btnCrear.disabled = true;
       const n = blankNovedad();
       n.titulo = titulo;
       n.mensaje = mensaje;
       n.tipo = document.getElementById(mountId+'-tipo').value;
       n.fechaInicio = document.getElementById(mountId+'-fechaInicio').value || hoyISO();
       n.fechaFin = document.getElementById(mountId+'-fechaFin').value;
-      novedades.push(n);
       try{
+        // trae la lista más reciente antes de guardar, por si se publicó algo desde otra pestaña/sesión mientras tanto
+        novedades = await loadData(storageKey, novedades);
+        novedades.push(n);
         await saveData(storageKey, novedades, mountId+'-crear-status');
         document.getElementById(mountId+'-titulo').value = '';
         document.getElementById(mountId+'-mensaje').value = '';
         document.getElementById(mountId+'-fechaFin').value = '';
         render();
       }catch(err){
-        novedades.pop(); // no se guardó, no la dejamos en la lista en memoria
         console.error('Error al publicar la novedad:', err);
         alert('No se pudo publicar la novedad. Detalle: ' + (err && err.message ? err.message : 'error desconocido'));
+      }finally{
+        btnCrear.disabled = false;
       }
     });
 
