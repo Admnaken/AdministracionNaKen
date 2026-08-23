@@ -1436,7 +1436,7 @@
         <div class="panel-head">
           <span class="eyebrow">Herramientas del administrador</span>
           <h2>Registro de asistencia a asamblea</h2>
-          <p class="panel-note">Elegí la unidad de cada fila del desplegable (se completa sola con el porcentual de la planilla y se pone gris en las demás filas para que no se cargue dos veces) y, a medida que van llegando los propietarios, marcá si asiste el <b>titular</b> o un <b>representante con poder</b>. Al cerrar la toma de asistencia, la app calcula el porcentual y la cantidad de propietarios presentes y te dice qué mayoría del CCyCN se alcanza (absoluta, 2/3 o unanimidad), para que la contrastes con lo que exija el reglamento interno.</p>
+          <p class="panel-note">A medida que van llegando los propietarios, agregá su unidad del desplegable (se completa sola con el porcentual de la planilla y se pone gris en las demás filas para que no se cargue dos veces) y marcá si asiste el <b>titular</b> o un <b>representante con poder</b> (ahí se habilita la caja para cargar nombre y DNI). La unidad que no agregues queda contada como ausente en forma automática, sobre el total de unidades del consorcio. En vivo, y también al cerrar la toma de asistencia, la app calcula el doble cómputo — cantidad de propietarios y porcentual — y te dice qué mayoría del CCyCN se alcanza (absoluta, 2/3 o unanimidad), para que la contrastes con lo que exija el reglamento interno.</p>
         </div>
         <div id="asistencia-mount"></div>
       </section>
@@ -4184,6 +4184,53 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return null;
     }
   }
+  /* ---------- Padrón de unidades + porcentual, para el Registro de asistencia a asamblea ----------
+     "unidadesConsorcio" no siempre trae el % Fondo A ya calculado, así que si falta lo derivamos
+     de la liquidación en vivo (Prorrateo_Mensual): el importe de Fondo A de cada unidad es
+     proporcional a su coeficiente, así que importeFondoA_unidad / suma(importeFondoA) = porcentual. */
+  async function obtenerDeptosConPorcentual(spreadsheetId){
+    if(!spreadsheetId) return [];
+    let deptos = [];
+    try{
+      const data = await fetchUnidadesConsorcio(spreadsheetId);
+      const unidades = (data && data.unidades) ? data.unidades.filter(u=>u.pisoDpto || u.uf) : [];
+      deptos = unidades.map(u=>{
+        const raw = u.porcentualFondoA ?? u.porcentualA ?? u.pctFondoA ?? u.porcentual ?? u.pctA;
+        let porcentual = '';
+        if(raw!==undefined && raw!==null && raw!==''){
+          const n = Number(raw);
+          if(!isNaN(n)){
+            // Si viene como fracción (0 a 1) lo pasamos a %; si ya viene en % lo dejamos como está.
+            porcentual = (n>0 && n<=1) ? String(Math.round(n*10000)/100) : String(Math.round(n*100)/100);
+          }
+        }
+        return { valor: u.pisoDpto || u.uf, porcentual };
+      });
+    }catch(e){ deptos = []; }
+
+    const faltaPorcentual = deptos.length===0 || deptos.every(d=>!d.porcentual);
+    if(faltaPorcentual){
+      try{
+        const resumen = await fetchResumenConsorcio(spreadsheetId);
+        const unidadesResumen = (resumen && resumen.unidades) ? resumen.unidades : [];
+        const totalFondoA = unidadesResumen.reduce((s,u)=>s+(Number(u.importeFondoA)||0),0);
+        if(totalFondoA>0){
+          const porUnidad = {};
+          unidadesResumen.forEach(u=>{
+            const valor = u.pisoDpto || u.uf;
+            if(valor) porUnidad[valor] = String(Math.round((Number(u.importeFondoA)||0)/totalFondoA*10000)/100);
+          });
+          deptos = deptos.length>0
+            ? deptos.map(d=>({...d, porcentual: d.porcentual || porUnidad[d.valor] || ''}))
+            : unidadesResumen.filter(u=>u.pisoDpto || u.uf).map(u=>({
+                valor: u.pisoDpto || u.uf,
+                porcentual: porUnidad[u.pisoDpto || u.uf] || ''
+              }));
+        }
+      }catch(e){}
+    }
+    return deptos;
+  }
   /* ---------- Datos de Administración / Consorcio / Forma de pago: en vivo de Config_NAKEN ---------- */
   async function fetchConfigConsorcio(spreadsheetId){
     if(!spreadsheetId) return null;
@@ -5301,22 +5348,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     let reglamento = '';
     let cerrada = false;
     let fechaCierre = null;
-    let deptos = []; // [{valor, porcentual}] traído de la planilla del consorcio
+    let deptos = []; // [{valor, porcentual}] padrón completo del consorcio, traído de la planilla
 
     mount.innerHTML = `<div class="empty">Buscando las unidades del consorcio…</div>`;
 
-    // Trae el padrón de unidades (y su porcentual) directo de la planilla vinculada, si existe.
+    // Trae el padrón completo de unidades y su porcentual (% Fondo A) directo de la planilla vinculada.
     try{
       const spreadsheetId = await getSpreadsheetIdActivo();
-      if(spreadsheetId){
-        const data = await fetchUnidadesConsorcio(spreadsheetId);
-        const unidadesPlanilla = (data && data.unidades) ? data.unidades.filter(u=>u.pisoDpto || u.uf) : [];
-        deptos = unidadesPlanilla.map(u=>({
-          valor: u.pisoDpto || u.uf,
-          porcentual: u.porcentualFondoA ? String(Math.round(Number(u.porcentualFondoA)*10000)/100) : ''
-        }));
-      }
+      if(spreadsheetId) deptos = await obtenerDeptosConPorcentual(spreadsheetId);
     }catch(e){ deptos = []; }
+
+    // Total del consorcio: sobre esto se calcula el doble cómputo, más allá de cuántas filas
+    // se hayan cargado a mano. Si no hay planilla vinculada, se usa lo que se cargue en la tabla.
+    const totalPadron = deptos.length;
+    const totalPorcentualPadron = deptos.reduce((s,d)=>s+(parseFloat((d.porcentual||'0').replace(',','.'))||0),0);
 
     mount.innerHTML = `
       <div class="kpi-row" id="${mountId}-kpi"></div>
@@ -5325,7 +5370,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <th>Unidad</th>
           <th>Porcentual (%)</th>
           <th>Asistencia</th>
-          <th>Representante (si aplica)</th>
+          <th>Representante (nombre y DNI)</th>
           <th class="row-del"></th>
         </tr></thead>
         <tbody id="${mountId}-body"></tbody>
@@ -5333,7 +5378,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       <div class="toolbar">
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
           <button class="btn" id="${mountId}-add">+ Agregar unidad</button>
-          ${deptos.length>0 ? `<button class="btn ghost" id="${mountId}-importar">Traer unidades de la planilla</button>` : ''}
+          ${deptos.length>0 ? `<button class="btn ghost" id="${mountId}-importar">Precargar todo el padrón</button>` : ''}
         </div>
         <div style="display:flex;align-items:center;gap:12px;">
           ${statusEl(statusId)}
@@ -5341,7 +5386,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <button class="btn primary" id="${mountId}-save">Guardar cambios</button>
         </div>
       </div>
-      ${deptos.length===0 ? `<p class="panel-note" style="margin:-6px 0 8px;font-size:12px;">Este consorcio todavía no tiene la planilla vinculada (o no pudimos leerla), así que la unidad se carga a mano en cada fila.</p>` : ''}
+      ${deptos.length>0
+        ? `<p class="panel-note" style="margin:-6px 0 8px;font-size:12px;">Consorcio con ${totalPadron} unidades funcionales (${totalPorcentualPadron.toFixed(2)}% de porcentual cargado en la planilla). Elegí acá solo las unidades que van llegando — la que no agregues queda contada como ausente en forma automática sobre ese total.</p>`
+        : `<p class="panel-note" style="margin:-6px 0 8px;font-size:12px;">Este consorcio todavía no tiene la planilla vinculada (o no pudimos leerla), así que la unidad y su porcentual se cargan a mano en cada fila.</p>`}
       <div class="toolbar" style="margin-top:-6px;">
         <span id="${mountId}-cierre-badge"></span>
         <button class="btn primary" id="${mountId}-cerrar">Cerrar toma de asistencia</button>
@@ -5381,11 +5428,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
 
     function updateKpi(){
-      const total = rows.length;
+      const total = totalPadron>0 ? totalPadron : rows.length;
       const titulares = rows.filter(r=>r.modo==='Titular').length;
       const representantes = rows.filter(r=>r.modo==='Representante (poder)').length;
       const presentes = titulares + representantes;
-      const porcentualTotal = rows.reduce((s,r)=>s+num(r.porcentual),0);
+      const porcentualTotal = totalPadron>0 ? totalPorcentualPadron : rows.reduce((s,r)=>s+num(r.porcentual),0);
       const porcentualPresente = rows.filter(r=>r.modo==='Titular'||r.modo==='Representante (poder)').reduce((s,r)=>s+num(r.porcentual),0);
       kpi.innerHTML = `
         <div class="kpi highlight">
@@ -5401,7 +5448,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <div class="value" style="font-size:18px;">${titulares} / ${representantes}</div>
         </div>
         <div class="kpi">
-          <div class="label">Porcentual total cargado</div>
+          <div class="label">Porcentual total del consorcio</div>
           <div class="value">${porcentualTotal.toFixed(2)}%</div>
         </div>
       `;
@@ -5409,16 +5456,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     // Arts. 2058/2060 CCyCN: tres mayorías posibles, computadas sobre el total del consorcio
     // (no solo sobre los presentes) y, por el sistema de doble cómputo, tanto por cantidad de
-    // propietarios como por su porcentual.
+    // propietarios como por su porcentual. Las unidades no cargadas cuentan como ausentes.
     function computeMayorias(){
-      const totalUnidades = rows.length;
+      const totalUnidades = totalPadron>0 ? totalPadron : rows.length;
       const presentesRows = rows.filter(r=>r.modo==='Titular'||r.modo==='Representante (poder)');
       const presentesCant = presentesRows.length;
-      const porcentualTotalCargado = rows.reduce((s,r)=>s+num(r.porcentual),0);
+      const baseTotalPorcentual = totalPadron>0
+        ? (totalPorcentualPadron>0 ? totalPorcentualPadron : 100)
+        : (rows.reduce((s,r)=>s+num(r.porcentual),0) || 100);
       const porcentualPresente = presentesRows.reduce((s,r)=>s+num(r.porcentual),0);
-      // Si todavía no se cargó el 100% del padrón, se usa el total cargado como base para no
-      // distorsionar el cálculo con unidades que faltan cargar.
-      const baseTotalPorcentual = porcentualTotalCargado > 0 ? porcentualTotalCargado : 100;
       const fracCant = totalUnidades>0 ? presentesCant/totalUnidades : 0;
       const fracPor = baseTotalPorcentual>0 ? porcentualPresente/baseTotalPorcentual : 0;
 
@@ -5435,7 +5481,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       let alcanzada = null;
       for(let i=resultado.length-1;i>=0;i--){ if(resultado[i].okAmbos){ alcanzada = resultado[i]; break; } }
 
-      return {totalUnidades, presentesCant, porcentualTotalCargado, porcentualPresente, baseTotalPorcentual, fracCant, fracPor, resultado, alcanzada};
+      return {totalUnidades, presentesCant, porcentualPresente, baseTotalPorcentual, fracCant, fracPor, resultado, alcanzada};
     }
 
     function renderMayoriaBox(){
@@ -5444,7 +5490,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
       let veredictoHtml;
       if(m.totalUnidades===0){
-        veredictoHtml = `<div class="mayoria-veredicto sin-quorum">Todavía no cargaste unidades para calcular mayorías.</div>`;
+        veredictoHtml = `<div class="mayoria-veredicto sin-quorum">Todavía no hay unidades cargadas para calcular mayorías.</div>`;
       } else if(!m.alcanzada){
         veredictoHtml = `<div class="mayoria-veredicto sin-quorum">Con la asistencia actual no se alcanza ninguna de las mayorías del CCyCN (falta quórum).</div>`;
       } else {
@@ -5471,7 +5517,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           </tr></thead>
           <tbody>${filas}</tbody>
         </table>
-        <p class="panel-note" style="margin:10px 0 0;font-size:11.5px;">Salvo que el reglamento de copropiedad prevea otra cosa, el CCyCN exige cumplir la mayoría tanto por cantidad de propietarios como por su porcentual, sobre el total del consorcio — no solo sobre los presentes en la asamblea.</p>
+        <p class="panel-note" style="margin:10px 0 0;font-size:11.5px;">Salvo que el reglamento de copropiedad prevea otra cosa, el CCyCN exige cumplir la mayoría tanto por cantidad de propietarios como por su porcentual, sobre el total del consorcio (${m.totalUnidades} unidades) — no solo sobre los presentes en la asamblea. Las unidades que no agregaste a la tabla cuentan como ausentes.</p>
         <div class="mayoria-reglamento">
           <label>Lo que exige el reglamento interno de este consorcio (para contrastar con el CCyCN)</label>
           <textarea id="${mountId}-reglamento" placeholder="Ej: para este tema el reglamento pide 2/3 de los presentes, no del total…">${escapeHtml(reglamento)}</textarea>
@@ -5491,7 +5537,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     function render(){
       body.innerHTML = '';
       if(rows.length===0){
-        body.innerHTML = `<tr><td colspan="5"><div class="empty">Cargá las unidades con su porcentual antes de empezar la asamblea.</div></td></tr>`;
+        body.innerHTML = `<tr><td colspan="5"><div class="empty">Todavía no llegó ningún propietario. Elegí una unidad del desplegable a medida que se van presentando.</div></td></tr>`;
         updateKpi();
         renderMayoriaBox();
         return;
@@ -5500,7 +5546,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       rows.forEach((row,idx)=>{
         const tr = document.createElement('tr');
         tr.setAttribute('data-row','1');
-        const modo = row.modo || 'No presente';
+        const modo = row.modo || 'Titular';
+        const esRepresentante = modo === 'Representante (poder)';
 
         let unidadCell;
         if(deptos.length>0){
@@ -5526,7 +5573,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               <option ${modo==='Representante (poder)'?'selected':''}>Representante (poder)</option>
             </select>
           </td>
-          <td><input type="text" data-field="representante" value="${escapeHtml(row.representante)}" placeholder="Nombre (si hay poder)"></td>
+          <td><input type="text" data-field="representante" value="${escapeHtml(row.representante)}" placeholder="Nombre y DNI del representante" ${esRepresentante?'':'disabled'}></td>
           <td class="row-del"><button data-action="delete" title="Eliminar">✕</button></td>
         `;
         body.appendChild(tr);
@@ -5571,6 +5618,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       }
       if(e.target.dataset.field==='modo'){
         rows = readRows();
+        const tr = e.target.closest('tr');
+        const repInput = tr.querySelector('[data-field="representante"]');
+        const esRepresentante = e.target.value === 'Representante (poder)';
+        repInput.disabled = !esRepresentante;
+        if(!esRepresentante) repInput.value = ''; // si asistió el titular (o está ausente), la caja queda en gris y vacía
+        rows = readRows();
         updateKpi();
         renderMayoriaBox();
         persist();
@@ -5590,7 +5643,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     addBtn.addEventListener('click', ()=>{
       if(cerrada) return;
       rows = readRows();
-      rows.push({unidad:'', porcentual:'', modo:'No presente', representante:''});
+      // Por defecto entra como "Titular": esta fila se agrega porque alguien llegó a la asamblea.
+      rows.push({unidad:'', porcentual:'', modo:'Titular', representante:''});
       render();
       persist();
       const last = body.lastElementChild.querySelector('select, input');
