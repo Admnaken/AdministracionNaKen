@@ -634,6 +634,52 @@
   .kpi.highlight { border-color: var(--gold); }
   .kpi.highlight .value { color: var(--primary); }
 
+  /* ---------- Mayorías (Registro de asamblea) ---------- */
+  .ledger td select option:disabled { color: var(--gray-500, #9aa0a6); background: var(--gray-100, #f0f0f0); }
+  .ledger[data-locked="1"] input,
+  .ledger[data-locked="1"] select,
+  .ledger[data-locked="1"] button { opacity: .65; pointer-events: none; }
+  .mayoria-box {
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    background: #fff;
+    box-shadow: var(--shadow);
+    margin: 18px 0;
+  }
+  .mayoria-box .mb-title {
+    font-family: 'Inter', monospace;
+    font-size: 9.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--gray-600);
+    margin-bottom: 10px;
+  }
+  .mayoria-veredicto {
+    font-family: 'Playfair Display', serif;
+    font-size: 19px;
+    color: var(--primary);
+    padding: 10px 14px;
+    border-radius: 5px;
+    border: 1px solid var(--gold);
+    background: #FBF6E7;
+    margin-bottom: 14px;
+  }
+  .mayoria-veredicto.sin-quorum { border-color: var(--danger); background: #F6E4E0; color: var(--danger); font-family: inherit; font-size: 14px; }
+  .mayoria-tabla { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .mayoria-tabla th, .mayoria-tabla td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  .mayoria-tabla th { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--gray-600); font-weight: 600; }
+  .mayoria-tabla td.centro, .mayoria-tabla th.centro { text-align: center; }
+  .mayoria-ok { color: var(--ok); font-weight: 700; }
+  .mayoria-no { color: var(--gray-400, #b7bcc2); font-weight: 700; }
+  .mayoria-reglamento { margin-top: 16px; }
+  .mayoria-reglamento label { font-size: 12px; font-weight: 600; color: var(--primary); display: block; margin-bottom: 6px; }
+  .mayoria-reglamento textarea {
+    width: 100%; min-height: 64px; padding: 9px 10px; border: 1px solid var(--line);
+    border-radius: 5px; font-family: inherit; font-size: 13px; resize: vertical;
+  }
+  .cierre-badge { font-size: 12px; color: var(--ok); background: #E1EEE3; padding: 5px 10px; border-radius: 4px; }
+
   .empty {
     font-size: 13px;
     color: var(--gray-600);
@@ -1390,7 +1436,7 @@
         <div class="panel-head">
           <span class="eyebrow">Herramientas del administrador</span>
           <h2>Registro de asistencia a asamblea</h2>
-          <p class="panel-note">Cargá el porcentual de cada unidad una vez (copiado del reglamento / tu Google Sheets) y, a medida que van llegando los propietarios, marcá si asiste el <b>titular</b> o un <b>representante con poder</b>. La cantidad de unidades y el porcentual acumulado se suman solos, para el doble cómputo de quórum.</p>
+          <p class="panel-note">Elegí la unidad de cada fila del desplegable (se completa sola con el porcentual de la planilla y se pone gris en las demás filas para que no se cargue dos veces) y, a medida que van llegando los propietarios, marcá si asiste el <b>titular</b> o un <b>representante con poder</b>. Al cerrar la toma de asistencia, la app calcula el porcentual y la cantidad de propietarios presentes y te dice qué mayoría del CCyCN se alcanza (absoluta, 2/3 o unanimidad), para que la contrastes con lo que exija el reglamento interno.</p>
         </div>
         <div id="asistencia-mount"></div>
       </section>
@@ -5247,15 +5293,34 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     setInterval(updateKpi, 1500);
   }
 
-  /* ---------- Registro de asistencia a asamblea (doble cómputo) ---------- */
-  function mountAsistencia(mountId, storageKey){
+  /* ---------- Registro de asistencia a asamblea (doble cómputo + mayorías CCyCN) ---------- */
+  async function mountAsistencia(mountId, storageKey){
     const mount = document.getElementById(mountId);
     const statusId = mountId+'-status';
     let rows = [];
+    let reglamento = '';
+    let cerrada = false;
+    let fechaCierre = null;
+    let deptos = []; // [{valor, porcentual}] traído de la planilla del consorcio
+
+    mount.innerHTML = `<div class="empty">Buscando las unidades del consorcio…</div>`;
+
+    // Trae el padrón de unidades (y su porcentual) directo de la planilla vinculada, si existe.
+    try{
+      const spreadsheetId = await getSpreadsheetIdActivo();
+      if(spreadsheetId){
+        const data = await fetchUnidadesConsorcio(spreadsheetId);
+        const unidadesPlanilla = (data && data.unidades) ? data.unidades.filter(u=>u.pisoDpto || u.uf) : [];
+        deptos = unidadesPlanilla.map(u=>({
+          valor: u.pisoDpto || u.uf,
+          porcentual: u.porcentualFondoA ? String(Math.round(Number(u.porcentualFondoA)*10000)/100) : ''
+        }));
+      }
+    }catch(e){ deptos = []; }
 
     mount.innerHTML = `
       <div class="kpi-row" id="${mountId}-kpi"></div>
-      <table class="ledger">
+      <table class="ledger" id="${mountId}-table">
         <thead><tr>
           <th>Unidad</th>
           <th>Porcentual (%)</th>
@@ -5266,17 +5331,37 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <tbody id="${mountId}-body"></tbody>
       </table>
       <div class="toolbar">
-        <button class="btn" id="${mountId}-add">+ Agregar unidad</button>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <button class="btn" id="${mountId}-add">+ Agregar unidad</button>
+          ${deptos.length>0 ? `<button class="btn ghost" id="${mountId}-importar">Traer unidades de la planilla</button>` : ''}
+        </div>
         <div style="display:flex;align-items:center;gap:12px;">
           ${statusEl(statusId)}
           <button class="btn ghost" id="${mountId}-reset">Reiniciar asistencia</button>
           <button class="btn primary" id="${mountId}-save">Guardar cambios</button>
         </div>
       </div>
+      ${deptos.length===0 ? `<p class="panel-note" style="margin:-6px 0 8px;font-size:12px;">Este consorcio todavía no tiene la planilla vinculada (o no pudimos leerla), así que la unidad se carga a mano en cada fila.</p>` : ''}
+      <div class="toolbar" style="margin-top:-6px;">
+        <span id="${mountId}-cierre-badge"></span>
+        <button class="btn primary" id="${mountId}-cerrar">Cerrar toma de asistencia</button>
+      </div>
+      <div class="mayoria-box" id="${mountId}-mayoria"></div>
     `;
 
     const body = document.getElementById(mountId+'-body');
     const kpi = document.getElementById(mountId+'-kpi');
+    const table = document.getElementById(mountId+'-table');
+    const mayoriaBox = document.getElementById(mountId+'-mayoria');
+    const cierreBadge = document.getElementById(mountId+'-cierre-badge');
+    const cerrarBtn = document.getElementById(mountId+'-cerrar');
+    const addBtn = document.getElementById(mountId+'-add');
+    const importarBtn = document.getElementById(mountId+'-importar');
+
+    function num(v){
+      const n = parseFloat((v||'0').toString().replace(',','.'));
+      return isNaN(n) ? 0 : n;
+    }
 
     function readRows(){
       const out = [];
@@ -5291,9 +5376,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return out;
     }
 
-    function num(v){
-      const n = parseFloat((v||'0').toString().replace(',','.'));
-      return isNaN(n) ? 0 : n;
+    function persist(){
+      saveData(storageKey, {rows, reglamento, cerrada, fechaCierre}, statusId);
     }
 
     function updateKpi(){
@@ -5323,19 +5407,117 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       `;
     }
 
+    // Arts. 2058/2060 CCyCN: tres mayorías posibles, computadas sobre el total del consorcio
+    // (no solo sobre los presentes) y, por el sistema de doble cómputo, tanto por cantidad de
+    // propietarios como por su porcentual.
+    function computeMayorias(){
+      const totalUnidades = rows.length;
+      const presentesRows = rows.filter(r=>r.modo==='Titular'||r.modo==='Representante (poder)');
+      const presentesCant = presentesRows.length;
+      const porcentualTotalCargado = rows.reduce((s,r)=>s+num(r.porcentual),0);
+      const porcentualPresente = presentesRows.reduce((s,r)=>s+num(r.porcentual),0);
+      // Si todavía no se cargó el 100% del padrón, se usa el total cargado como base para no
+      // distorsionar el cálculo con unidades que faltan cargar.
+      const baseTotalPorcentual = porcentualTotalCargado > 0 ? porcentualTotalCargado : 100;
+      const fracCant = totalUnidades>0 ? presentesCant/totalUnidades : 0;
+      const fracPor = baseTotalPorcentual>0 ? porcentualPresente/baseTotalPorcentual : 0;
+
+      const niveles = [
+        {key:'absoluta', label:'Mayoría absoluta', detalle:'más de la mitad del total de propietarios', umbral:0.5, estricto:true},
+        {key:'dosTercios', label:'Mayoría de 2/3', detalle:'dos tercios del total de propietarios', umbral:2/3, estricto:false},
+        {key:'unanimidad', label:'Unanimidad', detalle:'la totalidad de los propietarios', umbral:1, estricto:false},
+      ];
+      const resultado = niveles.map(n=>{
+        const okCant = n.estricto ? (fracCant > n.umbral + 1e-9) : (fracCant >= n.umbral - 1e-6);
+        const okPor = n.estricto ? (fracPor > n.umbral + 1e-9) : (fracPor >= n.umbral - 1e-6);
+        return {...n, okCant, okPor, okAmbos: okCant && okPor};
+      });
+      let alcanzada = null;
+      for(let i=resultado.length-1;i>=0;i--){ if(resultado[i].okAmbos){ alcanzada = resultado[i]; break; } }
+
+      return {totalUnidades, presentesCant, porcentualTotalCargado, porcentualPresente, baseTotalPorcentual, fracCant, fracPor, resultado, alcanzada};
+    }
+
+    function renderMayoriaBox(){
+      const m = computeMayorias();
+      const pct = f => (f*100).toFixed(2)+'%';
+
+      let veredictoHtml;
+      if(m.totalUnidades===0){
+        veredictoHtml = `<div class="mayoria-veredicto sin-quorum">Todavía no cargaste unidades para calcular mayorías.</div>`;
+      } else if(!m.alcanzada){
+        veredictoHtml = `<div class="mayoria-veredicto sin-quorum">Con la asistencia actual no se alcanza ninguna de las mayorías del CCyCN (falta quórum).</div>`;
+      } else {
+        veredictoHtml = `<div class="mayoria-veredicto">Con la asistencia actual se alcanza: <b>${m.alcanzada.label.toUpperCase()}</b></div>`;
+      }
+
+      const filas = m.resultado.map(r=>`
+        <tr>
+          <td>${r.label}<br><span style="color:var(--gray-600);font-size:11px;">${r.detalle}</span></td>
+          <td class="centro">${r.okCant ? '<span class="mayoria-ok">✓</span>' : '<span class="mayoria-no">✕</span>'}</td>
+          <td class="centro">${r.okPor ? '<span class="mayoria-ok">✓</span>' : '<span class="mayoria-no">✕</span>'}</td>
+          <td class="centro">${r.okAmbos ? '<span class="mayoria-ok">Alcanzada</span>' : '<span class="mayoria-no">No alcanzada</span>'}</td>
+        </tr>`).join('');
+
+      mayoriaBox.innerHTML = `
+        <div class="mb-title">Mayorías del CCyCN — doble cómputo (arts. 2058/2060)</div>
+        ${veredictoHtml}
+        <table class="mayoria-tabla">
+          <thead><tr>
+            <th>Mayoría</th>
+            <th class="centro">Por cantidad<br>(${m.presentesCant}/${m.totalUnidades} · ${pct(m.fracCant)})</th>
+            <th class="centro">Por porcentual<br>(${m.porcentualPresente.toFixed(2)}% / ${m.baseTotalPorcentual.toFixed(2)}% · ${pct(m.fracPor)})</th>
+            <th class="centro">Resultado</th>
+          </tr></thead>
+          <tbody>${filas}</tbody>
+        </table>
+        <p class="panel-note" style="margin:10px 0 0;font-size:11.5px;">Salvo que el reglamento de copropiedad prevea otra cosa, el CCyCN exige cumplir la mayoría tanto por cantidad de propietarios como por su porcentual, sobre el total del consorcio — no solo sobre los presentes en la asamblea.</p>
+        <div class="mayoria-reglamento">
+          <label>Lo que exige el reglamento interno de este consorcio (para contrastar con el CCyCN)</label>
+          <textarea id="${mountId}-reglamento" placeholder="Ej: para este tema el reglamento pide 2/3 de los presentes, no del total…">${escapeHtml(reglamento)}</textarea>
+        </div>
+      `;
+
+      const reglamentoInput = document.getElementById(mountId+'-reglamento');
+      let reglamentoTimer;
+      reglamentoInput.addEventListener('input', ()=>{
+        reglamento = reglamentoInput.value;
+        setStatus(statusId,'saving');
+        clearTimeout(reglamentoTimer);
+        reglamentoTimer = setTimeout(()=>persist(), 500);
+      });
+    }
+
     function render(){
       body.innerHTML = '';
       if(rows.length===0){
-        body.innerHTML = `<tr><td colspan="4"><div class="empty">Cargá las unidades con su porcentual antes de empezar la asamblea.</div></td></tr>`;
+        body.innerHTML = `<tr><td colspan="5"><div class="empty">Cargá las unidades con su porcentual antes de empezar la asamblea.</div></td></tr>`;
         updateKpi();
+        renderMayoriaBox();
         return;
       }
-      rows.forEach(row=>{
+      const usadas = new Set(rows.map(r=>r.unidad).filter(Boolean));
+      rows.forEach((row,idx)=>{
         const tr = document.createElement('tr');
         tr.setAttribute('data-row','1');
         const modo = row.modo || 'No presente';
+
+        let unidadCell;
+        if(deptos.length>0){
+          const enOtraFila = new Set([...usadas]); enOtraFila.delete(row.unidad);
+          const opciones = deptos.map(d=>{
+            const disabled = enOtraFila.has(d.valor) && d.valor!==row.unidad;
+            return `<option value="${escapeHtml(d.valor)}" ${d.valor===row.unidad?'selected':''} ${disabled?'disabled':''}>${escapeHtml(d.valor)}${disabled?' (ya cargada)':''}</option>`;
+          }).join('');
+          const manual = (row.unidad && !deptos.find(d=>d.valor===row.unidad))
+            ? `<option value="${escapeHtml(row.unidad)}" selected>${escapeHtml(row.unidad)} (manual)</option>` : '';
+          unidadCell = `<select data-field="unidad"><option value="">Elegí unidad…</option>${opciones}${manual}</select>`;
+        } else {
+          unidadCell = `<input type="text" data-field="unidad" value="${escapeHtml(row.unidad)}" placeholder="4° B">`;
+        }
+
         tr.innerHTML = `
-          <td><input type="text" data-field="unidad" value="${escapeHtml(row.unidad)}" placeholder="4° B"></td>
+          <td>${unidadCell}</td>
           <td class="num"><input type="text" data-field="porcentual" value="${escapeHtml(row.porcentual)}" placeholder="0.00"></td>
           <td>
             <select data-field="modo">
@@ -5350,53 +5532,111 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body.appendChild(tr);
       });
       updateKpi();
+      renderMayoriaBox();
+    }
+
+    function renderCierre(){
+      table.dataset.locked = cerrada ? '1' : '0';
+      cerrarBtn.textContent = cerrada ? 'Reabrir asistencia' : 'Cerrar toma de asistencia';
+      addBtn.disabled = cerrada;
+      if(importarBtn) importarBtn.disabled = cerrada;
+      cierreBadge.innerHTML = (cerrada && fechaCierre)
+        ? `<span class="cierre-badge">Asistencia cerrada el ${new Date(fechaCierre).toLocaleString('es-AR')}</span>`
+        : '';
     }
 
     let saveTimer;
     function scheduleSave(){
+      if(cerrada) return;
       setStatus(statusId,'saving');
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(()=>{ rows = readRows(); updateKpi(); saveData(storageKey, rows, statusId); }, 500);
+      saveTimer = setTimeout(()=>{ rows = readRows(); updateKpi(); renderMayoriaBox(); persist(); }, 500);
     }
 
     body.addEventListener('input', e=>{
-      if(e.target.dataset.field==='modo') return;
+      if(cerrada) return;
+      if(e.target.dataset.field==='modo' || e.target.dataset.field==='unidad') return;
       scheduleSave();
     });
     body.addEventListener('change', e=>{
+      if(cerrada) return;
+      if(e.target.dataset.field==='unidad'){
+        rows = readRows();
+        const idx = [...body.children].indexOf(e.target.closest('tr'));
+        const depto = deptos.find(d=>d.valor===rows[idx].unidad);
+        if(depto && depto.porcentual) rows[idx].porcentual = depto.porcentual; // se adosa el porcentual de la planilla
+        render();
+        persist();
+        return;
+      }
       if(e.target.dataset.field==='modo'){
         rows = readRows();
         updateKpi();
-        saveData(storageKey, rows, statusId);
+        renderMayoriaBox();
+        persist();
       }
     });
     body.addEventListener('click', e=>{
+      if(cerrada) return;
       const b = e.target.closest('[data-action="delete"]');
       if(b){
         rows = readRows();
         rows.splice([...body.children].indexOf(b.closest('tr')),1);
         render();
-        scheduleSave();
+        persist();
       }
     });
 
-    document.getElementById(mountId+'-add').addEventListener('click', ()=>{
+    addBtn.addEventListener('click', ()=>{
+      if(cerrada) return;
       rows = readRows();
       rows.push({unidad:'', porcentual:'', modo:'No presente', representante:''});
       render();
-      scheduleSave();
-      body.lastElementChild.querySelector('input').focus();
+      persist();
+      const last = body.lastElementChild.querySelector('select, input');
+      if(last) last.focus();
     });
+    if(importarBtn){
+      importarBtn.addEventListener('click', ()=>{
+        if(cerrada) return;
+        rows = readRows();
+        const yaCargadas = new Set(rows.map(r=>r.unidad).filter(Boolean));
+        const nuevas = deptos.filter(d=>!yaCargadas.has(d.valor)).map(d=>({unidad:d.valor, porcentual:d.porcentual, modo:'No presente', representante:''}));
+        if(nuevas.length===0) return;
+        rows = rows.concat(nuevas);
+        render();
+        persist();
+      });
+    }
     document.getElementById(mountId+'-save').addEventListener('click', ()=>{
-      rows = readRows(); updateKpi(); saveData(storageKey, rows, statusId);
+      rows = readRows(); updateKpi(); renderMayoriaBox(); persist();
     });
     document.getElementById(mountId+'-reset').addEventListener('click', ()=>{
+      if(cerrada) return;
       rows = readRows().map(r=>({...r, modo:'No presente', representante:''}));
       render();
-      saveData(storageKey, rows, statusId);
+      persist();
+    });
+    cerrarBtn.addEventListener('click', ()=>{
+      rows = readRows();
+      if(!cerrada){ cerrada = true; fechaCierre = new Date().toISOString(); }
+      else { cerrada = false; fechaCierre = null; }
+      renderCierre();
+      render();
+      persist();
     });
 
-    loadData(storageKey, []).then(d=>{ rows = d; render(); });
+    const saved = await loadData(storageKey, null);
+    if(Array.isArray(saved)){
+      rows = saved; // formato anterior: guardaba solo el array de filas
+    } else if(saved && typeof saved==='object'){
+      rows = saved.rows || [];
+      reglamento = saved.reglamento || '';
+      cerrada = !!saved.cerrada;
+      fechaCierre = saved.fechaCierre || null;
+    }
+    renderCierre();
+    render();
   }
 
   /* ---------- Usuarios y accesos (admin) ---------- */
