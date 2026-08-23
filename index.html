@@ -4187,25 +4187,41 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   /* ---------- Padrón de unidades + porcentual, para el Registro de asistencia a asamblea ----------
      "unidadesConsorcio" no siempre trae el % Fondo A ya calculado, así que si falta lo derivamos
      de la liquidación en vivo (Prorrateo_Mensual): el importe de Fondo A de cada unidad es
-     proporcional a su coeficiente, así que importeFondoA_unidad / suma(importeFondoA) = porcentual. */
+     proporcional a su coeficiente, así que importeFondoA_unidad / suma(importeFondoA) = porcentual.
+     También deduplica por unidad (algunas planillas traen la misma unidad repetida, con o sin
+     porcentual cargado) para que el total de unidades y el porcentual no queden inflados. */
+  function parsePorcentualRaw(raw){
+    if(raw===undefined || raw===null || raw==='') return '';
+    const s = String(raw).trim().replace('%','').replace(',', '.');
+    const n = Number(s);
+    if(isNaN(n)) return '';
+    // Si viene como fracción (0 a 1) lo pasamos a %; si ya viene en % lo dejamos como está.
+    return (n>0 && n<=1) ? String(Math.round(n*10000)/100) : String(Math.round(n*100)/100);
+  }
+  function dedupeDeptos(list){
+    const map = new Map();
+    list.forEach(d=>{
+      const key = String(d.valor||'').trim();
+      if(!key) return;
+      const existente = map.get(key);
+      if(!existente){
+        map.set(key, { valor: key, porcentual: d.porcentual || '' });
+      } else if(!existente.porcentual && d.porcentual){
+        existente.porcentual = d.porcentual;
+      }
+    });
+    return [...map.values()];
+  }
   async function obtenerDeptosConPorcentual(spreadsheetId){
     if(!spreadsheetId) return [];
     let deptos = [];
     try{
       const data = await fetchUnidadesConsorcio(spreadsheetId);
       const unidades = (data && data.unidades) ? data.unidades.filter(u=>u.pisoDpto || u.uf) : [];
-      deptos = unidades.map(u=>{
+      deptos = dedupeDeptos(unidades.map(u=>{
         const raw = u.porcentualFondoA ?? u.porcentualA ?? u.pctFondoA ?? u.porcentual ?? u.pctA;
-        let porcentual = '';
-        if(raw!==undefined && raw!==null && raw!==''){
-          const n = Number(raw);
-          if(!isNaN(n)){
-            // Si viene como fracción (0 a 1) lo pasamos a %; si ya viene en % lo dejamos como está.
-            porcentual = (n>0 && n<=1) ? String(Math.round(n*10000)/100) : String(Math.round(n*100)/100);
-          }
-        }
-        return { valor: u.pisoDpto || u.uf, porcentual };
-      });
+        return { valor: u.pisoDpto || u.uf, porcentual: parsePorcentualRaw(raw) };
+      }));
     }catch(e){ deptos = []; }
 
     const faltaPorcentual = deptos.length===0 || deptos.every(d=>!d.porcentual);
@@ -4217,14 +4233,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         if(totalFondoA>0){
           const porUnidad = {};
           unidadesResumen.forEach(u=>{
-            const valor = u.pisoDpto || u.uf;
+            const valor = String(u.pisoDpto || u.uf || '').trim();
             if(valor) porUnidad[valor] = String(Math.round((Number(u.importeFondoA)||0)/totalFondoA*10000)/100);
           });
           deptos = deptos.length>0
-            ? deptos.map(d=>({...d, porcentual: d.porcentual || porUnidad[d.valor] || ''}))
-            : unidadesResumen.filter(u=>u.pisoDpto || u.uf).map(u=>({
-                valor: u.pisoDpto || u.uf,
-                porcentual: porUnidad[u.pisoDpto || u.uf] || ''
+            ? dedupeDeptos(deptos.map(d=>({...d, porcentual: d.porcentual || porUnidad[d.valor] || ''})))
+            : dedupeDeptos(unidadesResumen.filter(u=>u.pisoDpto || u.uf).map(u=>{
+                const valor = String(u.pisoDpto || u.uf || '').trim();
+                return { valor, porcentual: porUnidad[valor] || '' };
               }));
         }
       }catch(e){}
@@ -5365,6 +5381,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     mount.innerHTML = `
       <div class="kpi-row" id="${mountId}-kpi"></div>
+      ${deptos.length>0
+        ? `<p class="panel-note" style="margin:0 0 14px;font-size:12px;">Consorcio con ${totalPadron} unidades funcionales (${totalPorcentualPadron.toFixed(2)}% de porcentual cargado en la planilla). Elegí acá solo las unidades que van llegando — la que no agregues queda contada como ausente en forma automática sobre ese total.</p>`
+        : `<p class="panel-note" style="margin:0 0 14px;font-size:12px;">Este consorcio todavía no tiene la planilla vinculada (o no pudimos leerla), así que la unidad y su porcentual se cargan a mano en cada fila.</p>`}
       <table class="ledger" id="${mountId}-table">
         <thead><tr>
           <th>Unidad</th>
@@ -5376,20 +5395,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <tbody id="${mountId}-body"></tbody>
       </table>
       <div class="toolbar">
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
-          <button class="btn" id="${mountId}-add">+ Agregar unidad</button>
-          ${deptos.length>0 ? `<button class="btn ghost" id="${mountId}-importar">Precargar todo el padrón</button>` : ''}
-        </div>
+        <button class="btn" id="${mountId}-add">+ Agregar unidad</button>
         <div style="display:flex;align-items:center;gap:12px;">
           ${statusEl(statusId)}
           <button class="btn ghost" id="${mountId}-reset">Reiniciar asistencia</button>
           <button class="btn primary" id="${mountId}-save">Guardar cambios</button>
         </div>
       </div>
-      ${deptos.length>0
-        ? `<p class="panel-note" style="margin:-6px 0 8px;font-size:12px;">Consorcio con ${totalPadron} unidades funcionales (${totalPorcentualPadron.toFixed(2)}% de porcentual cargado en la planilla). Elegí acá solo las unidades que van llegando — la que no agregues queda contada como ausente en forma automática sobre ese total.</p>`
-        : `<p class="panel-note" style="margin:-6px 0 8px;font-size:12px;">Este consorcio todavía no tiene la planilla vinculada (o no pudimos leerla), así que la unidad y su porcentual se cargan a mano en cada fila.</p>`}
-      <div class="toolbar" style="margin-top:-6px;">
+      <div class="toolbar" style="margin-top:6px;">
         <span id="${mountId}-cierre-badge"></span>
         <button class="btn primary" id="${mountId}-cerrar">Cerrar toma de asistencia</button>
       </div>
@@ -5403,7 +5416,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const cierreBadge = document.getElementById(mountId+'-cierre-badge');
     const cerrarBtn = document.getElementById(mountId+'-cerrar');
     const addBtn = document.getElementById(mountId+'-add');
-    const importarBtn = document.getElementById(mountId+'-importar');
+    const resetBtn = document.getElementById(mountId+'-reset');
 
     function num(v){
       const n = parseFloat((v||'0').toString().replace(',','.'));
@@ -5432,8 +5445,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const titulares = rows.filter(r=>r.modo==='Titular').length;
       const representantes = rows.filter(r=>r.modo==='Representante (poder)').length;
       const presentes = titulares + representantes;
-      const porcentualTotal = totalPadron>0 ? totalPorcentualPadron : rows.reduce((s,r)=>s+num(r.porcentual),0);
       const porcentualPresente = rows.filter(r=>r.modo==='Titular'||r.modo==='Representante (poder)').reduce((s,r)=>s+num(r.porcentual),0);
+      const m = computeMayorias();
+      const veredictoTxt = m.totalUnidades===0 ? '—' : (m.alcanzada ? m.alcanzada.label : 'Ninguna mayoría');
       kpi.innerHTML = `
         <div class="kpi highlight">
           <div class="label">Unidades presentes</div>
@@ -5447,9 +5461,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <div class="label">Titulares / Representantes</div>
           <div class="value" style="font-size:18px;">${titulares} / ${representantes}</div>
         </div>
-        <div class="kpi">
-          <div class="label">Porcentual total del consorcio</div>
-          <div class="value">${porcentualTotal.toFixed(2)}%</div>
+        <div class="kpi ${m.alcanzada?'highlight':''}">
+          <div class="label">Mayoría alcanzada</div>
+          <div class="value" style="font-size:16px;${m.alcanzada?'':'color:var(--danger);'}">${veredictoTxt}</div>
         </div>
       `;
     }
@@ -5586,7 +5600,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       table.dataset.locked = cerrada ? '1' : '0';
       cerrarBtn.textContent = cerrada ? 'Reabrir asistencia' : 'Cerrar toma de asistencia';
       addBtn.disabled = cerrada;
-      if(importarBtn) importarBtn.disabled = cerrada;
+      resetBtn.disabled = cerrada;
       cierreBadge.innerHTML = (cerrada && fechaCierre)
         ? `<span class="cierre-badge">Asistencia cerrada el ${new Date(fechaCierre).toLocaleString('es-AR')}</span>`
         : '';
@@ -5650,22 +5664,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const last = body.lastElementChild.querySelector('select, input');
       if(last) last.focus();
     });
-    if(importarBtn){
-      importarBtn.addEventListener('click', ()=>{
-        if(cerrada) return;
-        rows = readRows();
-        const yaCargadas = new Set(rows.map(r=>r.unidad).filter(Boolean));
-        const nuevas = deptos.filter(d=>!yaCargadas.has(d.valor)).map(d=>({unidad:d.valor, porcentual:d.porcentual, modo:'No presente', representante:''}));
-        if(nuevas.length===0) return;
-        rows = rows.concat(nuevas);
-        render();
-        persist();
-      });
-    }
     document.getElementById(mountId+'-save').addEventListener('click', ()=>{
       rows = readRows(); updateKpi(); renderMayoriaBox(); persist();
     });
-    document.getElementById(mountId+'-reset').addEventListener('click', ()=>{
+    resetBtn.addEventListener('click', ()=>{
       if(cerrada) return;
       rows = readRows().map(r=>({...r, modo:'No presente', representante:''}));
       render();
