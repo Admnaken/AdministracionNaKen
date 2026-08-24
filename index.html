@@ -680,6 +680,34 @@
   }
   .cierre-badge { font-size: 12px; color: var(--ok); background: #E1EEE3; padding: 5px 10px; border-radius: 4px; }
 
+  /* ---------- Gestión de Asamblea: etapas ---------- */
+  .etapa-tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+  .etapa-tab {
+    flex: 1; min-width: 180px; text-align: left; padding: 10px 14px; border-radius: var(--radius);
+    border: 1px solid var(--gray-200); background: #fff; cursor: pointer; font-family: inherit;
+  }
+  .etapa-tab .et-num {
+    display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;
+    border-radius: 50%; background: var(--gray-200); color: var(--gray-600); font-size: 11px; font-weight: 700;
+    margin-right: 8px;
+  }
+  .etapa-tab .et-label { font-size: 13px; font-weight: 600; color: var(--primary); }
+  .etapa-tab.active { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201,168,76,.14); }
+  .etapa-tab.active .et-num { background: var(--gold); color: #fff; }
+  .etapa-tab.done .et-num { background: var(--ok); color: #fff; }
+  .etapa-panel { display: none; }
+  .etapa-panel.active { display: block; }
+  .tema-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .tema-row input[type="text"] { flex: 1; }
+  .voto-row { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; }
+  .voto-row .voto-tema { font-weight: 600; color: var(--primary); margin-bottom: 8px; }
+  .voto-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
+  .voto-inputs label { font-size: 11px; color: var(--gray-600); display: block; margin-bottom: 4px; }
+  .acta-cierre-box {
+    border: 1px dashed var(--gold); border-radius: var(--radius); padding: 16px; margin-top: 18px;
+    background: #FBF6E7;
+  }
+
   .empty {
     font-size: 13px;
     color: var(--gray-600);
@@ -1225,7 +1253,7 @@
     <div class="navgroup">
       <div class="group-label">Herramientas del administrador</div>
       <button class="navbtn admin-only" data-panel="novedades">Tablero de Novedades</button>
-      <button class="navbtn admin-only" data-panel="asistencia">Registro de asamblea</button>
+      <button class="navbtn admin-only" data-panel="asistencia">Gestión de Asamblea</button>
       <button class="navbtn admin-only" data-panel="usuarios">Usuarios y accesos</button>
       <button class="navbtn admin-only" data-panel="liquidaciones">Liquidación de sueldos</button>
       <button class="navbtn admin-only" data-panel="calchonorarios">Calculadora de honorarios</button>
@@ -1431,12 +1459,12 @@
         <div id="novedades-mount"></div>
       </section>
 
-      <!-- REGISTRO DE ASAMBLEA -->
+      <!-- GESTIÓN DE ASAMBLEA -->
       <section class="panel" id="panel-asistencia">
         <div class="panel-head">
           <span class="eyebrow">Herramientas del administrador</span>
-          <h2>Registro de asistencia a asamblea</h2>
-          <p class="panel-note">A medida que van llegando los propietarios, agregá su unidad del desplegable (se completa sola con el porcentual de la planilla y se pone gris en las demás filas para que no se cargue dos veces) y marcá si asiste el <b>titular</b> o un <b>representante con poder</b> (ahí se habilita la caja para cargar nombre y DNI). La unidad que no agregues queda contada como ausente en forma automática, sobre el total de unidades del consorcio. En vivo, y también al cerrar la toma de asistencia, la app calcula el doble cómputo — cantidad de propietarios y porcentual — y te dice qué mayoría del CCyCN se alcanza (absoluta, 2/3 o unanimidad), para que la contrastes con lo que exija el reglamento interno.</p>
+          <h2>Gestión de Asamblea</h2>
+          <p class="panel-note">Armá la convocatoria con tipo, fecha, hora y orden del día; tomá la asistencia el día de la asamblea; y cargá el resultado de cada votación. En todo momento la app calcula el doble cómputo del CCyCN (cantidad de propietarios y porcentual) para saber qué mayoría se alcanza — y al cerrar el acta queda un registro con fecha y hora automáticas, para usar como respaldo del libro de actas físico.</p>
         </div>
         <div id="asistencia-mount"></div>
       </section>
@@ -4188,8 +4216,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
      "unidadesConsorcio" no siempre trae el % Fondo A ya calculado, así que si falta lo derivamos
      de la liquidación en vivo (Prorrateo_Mensual): el importe de Fondo A de cada unidad es
      proporcional a su coeficiente, así que importeFondoA_unidad / suma(importeFondoA) = porcentual.
-     También deduplica por unidad (algunas planillas traen la misma unidad repetida, con o sin
-     porcentual cargado) para que el total de unidades y el porcentual no queden inflados. */
+     También deduplica por unidad y descarta filas que no son unidades reales (textos de ayuda,
+     filas de "Total", notas al pie, etc. que a veces quedan sueltas en la planilla). */
   function parsePorcentualRaw(raw){
     if(raw===undefined || raw===null || raw==='') return '';
     const s = String(raw).trim().replace('%','').replace(',', '.');
@@ -4198,11 +4226,19 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     // Si viene como fracción (0 a 1) lo pasamos a %; si ya viene en % lo dejamos como está.
     return (n>0 && n<=1) ? String(Math.round(n*10000)/100) : String(Math.round(n*100)/100);
   }
+  function esUnidadValida(valor){
+    const v = String(valor||'').trim();
+    if(!v) return false;
+    if(v.length > 14) return false; // una unidad real es corta: "PB A", "10° C", "23"...
+    if(/total|nota|instru|nombre|unidad|dpto|piso/i.test(v)) return false;
+    if(/\s(tu|el|la|los|las|de|que|para|es)\s/i.test(' '+v.toLowerCase()+' ')) return false; // frases, no unidades
+    return true;
+  }
   function dedupeDeptos(list){
     const map = new Map();
     list.forEach(d=>{
       const key = String(d.valor||'').trim();
-      if(!key) return;
+      if(!key || !esUnidadValida(key)) return;
       const existente = map.get(key);
       if(!existente){
         map.set(key, { valor: key, porcentual: d.porcentual || '' });
@@ -5357,6 +5393,165 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
 
   /* ---------- Registro de asistencia a asamblea (doble cómputo + mayorías CCyCN) ---------- */
+  /* ---------- Mayorías del CCyCN (doble cómputo), helper compartido entre etapas ---------- */
+  function nivelesMayoria(fracCant, fracPor){
+    const niveles = [
+      {key:'absoluta', label:'Mayoría absoluta', detalle:'más de la mitad del total de propietarios', umbral:0.5, estricto:true},
+      {key:'dosTercios', label:'Mayoría de 2/3', detalle:'dos tercios del total de propietarios', umbral:2/3, estricto:false},
+      {key:'unanimidad', label:'Unanimidad', detalle:'la totalidad de los propietarios', umbral:1, estricto:false},
+    ];
+    const resultado = niveles.map(n=>{
+      const okCant = n.estricto ? (fracCant > n.umbral + 1e-9) : (fracCant >= n.umbral - 1e-6);
+      const okPor = n.estricto ? (fracPor > n.umbral + 1e-9) : (fracPor >= n.umbral - 1e-6);
+      return {...n, okCant, okPor, okAmbos: okCant && okPor};
+    });
+    let alcanzada = null;
+    for(let i=resultado.length-1;i>=0;i--){ if(resultado[i].okAmbos){ alcanzada = resultado[i]; break; } }
+    return {resultado, alcanzada};
+  }
+
+  /* ---------- Gestión de Asamblea: orquesta las 3 etapas (datos / asistencia / resultados) ---------- */
+  async function mountGestionAsamblea(mountId){
+    const mount = document.getElementById(mountId);
+    mount.innerHTML = `
+      <div class="etapa-tabs" id="${mountId}-tabs">
+        <button class="etapa-tab" data-etapa="datos"><span class="et-num">1</span><span class="et-label">Datos de la asamblea</span></button>
+        <button class="etapa-tab" data-etapa="asistencia"><span class="et-num">2</span><span class="et-label">Toma de asistencia</span></button>
+        <button class="etapa-tab" data-etapa="resultados"><span class="et-num">3</span><span class="et-label">Resultados y cierre</span></button>
+      </div>
+      <div class="etapa-panel" id="${mountId}-panel-datos"></div>
+      <div class="etapa-panel" id="${mountId}-panel-asistencia"></div>
+      <div class="etapa-panel" id="${mountId}-panel-resultados"></div>
+    `;
+
+    const tabs = mount.querySelectorAll('.etapa-tab');
+    const panels = {
+      datos: document.getElementById(mountId+'-panel-datos'),
+      asistencia: document.getElementById(mountId+'-panel-asistencia'),
+      resultados: document.getElementById(mountId+'-panel-resultados'),
+    };
+    function irA(etapa){
+      tabs.forEach(t=>t.classList.toggle('active', t.dataset.etapa===etapa));
+      Object.keys(panels).forEach(k=>panels[k].classList.toggle('active', k===etapa));
+    }
+    tabs.forEach(t=>t.addEventListener('click', ()=>irA(t.dataset.etapa)));
+
+    // Etapa 1 y 3 se montan primero (son livianas); la 2 reutiliza toda la lógica ya existente.
+    mountDatosAsamblea(mountId+'-panel-datos', tabs[0]);
+    await mountAsistencia(mountId+'-panel-asistencia', 'naken-asamblea-asistencia');
+    mountResultadosAsamblea(mountId+'-panel-resultados', tabs[2]);
+
+    irA('datos');
+  }
+
+  /* ---------- Etapa 1: datos de la convocatoria (tipo, fecha, orden del día) ---------- */
+  async function mountDatosAsamblea(mountId, tabEl){
+    const mount = document.getElementById(mountId);
+    const statusId = mountId+'-status';
+    const storageKey = 'naken-asamblea-datos';
+    let datos = {
+      tipo:'Ordinaria', convocatoria:'Primera', fecha:'', horaInicio:'', horaFin:'',
+      lugar:'', administrador:'', presidente:'', secretario:'', temas:[]
+    };
+
+    mount.innerHTML = `<div class="empty">Cargando…</div>`;
+    const guardados = await loadData(storageKey, null);
+    if(guardados && typeof guardados==='object') datos = {...datos, ...guardados, temas: guardados.temas||[]};
+    if(!datos.administrador){
+      const cfg = await loadData('naken-consorcio-datos', {});
+      datos.administrador = cfg.administradorNombre || '';
+    }
+
+    function render(){
+      mount.innerHTML = `
+        <p class="panel-note" style="margin-top:0;">Estos datos arman la convocatoria (tal como exige el reglamento y la Ley 941: lugar, día, horario y temario) y quedan pre-cargados para el acta — cargalos con anticipación y quedan guardados solos.</p>
+        <div class="config-row">
+          <div><label>Tipo de asamblea</label>
+            <select id="${mountId}-tipo">
+              <option ${datos.tipo==='Ordinaria'?'selected':''}>Ordinaria</option>
+              <option ${datos.tipo==='Extraordinaria'?'selected':''}>Extraordinaria</option>
+            </select>
+          </div>
+          <div><label>Convocatoria</label>
+            <select id="${mountId}-convocatoria">
+              <option ${datos.convocatoria==='Primera'?'selected':''}>Primera</option>
+              <option ${datos.convocatoria==='Segunda'?'selected':''}>Segunda</option>
+            </select>
+          </div>
+          <div><label>Fecha</label><input type="date" id="${mountId}-fecha" value="${escapeHtml(datos.fecha)}"></div>
+          <div><label>Hora de inicio</label><input type="time" id="${mountId}-horaInicio" value="${escapeHtml(datos.horaInicio)}"></div>
+          <div><label>Hora de finalización (tentativa)</label><input type="time" id="${mountId}-horaFin" value="${escapeHtml(datos.horaFin)}"></div>
+          <div><label>Lugar</label><input type="text" id="${mountId}-lugar" placeholder="SUM del edificio / vía virtual" value="${escapeHtml(datos.lugar)}"></div>
+          <div><label>Administrador</label><input type="text" id="${mountId}-administrador" value="${escapeHtml(datos.administrador)}"></div>
+          <div><label>Preside la asamblea</label><input type="text" id="${mountId}-presidente" placeholder="Se elige entre los propietarios presentes" value="${escapeHtml(datos.presidente)}"></div>
+          <div><label>Secretario/a de acta</label><input type="text" id="${mountId}-secretario" placeholder="Se elige entre los propietarios presentes" value="${escapeHtml(datos.secretario)}"></div>
+        </div>
+
+        <div class="subhead">Orden del día — temas a tratar</div>
+        <div id="${mountId}-temas"></div>
+        <div class="toolbar" style="margin-top:6px;">
+          <button class="btn" id="${mountId}-add-tema">+ Agregar tema</button>
+          ${statusEl(statusId)}
+        </div>
+      `;
+
+      const temasBox = document.getElementById(mountId+'-temas');
+      function renderTemas(){
+        temasBox.innerHTML = datos.temas.length===0
+          ? `<div class="empty">Todavía no cargaste temas del orden del día.</div>`
+          : datos.temas.map((t,i)=>`
+            <div class="tema-row" data-i="${i}">
+              <span style="color:var(--gray-600);font-size:12px;min-width:18px;">${i+1}.</span>
+              <input type="text" data-tema-input value="${escapeHtml(t.texto)}" placeholder="Ej: Aprobación de presupuesto de obras en fachada">
+              <button data-tema-del title="Eliminar">✕</button>
+            </div>
+          `).join('');
+      }
+      renderTemas();
+
+      let saveTimer;
+      function scheduleSave(){
+        setStatus(statusId,'saving');
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(()=>saveData(storageKey, datos, statusId), 500);
+      }
+
+      [`${mountId}-tipo`,`${mountId}-convocatoria`,`${mountId}-fecha`,`${mountId}-horaInicio`,`${mountId}-horaFin`,`${mountId}-lugar`,`${mountId}-administrador`,`${mountId}-presidente`,`${mountId}-secretario`].forEach(id=>{
+        const el = document.getElementById(id);
+        const campo = id.replace(mountId+'-','');
+        el.addEventListener(el.tagName==='SELECT'?'change':'input', ()=>{
+          datos[campo] = el.value;
+          scheduleSave();
+        });
+      });
+
+      document.getElementById(mountId+'-add-tema').addEventListener('click', ()=>{
+        datos.temas.push({id:'t'+Date.now()+Math.floor(Math.random()*1000), texto:''});
+        renderTemas();
+        const inputs = temasBox.querySelectorAll('[data-tema-input]');
+        inputs[inputs.length-1].focus();
+        scheduleSave();
+      });
+      temasBox.addEventListener('input', e=>{
+        if(e.target.hasAttribute('data-tema-input')){
+          const i = Number(e.target.closest('.tema-row').dataset.i);
+          datos.temas[i].texto = e.target.value;
+          scheduleSave();
+        }
+      });
+      temasBox.addEventListener('click', e=>{
+        if(e.target.hasAttribute('data-tema-del')){
+          const i = Number(e.target.closest('.tema-row').dataset.i);
+          datos.temas.splice(i,1);
+          renderTemas();
+          scheduleSave();
+        }
+      });
+    }
+
+    render();
+  }
+
   async function mountAsistencia(mountId, storageKey){
     const mount = document.getElementById(mountId);
     const statusId = mountId+'-status';
@@ -5669,7 +5864,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     });
     resetBtn.addEventListener('click', ()=>{
       if(cerrada) return;
-      rows = readRows().map(r=>({...r, modo:'No presente', representante:''}));
+      if(rows.length>0 && !confirm('Esto borra todas las unidades cargadas y vuelve a empezar la toma de asistencia desde cero. ¿Confirmás?')) return;
+      rows = [];
       render();
       persist();
     });
@@ -5693,6 +5889,209 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
     renderCierre();
     render();
+  }
+
+  /* ---------- Etapa 3: resultados de la votación + cierre del acta (con PDF de respaldo) ---------- */
+  async function mountResultadosAsamblea(mountId, tabEl){
+    const mount = document.getElementById(mountId);
+    const statusId = mountId+'-status';
+    const storageKey = 'naken-asamblea-votacion';
+
+    function num(v){ const n = parseFloat((v||'0').toString().replace(',','.')); return isNaN(n) ? 0 : n; }
+
+    async function refrescar(){
+      mount.innerHTML = `<div class="empty">Cargando…</div>`;
+
+      const [datosAsamblea, asistenciaGuardada, votacionGuardada] = await Promise.all([
+        loadData('naken-asamblea-datos', {temas:[]}),
+        loadData('naken-asamblea-asistencia', {rows:[], cerrada:false, fechaCierre:null}),
+        loadData(storageKey, {resultados:{}, actaCerrada:false, actaFechaCierre:null}),
+      ]);
+      const temas = (datosAsamblea && datosAsamblea.temas) || [];
+      const asistRows = Array.isArray(asistenciaGuardada) ? asistenciaGuardada : (asistenciaGuardada.rows || []);
+      const asistCerrada = Array.isArray(asistenciaGuardada) ? false : !!asistenciaGuardada.cerrada;
+
+      let deptos = [];
+      try{
+        const spreadsheetId = await getSpreadsheetIdActivo();
+        if(spreadsheetId) deptos = await obtenerDeptosConPorcentual(spreadsheetId);
+      }catch(e){ deptos = []; }
+      const totalPadron = deptos.length>0 ? deptos.length : asistRows.length;
+      const totalPorcentualPadron = deptos.length>0
+        ? deptos.reduce((s,d)=>s+(parseFloat((d.porcentual||'0').replace(',','.'))||0),0)
+        : (asistRows.reduce((s,r)=>s+num(r.porcentual),0) || 100);
+      const presentesCant = asistRows.filter(r=>r.modo==='Titular'||r.modo==='Representante (poder)').length;
+      const presentesPorcentual = asistRows.filter(r=>r.modo==='Titular'||r.modo==='Representante (poder)').reduce((s,r)=>s+num(r.porcentual),0);
+
+      let resultados = (votacionGuardada && votacionGuardada.resultados) || {};
+      let actaCerrada = !!(votacionGuardada && votacionGuardada.actaCerrada);
+      let actaFechaCierre = (votacionGuardada && votacionGuardada.actaFechaCierre) || null;
+
+      function persist(){
+        saveData(storageKey, {resultados, actaCerrada, actaFechaCierre}, statusId);
+      }
+
+      function veredictoDeVoto(r){
+        const cant = num(r.cant);
+        const porcentual = num(r.porcentual);
+        const fracCant = totalPadron>0 ? cant/totalPadron : 0;
+        const fracPor = totalPorcentualPadron>0 ? porcentual/totalPorcentualPadron : 0;
+        const {alcanzada} = nivelesMayoria(fracCant, fracPor);
+        return (r.cant==='' && r.porcentual==='')
+          ? `<span style="color:var(--gray-500,#9aa0a6);">Sin cargar</span>`
+          : alcanzada
+            ? `<span class="mayoria-ok">${alcanzada.label} alcanzada</span>`
+            : `<span class="mayoria-no">Ninguna mayoría alcanzada</span>`;
+      }
+      function filaVoto(tema, i){
+        const r = resultados[tema.id] || {cant:'', porcentual:''};
+        return `
+          <div class="voto-row" data-tema-id="${escapeHtml(tema.id)}">
+            <div class="voto-tema">${i+1}. ${escapeHtml(tema.texto || '(tema sin título — completalo en la Etapa 1)')}</div>
+            <div class="voto-inputs">
+              <div><label>Votos a favor — cantidad de unidades (de ${totalPadron})</label>
+                <input type="text" data-voto-field="cant" value="${escapeHtml(r.cant)}" placeholder="0" ${actaCerrada?'disabled':''}></div>
+              <div><label>Votos a favor — porcentual (de ${totalPorcentualPadron.toFixed(2)}%)</label>
+                <input type="text" data-voto-field="porcentual" value="${escapeHtml(r.porcentual)}" placeholder="0.00" ${actaCerrada?'disabled':''}></div>
+            </div>
+            <div style="font-size:12.5px;" data-voto-veredicto>${veredictoDeVoto(r)}</div>
+          </div>
+        `;
+      }
+
+      mount.innerHTML = `
+        ${!asistCerrada ? `<p class="panel-note" style="margin-top:0;color:var(--danger);">Todavía no cerraste la toma de asistencia (Etapa 2) — podés ir cargando los resultados, pero el acta no se puede cerrar hasta que la asistencia quede cerrada.</p>` : ''}
+        <p class="panel-note" style="margin-top:0;">Para cada tema del orden del día, cargá cuántas unidades votaron a favor (en cantidad y en porcentual) — la app calcula sola si con eso se alcanza mayoría absoluta, 2/3 o unanimidad, sobre el total del consorcio (${totalPadron} unidades, ${totalPorcentualPadron.toFixed(2)}%).</p>
+        ${temas.length===0
+          ? `<div class="empty">Todavía no cargaste el orden del día en la Etapa 1 — Datos de la asamblea.</div>`
+          : `<div id="${mountId}-votos">${temas.map(filaVoto).join('')}</div>`}
+        <div class="acta-cierre-box" id="${mountId}-cierre">
+          ${actaCerrada
+            ? `<b style="color:var(--ok);">✓ Acta cerrada el ${actaFechaCierre ? new Date(actaFechaCierre).toLocaleString('es-AR') : ''}</b>
+               <p class="panel-note" style="margin:8px 0 0;">Este cierre queda como respaldo digital — no reemplaza la firma del libro de actas físico.</p>
+               <div class="toolbar" style="margin-top:10px;"><button class="btn primary" id="${mountId}-pdf">Generar PDF del acta</button></div>`
+            : `<b>Cerrar acta de la asamblea</b>
+               <p class="panel-note" style="margin:8px 0 12px;">Al cerrar, la fecha y hora quedan fijas en forma automática (no se pueden elegir) y ya no se puede editar ni la asistencia ni los resultados. Este registro sirve de respaldo de lo que después se asentará en el libro físico.</p>
+               <div class="toolbar">${statusEl(statusId)}<button class="btn primary" id="${mountId}-cerrar-acta" ${asistCerrada?'':'disabled'}>Cerrar acta y generar PDF</button></div>`}
+        </div>
+      `;
+
+      const votosBox = document.getElementById(mountId+'-votos');
+      if(votosBox){
+        let saveTimer;
+        votosBox.addEventListener('input', e=>{
+          const campo = e.target.dataset.votoField;
+          if(!campo || actaCerrada) return;
+          const fila = e.target.closest('.voto-row');
+          const temaId = fila.dataset.temaId;
+          if(!resultados[temaId]) resultados[temaId] = {cant:'', porcentual:''};
+          resultados[temaId][campo] = e.target.value;
+          // Solo actualiza el veredicto, sin tocar los inputs, para no perder el foco al tipear.
+          fila.querySelector('[data-voto-veredicto]').innerHTML = veredictoDeVoto(resultados[temaId]);
+          setStatus(statusId,'saving');
+          clearTimeout(saveTimer);
+          saveTimer = setTimeout(()=>persist(), 500);
+        });
+      }
+
+      const cerrarActaBtn = document.getElementById(mountId+'-cerrar-acta');
+      if(cerrarActaBtn){
+        cerrarActaBtn.addEventListener('click', ()=>{
+          if(!asistCerrada) return;
+          if(!confirm('Al cerrar el acta ya no vas a poder editar los resultados ni la asistencia de esta asamblea. ¿Confirmás el cierre?')) return;
+          actaCerrada = true;
+          actaFechaCierre = new Date().toISOString();
+          persist();
+          refrescar();
+        });
+      }
+
+      const pdfBtn = document.getElementById(mountId+'-pdf');
+      if(pdfBtn){
+        pdfBtn.addEventListener('click', ()=>{
+          generarPdfActa(datosAsamblea, asistRows, temas, resultados, totalPadron, totalPorcentualPadron, presentesCant, presentesPorcentual, actaFechaCierre);
+        });
+      }
+    }
+
+    function generarPdfActa(datosAsamblea, asistRows, temas, resultados, totalPadron, totalPorcentualPadron, presentesCant, presentesPorcentual, actaFechaCierre){
+      const d = datosAsamblea || {};
+      const fmtFecha = (v)=> v ? new Date(v+'T00:00:00').toLocaleDateString('es-AR') : '(sin fecha)';
+      const filasAsistencia = asistRows.filter(r=>r.modo!=='No presente').map(r=>`
+        <tr>
+          <td>${escapeHtml(r.unidad)}</td>
+          <td>${escapeHtml(r.porcentual)}%</td>
+          <td>${escapeHtml(r.modo)}</td>
+          <td>${escapeHtml(r.representante||'')}</td>
+        </tr>`).join('') || `<tr><td colspan="4">Sin asistentes registrados.</td></tr>`;
+
+      const filasTemas = temas.map((t,i)=>{
+        const r = resultados[t.id] || {cant:'', porcentual:''};
+        const cant = parseFloat((r.cant||'0').toString().replace(',','.'))||0;
+        const porcentual = parseFloat((r.porcentual||'0').toString().replace(',','.'))||0;
+        const fracCant = totalPadron>0 ? cant/totalPadron : 0;
+        const fracPor = totalPorcentualPadron>0 ? porcentual/totalPorcentualPadron : 0;
+        const {alcanzada} = nivelesMayoria(fracCant, fracPor);
+        return `
+          <tr>
+            <td>${i+1}. ${escapeHtml(t.texto||'')}</td>
+            <td>${r.cant||'0'} / ${totalPadron}</td>
+            <td>${r.porcentual||'0'}% / ${totalPorcentualPadron.toFixed(2)}%</td>
+            <td><b>${alcanzada ? alcanzada.label : 'Ninguna mayoría alcanzada'}</b></td>
+          </tr>`;
+      }).join('') || `<tr><td colspan="4">Sin temas cargados.</td></tr>`;
+
+      const win = window.open('', '_blank');
+      if(!win){ alert('El navegador bloqueó la ventana emergente. Habilitala para generar el PDF.'); return; }
+      win.document.write(`
+        <!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>Acta de asamblea</title>
+        <style>
+          body{font-family:Georgia,'Times New Roman',serif;color:#1a1a1a;max-width:820px;margin:32px auto;padding:0 24px;line-height:1.5;}
+          h1{font-size:20px;border-bottom:2px solid #1a1a1a;padding-bottom:8px;}
+          h2{font-size:14px;text-transform:uppercase;letter-spacing:.04em;margin-top:28px;}
+          table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px;}
+          th,td{border:1px solid #999;padding:6px 8px;text-align:left;}
+          .datos-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;font-size:13px;margin-top:10px;}
+          .datos-grid b{display:inline-block;min-width:150px;}
+          .footer-nota{margin-top:36px;font-size:11px;color:#555;border-top:1px solid #ccc;padding-top:10px;}
+          @media print{ body{margin:0;padding:16px;} }
+        </style></head><body>
+          <h1>Acta de Asamblea de Propietarios — Registro de respaldo digital</h1>
+          <div class="datos-grid">
+            <div><b>Tipo:</b> ${escapeHtml(d.tipo||'—')}</div>
+            <div><b>Convocatoria:</b> ${escapeHtml(d.convocatoria||'—')}</div>
+            <div><b>Fecha:</b> ${fmtFecha(d.fecha)}</div>
+            <div><b>Horario:</b> ${escapeHtml(d.horaInicio||'—')} a ${escapeHtml(d.horaFin||'—')} (tentativo)</div>
+            <div><b>Lugar:</b> ${escapeHtml(d.lugar||'—')}</div>
+            <div><b>Administrador:</b> ${escapeHtml(d.administrador||'—')}</div>
+            <div><b>Preside la asamblea:</b> ${escapeHtml(d.presidente||'—')}</div>
+            <div><b>Secretario/a de acta:</b> ${escapeHtml(d.secretario||'—')}</div>
+          </div>
+
+          <h2>Orden del día</h2>
+          <table><thead><tr><th>Tema</th><th>Votos a favor (cant.)</th><th>Votos a favor (%)</th><th>Resultado</th></tr></thead>
+          <tbody>${filasTemas}</tbody></table>
+
+          <h2>Asistencia registrada</h2>
+          <p style="font-size:13px;">Presentes: ${presentesCant} de ${totalPadron} unidades (${presentesPorcentual.toFixed(2)}% de ${totalPorcentualPadron.toFixed(2)}%).</p>
+          <table><thead><tr><th>Unidad</th><th>Porcentual</th><th>Asistencia</th><th>Representante</th></tr></thead>
+          <tbody>${filasAsistencia}</tbody></table>
+
+          <div class="footer-nota">
+            Documento generado automáticamente el ${actaFechaCierre ? new Date(actaFechaCierre).toLocaleString('es-AR') : new Date().toLocaleString('es-AR')} — fecha y hora no editables.
+            Este registro es un respaldo digital de la administración y no reemplaza el libro de actas físico, que debe asentarse y firmarse conforme a la normativa vigente (Ley 941 / CCyCN).
+          </div>
+        </body></html>
+      `);
+      win.document.close();
+      win.focus();
+      setTimeout(()=>win.print(), 300);
+    }
+
+    if(tabEl){
+      tabEl.addEventListener('click', refrescar);
+    }
+    await refrescar();
   }
 
   /* ---------- Usuarios y accesos (admin) ---------- */
@@ -8327,7 +8726,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     mountDocumentosVivo('documentos-vivo-mount');
 
-    mountAsistencia('asistencia-mount', 'naken-asamblea-asistencia');
+    mountGestionAsamblea('asistencia-mount');
     if(role==='admin') mountUsuarios('usuarios-mount');
     if(role==='admin') mountLiquidaciones('liquidaciones-mount', 'naken-liquidaciones-sueldo');
     if(role==='admin') mountCalcHonorarios('calchonorarios-mount');
