@@ -1312,13 +1312,12 @@
       <button class="navbtn admin-only" data-panel="novedades">Tablero de Novedades</button>
       <button class="navbtn admin-only" data-panel="asistencia">Gestión de Asamblea</button>
       <button class="navbtn admin-only" data-panel="usuarios">Usuarios y accesos</button>
-      <button class="navbtn admin-only" data-panel="liquidaciones">Liquidación de sueldos</button>
+      <button class="navbtn admin-only" data-panel="personal">Personal y Liquidación de Sueldos</button>
       <button class="navbtn admin-only" data-panel="calchonorarios">Calculadora de honorarios</button>
     </div>
 
     <div class="navgroup">
       <div class="group-label">Referencia</div>
-      <button class="navbtn" data-panel="personal">Personal y sueldos</button>
       <button class="navbtn" data-panel="manual">Documentos y buenas prácticas</button>
       <button class="navbtn" data-panel="remocion">Remoción del administrador</button>
     </div>
@@ -1537,15 +1536,6 @@
       </section>
 
       <!-- LIQUIDACIÓN DE SUELDOS -->
-      <section class="panel" id="panel-liquidaciones">
-        <div class="panel-head">
-          <span class="eyebrow">Herramientas del administrador</span>
-          <h2>Liquidación de sueldos</h2>
-          <p class="panel-note">Liquidación mensual por empleado: básico, horas extra, aportes y contribuciones. Genera el recibo listo para entregar.</p>
-        </div>
-        <div id="liquidaciones-mount"></div>
-      </section>
-
       <!-- CALCULADORA DE HONORARIOS -->
       <section class="panel" id="panel-calchonorarios">
         <div class="panel-head">
@@ -1556,21 +1546,26 @@
         <div id="calchonorarios-mount"></div>
       </section>
 
-      <!-- PERSONAL -->
+      <!-- PERSONAL Y LIQUIDACIÓN DE SUELDOS -->
       <section class="panel" id="panel-personal">
         <div class="panel-head">
-          <span class="eyebrow">Referencia</span>
-          <h2>Personal y escala salarial — Convenio 589/10</h2>
-          <p class="panel-note">Datos del personal en relación de dependencia y básicos vigentes por categoría.</p>
+          <span class="eyebrow">Herramientas del administrador</span>
+          <h2>Personal y Liquidación de Sueldos — CCT 589/10</h2>
+          <p class="panel-note">Legajos, escala salarial y cargas sociales del Convenio 589/10 (SUTERH/FATERYH), y liquidación mensual con recibo conforme al art. 140 LCT (reforma de modernización laboral, Decreto 407/2026): desglose obligatorio del costo laboral total a cargo del consorcio, antigüedad reconocida y categorías del convenio.</p>
         </div>
 
-        <div class="subhead" style="margin-top:0;">Personal del edificio</div>
         <div id="arca-link-mount"></div>
         <p class="panel-note" style="margin-top:10px;margin-bottom:12px;">Para verificar los aportes de un empleado, entrá al link de ARCA y cargá su CUIL manualmente — no permite pasarlo por la dirección web.</p>
+
+        <div class="subhead" style="margin-top:0;">Escala salarial y cargas sociales (CCT 589/10)</div>
+        <p class="panel-note">Actualizá estos valores cada vez que salga un nuevo acuerdo paritario homologado SUTERH/FATERYH. Todos los legajos y liquidaciones toman los datos de acá automáticamente.</p>
+        <div id="cct589-config-mount"></div>
+
+        <div class="subhead">Legajos del personal</div>
         <div id="empleados-mount"></div>
 
-        <div class="subhead">Escala salarial por categoría</div>
-        <div id="personal-mount"></div>
+        <div class="subhead">Liquidación mensual y recibo de sueldo</div>
+        <div id="liquidaciones-mount"></div>
       </section>
 
       <!-- MANUAL / DOCUMENTOS -->
@@ -8450,17 +8445,279 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     });
   }
 
-  /* ---------- Liquidación de sueldos ---------- */
-  function mountLiquidaciones(mountId, storageKey){
+  /* ---------- Personal y Liquidación de Sueldos — CCT 589/10 (SUTERH/FATERYH) ---------- */
+  const FUNCIONES_CCT589 = [
+    {key:'enc_perm_cv', label:'Encargado permanente con vivienda (4ª categoría)'},
+    {key:'enc_perm_sv', label:'Encargado permanente sin vivienda (3ª categoría)'},
+    {key:'enc_noperm_cv', label:'Encargado no permanente con vivienda (2ª cat. / media jornada)'},
+    {key:'enc_noperm_sv', label:'Encargado no permanente sin vivienda (1ª cat. / media jornada)'},
+    {key:'ayud_perm_cv', label:'Ayudante permanente con vivienda'},
+    {key:'ayud_perm_sv', label:'Ayudante permanente sin vivienda'},
+    {key:'suplente', label:'Suplente con horario'},
+    {key:'administrativo', label:'Personal administrativo'},
+    {key:'maestranza', label:'Personal de maestranza'},
+    {key:'vigilancia', label:'Personal de vigilancia (media jornada)'},
+    {key:'jornalizado', label:'Personal jornalizado (valor por jornada)'},
+  ];
+  function funcionLabelCct589(key){
+    const f = FUNCIONES_CCT589.find(x=>x.key===key);
+    return f ? f.label : (key || '—');
+  }
+  const CCT589_CONFIG_DEFAULT = {
+    basicos: { enc_perm_cv: 1197409 },
+    antiguedadPct: 2, presentismoPct: 0, tituloPct: 10, zonaDesfPct: 50,
+    retiroResiduosMonto: 15000, limpiezaCocherasMonto: 0, manejoCalderasMonto: 0, mantJardinMonto: 0, limpiezaPiletasMonto: 0,
+    sumaFijaRemun: 0, horasMensuales: 200, recargo50: 1.5, recargo100: 2, divisorDia: 25,
+    aporteJubilacionPct: 11, aportePamiPct: 3, aporteObraSocialPct: 3, aporteSindicalPct: 2,
+    contribSipaPct: 10.17, contribObraSocialPct: 6, contribFateryhPct: 6, contribSuterhPct: 0, contribSeracarhPct: 0.5,
+    fmvddMonto: 0, artPct: 0, seguroVidaMonto: 0,
+  };
+
+  function parseFechaAR(str){
+    if(!str) return null;
+    const s = String(str).trim();
+    let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if(m) return new Date(+m[3], +m[2]-1, +m[1]);
+    m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if(m) return new Date(+m[1], +m[2]-1, +m[3]);
+    return null;
+  }
+  function calcAntiguedadAniosCct589(fechaStr){
+    const d = parseFechaAR(fechaStr);
+    if(!d) return 0;
+    const diffMs = Date.now() - d.getTime();
+    return Math.max(0, Math.floor(diffMs / (365.25*24*3600*1000)));
+  }
+
+  /* ---------- Configuración de escala y cargas sociales ---------- */
+  function mountCct589Config(mountId, storageKey){
+    const mount = document.getElementById(mountId);
+    const statusId = mountId+'-status';
+    let cfg = JSON.parse(JSON.stringify(CCT589_CONFIG_DEFAULT));
+
+    function num(v){ const n = parseFloat((v===undefined||v===null?'':v).toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+
+    function render(){
+      mount.innerHTML = `
+        <div class="new-ticket" style="background:#fff;">
+          <h3>1. Básico mensual por función (CCT 589/10)</h3>
+          <table class="ledger" style="margin-bottom:6px;">
+            <thead><tr><th>Función / Categoría</th><th style="width:200px;">Básico mensual ($)</th></tr></thead>
+            <tbody>
+              ${FUNCIONES_CCT589.map(f=>`
+                <tr>
+                  <td><input type="text" value="${escapeHtml(f.label)}" disabled></td>
+                  <td class="num"><input type="text" data-basico="${f.key}" value="${escapeHtml(cfg.basicos[f.key]||0)}" ${role==='admin'?'':'disabled'}></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <p class="panel-note" style="margin:0 0 14px;">Personal jornalizado: cargá el valor por jornada, no el mensual.</p>
+
+          <h3>2. Adicionales convencionales (% sobre el básico o monto fijo)</h3>
+          <div class="field-grid">
+            <div><label>% Antigüedad por año (Art. 11)</label><input type="text" data-f="antiguedadPct" value="${escapeHtml(cfg.antiguedadPct)}"></div>
+            <div><label>% Presentismo</label><input type="text" data-f="presentismoPct" value="${escapeHtml(cfg.presentismoPct)}"></div>
+            <div><label>% Título Encargado Integral</label><input type="text" data-f="tituloPct" value="${escapeHtml(cfg.tituloPct)}"></div>
+            <div><label>% Zona desfavorable</label><input type="text" data-f="zonaDesfPct" value="${escapeHtml(cfg.zonaDesfPct)}"></div>
+            <div><label>Retiro y clasif. residuos ($)</label><input type="text" data-f="retiroResiduosMonto" value="${escapeHtml(cfg.retiroResiduosMonto)}"></div>
+            <div><label>Limpieza de cocheras ($)</label><input type="text" data-f="limpiezaCocherasMonto" value="${escapeHtml(cfg.limpiezaCocherasMonto)}"></div>
+            <div><label>Manejo de calderas ($)</label><input type="text" data-f="manejoCalderasMonto" value="${escapeHtml(cfg.manejoCalderasMonto)}"></div>
+            <div><label>Mantenimiento de jardín ($)</label><input type="text" data-f="mantJardinMonto" value="${escapeHtml(cfg.mantJardinMonto)}"></div>
+            <div><label>Limpieza de piletas ($)</label><input type="text" data-f="limpiezaPiletasMonto" value="${escapeHtml(cfg.limpiezaPiletasMonto)}"></div>
+            <div><label>Suma fija remunerativa ($)</label><input type="text" data-f="sumaFijaRemun" value="${escapeHtml(cfg.sumaFijaRemun)}"></div>
+          </div>
+
+          <h3>3. Jornada y horas extra</h3>
+          <div class="field-grid">
+            <div><label>Horas mensuales jornada legal</label><input type="text" data-f="horasMensuales" value="${escapeHtml(cfg.horasMensuales)}"></div>
+            <div><label>Recargo hora extra 50% (mult.)</label><input type="text" data-f="recargo50" value="${escapeHtml(cfg.recargo50)}"></div>
+            <div><label>Recargo hora extra 100% (mult.)</label><input type="text" data-f="recargo100" value="${escapeHtml(cfg.recargo100)}"></div>
+            <div><label>Divisor valor día (SAC/vacaciones)</label><input type="text" data-f="divisorDia" value="${escapeHtml(cfg.divisorDia)}"></div>
+          </div>
+
+          <h3>4. Aportes personales (retenciones al trabajador, % sobre bruto)</h3>
+          <div class="field-grid">
+            <div><label>Jubilación — SIPA (%)</label><input type="text" data-f="aporteJubilacionPct" value="${escapeHtml(cfg.aporteJubilacionPct)}"></div>
+            <div><label>Ley 19.032 / INSSJP — PAMI (%)</label><input type="text" data-f="aportePamiPct" value="${escapeHtml(cfg.aportePamiPct)}"></div>
+            <div><label>Obra Social — OSPERYH (%)</label><input type="text" data-f="aporteObraSocialPct" value="${escapeHtml(cfg.aporteObraSocialPct)}"></div>
+            <div><label>Cuota sindical SUTERH (%)</label><input type="text" data-f="aporteSindicalPct" value="${escapeHtml(cfg.aporteSindicalPct)}"></div>
+          </div>
+
+          <h3>5. Contribuciones patronales (a cargo del consorcio — F.931 + sindicales)</h3>
+          <div class="field-grid">
+            <div><label>SIPA patronal — F.931 (%)</label><input type="text" data-f="contribSipaPct" value="${escapeHtml(cfg.contribSipaPct)}"></div>
+            <div><label>Obra Social patronal (%)</label><input type="text" data-f="contribObraSocialPct" value="${escapeHtml(cfg.contribObraSocialPct)}"></div>
+            <div><label>FATERYH (%)</label><input type="text" data-f="contribFateryhPct" value="${escapeHtml(cfg.contribFateryhPct)}"></div>
+            <div><label>SUTERH patronal, si aplica (%)</label><input type="text" data-f="contribSuterhPct" value="${escapeHtml(cfg.contribSuterhPct)}"></div>
+            <div><label>SERACARH (%)</label><input type="text" data-f="contribSeracarhPct" value="${escapeHtml(cfg.contribSeracarhPct)}"></div>
+            <div><label>FMVDD, monto fijo ($)</label><input type="text" data-f="fmvddMonto" value="${escapeHtml(cfg.fmvddMonto)}"></div>
+            <div><label>ART — según póliza (%)</label><input type="text" data-f="artPct" value="${escapeHtml(cfg.artPct)}"></div>
+            <div><label>Seguro de vida obligatorio ($)</label><input type="text" data-f="seguroVidaMonto" value="${escapeHtml(cfg.seguroVidaMonto)}"></div>
+          </div>
+
+          <p class="panel-note" style="margin:0 0 10px;">Estos valores son de referencia y deben verificarse contra la última acta paritaria SUTERH/FATERYH homologada y contra el Decreto 814/01 antes de liquidar un legajo real. Los % de jubilación y SIPA patronal no se aplican a empleados jubilados reincorporados (Ley 24.241 art. 34).</p>
+          <div class="toolbar">
+            <span></span>
+            <div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}${role==='admin'?`<button class="btn primary" id="${mountId}-save">Guardar cambios</button>`:''}</div>
+          </div>
+        </div>
+      `;
+      if(role!=='admin'){
+        mount.querySelectorAll('input').forEach(i=>i.disabled=true);
+        return;
+      }
+
+      function readForm(){
+        mount.querySelectorAll('[data-basico]').forEach(i=>{ cfg.basicos[i.dataset.basico] = num(i.value); });
+        mount.querySelectorAll('[data-f]').forEach(i=>{ cfg[i.dataset.f] = num(i.value); });
+      }
+      let saveTimer;
+      function scheduleSave(){
+        setStatus(statusId,'saving');
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(()=>{ readForm(); saveData(storageKey, cfg, statusId); }, 700);
+      }
+      mount.addEventListener('input', scheduleSave);
+      document.getElementById(mountId+'-save').addEventListener('click', ()=>{ readForm(); saveData(storageKey, cfg, statusId); });
+    }
+
+    loadData(storageKey, null).then(saved=>{
+      if(saved){ cfg = Object.assign(JSON.parse(JSON.stringify(CCT589_CONFIG_DEFAULT)), saved); cfg.basicos = Object.assign({}, CCT589_CONFIG_DEFAULT.basicos, saved.basicos||{}); }
+      render();
+    });
+
+    return { getConfig: ()=>cfg };
+  }
+
+  /* ---------- Legajos del personal ---------- */
+  function mountEmpleadosCct589(mountId, storageKey){
+    const mount = document.getElementById(mountId);
+    const statusId = mountId+'-status';
+    let empleados = [];
+
+    function blank(){
+      return { legajo:'', nombreCompleto:'', cuil:'', funcion:FUNCIONES_CCT589[0].key, fechaIngreso:'', fechaIngresoReconocida:'',
+        jubiladoReincorporado:false, afiliadoSindical:true, presentismo:false, tituloIntegral:false, zonaDesfavorable:false,
+        retiroResiduos:false, limpiezaCocheras:false, manejoCalderas:false, mantJardin:false, limpiezaPiletas:false, sumaFijaRemun:false,
+        lugarPago:'', formaPagoAportes:'' };
+    }
+
+    function checkboxRow(label, field, e, idx){
+      return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--gray-800);margin:4px 0;">
+        <input type="checkbox" data-i="${idx}" data-field="${field}" ${e[field]?'checked':''} ${role==='admin'?'':'disabled'}> ${label}
+      </label>`;
+    }
+
+    function render(){
+      mount.innerHTML = `
+        <div class="cards" id="${mountId}-list"></div>
+        <div class="toolbar">
+          ${role==='admin' ? `<button class="btn" id="${mountId}-add">+ Agregar legajo</button>` : '<span></span>'}
+          <div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}</div>
+        </div>
+      `;
+      const listEl = document.getElementById(mountId+'-list');
+      if(empleados.length===0){
+        listEl.innerHTML = `<div class="empty">Sin empleados cargados.</div>`;
+      } else {
+        listEl.innerHTML = empleados.map((e,i)=>`
+          <div class="card">
+            <div class="card-top">
+              <div>
+                <b>${escapeHtml(e.nombreCompleto||'(sin nombre)')}</b>
+                <div class="card-meta">Legajo ${escapeHtml(e.legajo||'—')} · ${escapeHtml(funcionLabelCct589(e.funcion))}</div>
+              </div>
+              ${role==='admin' ? `<button class="btn ghost" data-action="delete" data-i="${i}">Eliminar</button>` : ''}
+            </div>
+            <div class="field-grid" style="margin-top:10px;">
+              <div><label>Legajo N°</label><input type="text" data-i="${i}" data-field="legajo" value="${escapeHtml(e.legajo)}" ${role==='admin'?'':'disabled'}></div>
+              <div><label>Nombre completo</label><input type="text" data-i="${i}" data-field="nombreCompleto" value="${escapeHtml(e.nombreCompleto)}" ${role==='admin'?'':'disabled'}></div>
+              <div><label>CUIL</label><input type="text" data-i="${i}" data-field="cuil" placeholder="20-XXXXXXXX-X" value="${escapeHtml(e.cuil)}" ${role==='admin'?'':'disabled'}></div>
+              <div>
+                <label>Función / Categoría</label>
+                <select data-i="${i}" data-field="funcion" ${role==='admin'?'':'disabled'}>
+                  ${FUNCIONES_CCT589.map(f=>`<option value="${f.key}" ${e.funcion===f.key?'selected':''}>${escapeHtml(f.label)}</option>`).join('')}
+                </select>
+              </div>
+              <div><label>Fecha de ingreso</label><input type="text" data-i="${i}" data-field="fechaIngreso" placeholder="DD/MM/AAAA" value="${escapeHtml(e.fechaIngreso)}" ${role==='admin'?'':'disabled'}></div>
+              <div><label>Antigüedad reconocida desde (si difiere)</label><input type="text" data-i="${i}" data-field="fechaIngresoReconocida" placeholder="DD/MM/AAAA" value="${escapeHtml(e.fechaIngresoReconocida)}" ${role==='admin'?'':'disabled'}></div>
+              <div><label>Lugar de pago</label><input type="text" data-i="${i}" data-field="lugarPago" value="${escapeHtml(e.lugarPago)}" ${role==='admin'?'':'disabled'}></div>
+              <div><label>Forma de pago aportes</label><input type="text" data-i="${i}" data-field="formaPagoAportes" placeholder="Transferencia bancaria" value="${escapeHtml(e.formaPagoAportes)}" ${role==='admin'?'':'disabled'}></div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-top:8px;">
+              ${checkboxRow('Jubilado reincorporado','jubiladoReincorporado',e,i)}
+              ${checkboxRow('Afiliado al sindicato','afiliadoSindical',e,i)}
+              ${checkboxRow('Presentismo','presentismo',e,i)}
+              ${checkboxRow('Título Encargado Integral','tituloIntegral',e,i)}
+              ${checkboxRow('Zona desfavorable','zonaDesfavorable',e,i)}
+              ${checkboxRow('Retiro de residuos','retiroResiduos',e,i)}
+              ${checkboxRow('Limpieza de cocheras','limpiezaCocheras',e,i)}
+              ${checkboxRow('Manejo de calderas','manejoCalderas',e,i)}
+              ${checkboxRow('Mantenimiento de jardín','mantJardin',e,i)}
+              ${checkboxRow('Limpieza de piletas','limpiezaPiletas',e,i)}
+              ${checkboxRow('Suma fija remunerativa','sumaFijaRemun',e,i)}
+            </div>
+          </div>
+        `).join('');
+      }
+
+      if(role!=='admin') return;
+
+      let saveTimer;
+      function scheduleSave(){
+        setStatus(statusId,'saving');
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(()=>saveData(storageKey, empleados, statusId), 700);
+      }
+
+      listEl.addEventListener('input', e=>{
+        const t = e.target;
+        const i = t.dataset.i;
+        if(i===undefined) return;
+        const field = t.dataset.field;
+        if(t.type==='checkbox') empleados[i][field] = t.checked;
+        else empleados[i][field] = t.value;
+        if(field==='nombreCompleto' || field==='legajo' || field==='funcion'){
+          const meta = listEl.children[i].querySelector('.card-meta');
+          if(meta) meta.textContent = `Legajo ${empleados[i].legajo||'—'} · ${funcionLabelCct589(empleados[i].funcion)}`;
+          const nameEl = listEl.children[i].querySelector('.card-top b');
+          if(nameEl && field==='nombreCompleto') nameEl.textContent = empleados[i].nombreCompleto || '(sin nombre)';
+        }
+        scheduleSave();
+      });
+      listEl.addEventListener('click', e=>{
+        const b = e.target.closest('[data-action="delete"]');
+        if(b){ empleados.splice(+b.dataset.i, 1); render(); scheduleSave(); }
+      });
+      document.getElementById(mountId+'-add').addEventListener('click', ()=>{
+        empleados.push(blank());
+        render();
+        scheduleSave();
+      });
+    }
+
+    loadData(storageKey, []).then(saved=>{
+      empleados = saved || [];
+      render();
+    });
+
+    return { getEmpleados: ()=>empleados };
+  }
+
+  /* ---------- Liquidación mensual y recibo (art. 140 LCT, Decreto 407/2026) ---------- */
+  function mountLiquidacionesCct589(mountId, storageKey){
     const mount = document.getElementById(mountId);
     const statusId = mountId+'-status';
     let liquidaciones = [];
     let empleados = [];
-    let consorcioDatos = {edificio:'', barrio:''};
+    let cfg = JSON.parse(JSON.stringify(CCT589_CONFIG_DEFAULT));
+    let consorcioDatos = {edificio:'', barrio:'', cuit:''};
+    const chartsByCanvas = {};
 
-    function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
-    function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); }
-    function pct(n){ return n.toLocaleString('es-AR',{maximumFractionDigits:2}) + '%'; }
+    function num(v){ const n = parseFloat((v===undefined||v===null?'':v).toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function fmt(n){ return '$ ' + (n||0).toLocaleString('es-AR',{maximumFractionDigits:2}); }
+    function pct(n){ return (n||0).toLocaleString('es-AR',{maximumFractionDigits:2}) + '%'; }
 
     mount.innerHTML = `
       <div class="new-ticket" style="background:#fff;">
@@ -8475,8 +8732,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <input type="text" id="${mountId}-periodo" placeholder="Julio 2026">
           </div>
           <div>
-            <label>Básico ($)</label>
-            <input type="text" id="${mountId}-basico" placeholder="0">
+            <label>Antigüedad (años) — auto, editable</label>
+            <input type="text" id="${mountId}-antiguedad" placeholder="Se calcula solo">
           </div>
           <div>
             <label>Horas extra 50% (cant.)</label>
@@ -8487,35 +8744,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <input type="text" id="${mountId}-hs100" placeholder="0">
           </div>
           <div>
-            <label>Otro concepto remunerativo ($)</label>
-            <input type="text" id="${mountId}-otros" placeholder="0">
+            <label>Días de inasistencia injustificada</label>
+            <input type="text" id="${mountId}-inasistencias" placeholder="0">
           </div>
           <div>
-            <label>Sindicato (%)</label>
-            <input type="text" id="${mountId}-sindicato" value="2">
-          </div>
-          <div>
-            <label>Aportes (%)</label>
-            <input type="text" id="${mountId}-aportes" value="17">
-          </div>
-          <div>
-            <label>Contribuciones (%)</label>
-            <input type="text" id="${mountId}-contrib" value="24">
-          </div>
-          <div>
-            <label>ART fijo ($)</label>
-            <input type="text" id="${mountId}-artfijo" value="40">
-          </div>
-          <div>
-            <label>ART variable (%)</label>
-            <input type="text" id="${mountId}-artpct" value="1">
-          </div>
-          <div>
-            <label>Seguro de vida ($)</label>
-            <input type="text" id="${mountId}-seguro" value="24,35">
+            <label>Importe vacaciones ($)</label>
+            <input type="text" id="${mountId}-vacaciones" placeholder="0">
           </div>
         </div>
-        <p class="panel-note" style="margin:0 0 10px;">El valor hora se estima como Básico ÷ 200. Horas extra al 50% y 100% se calculan sobre ese valor, según art. 201 LCT. Los porcentajes vienen precargados con valores de referencia — ajustalos según la escala y ART vigentes al momento de liquidar.</p>
+        <p class="panel-note" style="margin:0 0 10px;">El básico, los adicionales y las cargas sociales se toman automáticamente del legajo del empleado y de la configuración CCT 589/10. El recibo desglosa el costo laboral total a cargo del consorcio, conforme al art. 140 LCT.</p>
         <div class="toolbar">
           <span></span>
           <div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}<button class="btn primary" id="${mountId}-calc">Calcular y guardar</button></div>
@@ -8527,69 +8764,213 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     `;
 
     const empleadoSelect = document.getElementById(mountId+'-empleado');
+    const antiguedadInput = document.getElementById(mountId+'-antiguedad');
     const listEl = document.getElementById(mountId+'-list');
 
-    function computeRecord(base){
-      const basico = num(base.basico);
-      const valorHora = basico / 200;
-      const hs50Monto = num(base.hs50) * valorHora * 1.5;
-      const hs100Monto = num(base.hs100) * valorHora * 2;
-      const otrosMonto = num(base.otros);
-      const sueldoBruto = basico + hs50Monto + hs100Monto + otrosMonto;
-      const aportesMonto = sueldoBruto * (num(base.aportesPct)/100);
-      const sindicatoMonto = sueldoBruto * (num(base.sindicatoPct)/100);
-      const sueldoNeto = sueldoBruto - aportesMonto - sindicatoMonto;
-      const contribucionesMonto = sueldoBruto * (num(base.contribPct)/100);
-      const artMonto = num(base.artFijo) + sueldoBruto * (num(base.artPct)/100);
-      const seguroVidaMonto = num(base.seguroVida);
-      const totalCargas = aportesMonto + contribucionesMonto + artMonto + seguroVidaMonto;
-      return { ...base, valorHora, hs50Monto, hs100Monto, sueldoBruto, aportesMonto, sindicatoMonto, sueldoNeto, contribucionesMonto, artMonto, seguroVidaMonto, totalCargas };
+    function computeLiquidacion(emp, inputs){
+      const basico = num(cfg.basicos[emp.funcion]);
+      const antiguedadAnios = inputs.antiguedadAnios !== '' && inputs.antiguedadAnios != null
+        ? num(inputs.antiguedadAnios)
+        : calcAntiguedadAniosCct589(emp.fechaIngresoReconocida || emp.fechaIngreso);
+      const adicAntiguedad = basico * (num(cfg.antiguedadPct)/100) * antiguedadAnios;
+      const adicPresentismo = emp.presentismo ? basico * (num(cfg.presentismoPct)/100) : 0;
+      const adicTitulo = emp.tituloIntegral ? basico * (num(cfg.tituloPct)/100) : 0;
+      const adicZona = emp.zonaDesfavorable ? basico * (num(cfg.zonaDesfPct)/100) : 0;
+      const impResiduos = emp.retiroResiduos ? num(cfg.retiroResiduosMonto) : 0;
+      const impCocheras = emp.limpiezaCocheras ? num(cfg.limpiezaCocherasMonto) : 0;
+      const impCalderas = emp.manejoCalderas ? num(cfg.manejoCalderasMonto) : 0;
+      const impJardin = emp.mantJardin ? num(cfg.mantJardinMonto) : 0;
+      const impPiletas = emp.limpiezaPiletas ? num(cfg.limpiezaPiletasMonto) : 0;
+      const impSumaFija = emp.sumaFijaRemun ? num(cfg.sumaFijaRemun) : 0;
+      const horasMens = num(cfg.horasMensuales) || 200;
+      const valorHora = basico / horasMens;
+      const imp50 = num(inputs.hs50) * valorHora * (num(cfg.recargo50) || 1.5);
+      const imp100 = num(inputs.hs100) * valorHora * (num(cfg.recargo100) || 2);
+      const divisorDia = num(cfg.divisorDia) || 25;
+      const valorDia = basico / divisorDia;
+      const descInasistencias = num(inputs.diasInasistencia) * valorDia;
+      const impVacaciones = num(inputs.importeVacaciones);
+
+      const sueldoBrutoRemun = basico+adicAntiguedad+adicPresentismo+adicTitulo+adicZona
+        +impResiduos+impCocheras+impCalderas+impJardin+impPiletas+impSumaFija
+        +imp50+imp100+impVacaciones - descInasistencias;
+
+      const esJubilado = !!emp.jubiladoReincorporado;
+      const retJubilacion = esJubilado ? 0 : sueldoBrutoRemun * (num(cfg.aporteJubilacionPct)/100);
+      const retPami = sueldoBrutoRemun * (num(cfg.aportePamiPct)/100);
+      const retObraSocial = sueldoBrutoRemun * (num(cfg.aporteObraSocialPct)/100);
+      const retSindical = emp.afiliadoSindical ? sueldoBrutoRemun * (num(cfg.aporteSindicalPct)/100) : 0;
+      const totalRetenciones = retJubilacion+retPami+retObraSocial+retSindical;
+      const sueldoNeto = sueldoBrutoRemun - totalRetenciones;
+
+      const contribSipa = esJubilado ? 0 : sueldoBrutoRemun * (num(cfg.contribSipaPct)/100);
+      const contribObraSocial = sueldoBrutoRemun * (num(cfg.contribObraSocialPct)/100);
+      const contribFateryh = sueldoBrutoRemun * (num(cfg.contribFateryhPct)/100);
+      const contribSuterh = sueldoBrutoRemun * (num(cfg.contribSuterhPct)/100);
+      const contribSeracarh = sueldoBrutoRemun * (num(cfg.contribSeracarhPct)/100);
+      const fmvdd = num(cfg.fmvddMonto);
+      const art = sueldoBrutoRemun * (num(cfg.artPct)/100);
+      const seguroVida = num(cfg.seguroVidaMonto);
+      const totalContribPatronales = contribSipa+contribObraSocial+contribFateryh+contribSuterh+contribSeracarh+fmvdd+art+seguroVida;
+      const costoTotalEmpleador = sueldoBrutoRemun + totalContribPatronales;
+
+      return {
+        id: uid(), empleadoIdx: inputs.empleadoIdx, empleadoNombre: emp.nombreCompleto, periodo: inputs.periodo,
+        hs50: inputs.hs50, hs100: inputs.hs100, diasInasistencia: inputs.diasInasistencia, importeVacaciones: inputs.importeVacaciones,
+        basico, antiguedadAnios, adicAntiguedad, adicPresentismo, adicTitulo, adicZona,
+        impResiduos, impCocheras, impCalderas, impJardin, impPiletas, impSumaFija,
+        valorHora, imp50, imp100, valorDia, descInasistencias, impVacaciones,
+        sueldoBrutoRemun, retJubilacion, retPami, retObraSocial, retSindical, totalRetenciones, sueldoNeto,
+        contribSipa, contribObraSocial, contribFateryh, contribSuterh, contribSeracarh, fmvdd, art, seguroVida,
+        totalContribPatronales, costoTotalEmpleador,
+        remunerativo: sueldoBrutoRemun, noRemunerativo: 0,
+      };
     }
 
-    function recibHtml(r){
+    function reciboHtml(liq, emp, canvasId){
+      const antigDiffiere = emp.fechaIngresoReconocida && emp.fechaIngresoReconocida !== emp.fechaIngreso;
       return `
-        <div class="recibo">
+        <div class="recibo" style="max-width:820px;">
           <div class="recibo-head">
             <div>
               <b>${escapeHtml(consorcioDatos.edificio || 'Consorcio de Propietarios')}</b><br>
-              ${escapeHtml(consorcioDatos.barrio || '')}
+              ${escapeHtml(consorcioDatos.barrio || '')}<br>
+              <span style="font-size:11px;color:var(--muted);">CUIT: ${escapeHtml(consorcioDatos.cuit||'—')}</span>
             </div>
             <div style="text-align:right;">
-              Recibo de haberes<br>Período: <b>${escapeHtml(r.periodo)}</b>
+              Recibo de haberes — CCT 589/10 (SUTERH/FATERYH)<br>
+              Período: <b>${escapeHtml(liq.periodo)}</b><br>
+              <span style="font-size:11px;color:var(--muted);">Art. 140 LCT — costo laboral total desglosado</span>
             </div>
           </div>
-          <div><b>${escapeHtml(r.empleadoNombre)}</b> — CUIL ${escapeHtml(r.empleadoCuil)}</div>
-          <div style="color:var(--muted);">Categoría: ${escapeHtml(r.empleadoCategoria)} · Fecha de ingreso: ${escapeHtml(r.empleadoFechaIngreso)}</div>
 
-          <div class="recibo-cols">
+          <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;margin:10px 0;font-size:13px;">
             <div>
-              <h4>Haberes</h4>
-              <table>
-                <tr><td>Básico</td><td>${fmt(num(r.basico))}</td></tr>
-                <tr><td>Horas extra 50% (${escapeHtml(r.hs50)} hs)</td><td>${fmt(r.hs50Monto)}</td></tr>
-                <tr><td>Horas extra 100% (${escapeHtml(r.hs100)} hs)</td><td>${fmt(r.hs100Monto)}</td></tr>
-                ${num(r.otros)>0 ? `<tr><td>Otro concepto</td><td>${fmt(num(r.otros))}</td></tr>` : ''}
-                <tr class="recibo-total"><td>Sueldo bruto</td><td>${fmt(r.sueldoBruto)}</td></tr>
-              </table>
-              <h4 style="margin-top:14px;">Descuentos</h4>
-              <table>
-                <tr><td>Aportes (${escapeHtml(r.aportesPct)}%)</td><td>−${fmt(r.aportesMonto)}</td></tr>
-                <tr><td>Sindicato (${escapeHtml(r.sindicatoPct)}%)</td><td>−${fmt(r.sindicatoMonto)}</td></tr>
-                <tr class="recibo-total"><td>Sueldo neto a cobrar</td><td>${fmt(r.sueldoNeto)}</td></tr>
+              <b>${escapeHtml(emp.nombreCompleto)}</b> — Legajo N° ${escapeHtml(emp.legajo||'—')} — CUIL ${escapeHtml(emp.cuil||'—')}<br>
+              <span style="color:var(--muted);">${escapeHtml(funcionLabelCct589(emp.funcion))}</span><br>
+              <span style="color:var(--muted);">Fecha de ingreso: ${escapeHtml(emp.fechaIngreso||'—')}${antigDiffiere ? ` · Antigüedad reconocida desde: ${escapeHtml(emp.fechaIngresoReconocida)}` : ''} · Antigüedad: ${liq.antiguedadAnios} año(s)</span>
+            </div>
+            <div style="text-align:right;color:var(--muted);font-size:12px;">
+              Lugar de pago: ${escapeHtml(emp.lugarPago||'—')}<br>
+              Forma de pago aportes: ${escapeHtml(emp.formaPagoAportes||'—')}
+            </div>
+          </div>
+
+          <div style="background:var(--primary);color:#fff;border-radius:8px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin:14px 0;">
+            <span style="font-family:'Inter',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold-light);">Costo total empleador</span>
+            <span style="font-family:'Playfair Display',serif;font-size:24px;font-weight:700;">${fmt(liq.costoTotalEmpleador)}</span>
+          </div>
+
+          <h4>Contribuciones patronales (a cargo del consorcio)</h4>
+          <table style="width:100%;font-size:12.5px;border-collapse:collapse;">
+            <tr><td>SIPA patronal (${pct(cfg.contribSipaPct)})</td><td style="text-align:right;">${fmt(liq.contribSipa)}</td></tr>
+            <tr><td>Obra social patronal (${pct(cfg.contribObraSocialPct)})</td><td style="text-align:right;">${fmt(liq.contribObraSocial)}</td></tr>
+            <tr><td>FATERYH (${pct(cfg.contribFateryhPct)})</td><td style="text-align:right;">${fmt(liq.contribFateryh)}</td></tr>
+            ${num(cfg.contribSuterhPct)>0 ? `<tr><td>SUTERH patronal (${pct(cfg.contribSuterhPct)})</td><td style="text-align:right;">${fmt(liq.contribSuterh)}</td></tr>` : ''}
+            <tr><td>SERACARH (${pct(cfg.contribSeracarhPct)})</td><td style="text-align:right;">${fmt(liq.contribSeracarh)}</td></tr>
+            ${num(cfg.fmvddMonto)>0 ? `<tr><td>FMVDD</td><td style="text-align:right;">${fmt(liq.fmvdd)}</td></tr>` : ''}
+            <tr><td>ART (${pct(cfg.artPct)})</td><td style="text-align:right;">${fmt(liq.art)}</td></tr>
+            <tr><td>Seguro de vida obligatorio</td><td style="text-align:right;">${fmt(liq.seguroVida)}</td></tr>
+            <tr class="recibo-total"><td>Sub total contribuciones empleador</td><td style="text-align:right;">${fmt(liq.totalContribPatronales)}</td></tr>
+          </table>
+
+          <h4 style="margin-top:16px;">Sueldo bruto — Haberes</h4>
+          <table style="width:100%;font-size:12.5px;border-collapse:collapse;">
+            <tr><td>Sueldo básico</td><td style="text-align:right;">${fmt(liq.basico)}</td></tr>
+            <tr><td>Antigüedad (${liq.antiguedadAnios} años × ${pct(cfg.antiguedadPct)})</td><td style="text-align:right;">${fmt(liq.adicAntiguedad)}</td></tr>
+            ${emp.presentismo?`<tr><td>Presentismo</td><td style="text-align:right;">${fmt(liq.adicPresentismo)}</td></tr>`:''}
+            ${emp.tituloIntegral?`<tr><td>Título Encargado Integral</td><td style="text-align:right;">${fmt(liq.adicTitulo)}</td></tr>`:''}
+            ${emp.zonaDesfavorable?`<tr><td>Zona desfavorable</td><td style="text-align:right;">${fmt(liq.adicZona)}</td></tr>`:''}
+            ${emp.retiroResiduos?`<tr><td>Retiro y clasificación de residuos</td><td style="text-align:right;">${fmt(liq.impResiduos)}</td></tr>`:''}
+            ${emp.limpiezaCocheras?`<tr><td>Limpieza de cocheras</td><td style="text-align:right;">${fmt(liq.impCocheras)}</td></tr>`:''}
+            ${emp.manejoCalderas?`<tr><td>Manejo de calderas</td><td style="text-align:right;">${fmt(liq.impCalderas)}</td></tr>`:''}
+            ${emp.mantJardin?`<tr><td>Mantenimiento de jardín</td><td style="text-align:right;">${fmt(liq.impJardin)}</td></tr>`:''}
+            ${emp.limpiezaPiletas?`<tr><td>Limpieza de piletas</td><td style="text-align:right;">${fmt(liq.impPiletas)}</td></tr>`:''}
+            ${emp.sumaFijaRemun?`<tr><td>Suma fija remunerativa</td><td style="text-align:right;">${fmt(liq.impSumaFija)}</td></tr>`:''}
+            ${num(liq.hs50)>0?`<tr><td>Horas extra 50% (${escapeHtml(liq.hs50)} hs)</td><td style="text-align:right;">${fmt(liq.imp50)}</td></tr>`:''}
+            ${num(liq.hs100)>0?`<tr><td>Horas extra 100% (${escapeHtml(liq.hs100)} hs)</td><td style="text-align:right;">${fmt(liq.imp100)}</td></tr>`:''}
+            ${num(liq.importeVacaciones)>0?`<tr><td>Vacaciones</td><td style="text-align:right;">${fmt(liq.impVacaciones)}</td></tr>`:''}
+            ${num(liq.diasInasistencia)>0?`<tr><td>Descuento por inasistencias (${escapeHtml(liq.diasInasistencia)} días)</td><td style="text-align:right;">−${fmt(liq.descInasistencias)}</td></tr>`:''}
+            <tr class="recibo-total"><td>Sueldo bruto remunerativo</td><td style="text-align:right;">${fmt(liq.sueldoBrutoRemun)}</td></tr>
+          </table>
+
+          <h4 style="margin-top:16px;">Retenciones al trabajador</h4>
+          <table style="width:100%;font-size:12.5px;border-collapse:collapse;">
+            ${!emp.jubiladoReincorporado?`<tr><td>Jubilación — SIPA (${pct(cfg.aporteJubilacionPct)})</td><td style="text-align:right;">−${fmt(liq.retJubilacion)}</td></tr>`:'<tr><td colspan="2" style="color:var(--muted);">Jubilado reincorporado: exento de aporte SIPA (Ley 24.241 art. 34)</td></tr>'}
+            <tr><td>Ley 19.032 / INSSJP — PAMI (${pct(cfg.aportePamiPct)})</td><td style="text-align:right;">−${fmt(liq.retPami)}</td></tr>
+            <tr><td>Obra social (${pct(cfg.aporteObraSocialPct)})</td><td style="text-align:right;">−${fmt(liq.retObraSocial)}</td></tr>
+            ${emp.afiliadoSindical?`<tr><td>Cuota sindical SUTERH (${pct(cfg.aporteSindicalPct)})</td><td style="text-align:right;">−${fmt(liq.retSindical)}</td></tr>`:''}
+            <tr class="recibo-total"><td>Total retenciones</td><td style="text-align:right;">−${fmt(liq.totalRetenciones)}</td></tr>
+          </table>
+
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0;font-size:12px;">
+            <div class="kpi"><div class="label">Remunerativo</div><div class="value" style="font-size:15px;">${fmt(liq.remunerativo)}</div></div>
+            <div class="kpi"><div class="label">No remunerativo</div><div class="value" style="font-size:15px;">${fmt(liq.noRemunerativo)}</div></div>
+            <div class="kpi"><div class="label">Descuentos</div><div class="value" style="font-size:15px;">${fmt(liq.totalRetenciones)}</div></div>
+          </div>
+
+          <div style="background:var(--gray-100);border:1px solid var(--gray-800);border-radius:8px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin:10px 0 18px;">
+            <span style="font-family:'Inter',monospace;font-size:12px;letter-spacing:.04em;text-transform:uppercase;">Sueldo neto a cobrar</span>
+            <span style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--primary);">${fmt(liq.sueldoNeto)}</span>
+          </div>
+
+          <div class="dash-grid" style="grid-template-columns:1.3fr 1fr;">
+            <div>
+              <h4>Detalle de la composición del costo</h4>
+              <table style="width:100%;font-size:12px;border-collapse:collapse;">
+                <tr><td>Costo sindical (empleador${emp.afiliadoSindical?' + trabajador':''})</td><td style="text-align:right;">${fmt(liq.contribSuterh + liq.retSindical)}</td></tr>
+                <tr><td>Total INSSJP / PAMI</td><td style="text-align:right;">${fmt(liq.retPami)}</td></tr>
+                <tr><td>Total Seguridad Social — SIPA</td><td style="text-align:right;">${fmt(liq.contribSipa + liq.retJubilacion)}</td></tr>
+                <tr><td>Total ART y seguro de vida</td><td style="text-align:right;">${fmt(liq.art + liq.seguroVida)}</td></tr>
+                <tr><td>Total Obra Social</td><td style="text-align:right;">${fmt(liq.contribObraSocial + liq.retObraSocial)}</td></tr>
+                <tr><td>FATERYH / SERACARH / FMVDD (empleador)</td><td style="text-align:right;">${fmt(liq.contribFateryh + liq.contribSeracarh + liq.fmvdd)}</td></tr>
               </table>
             </div>
-            <div>
-              <h4>Cargas del empleador (no se descuentan)</h4>
-              <table>
-                <tr><td>Contribuciones (${escapeHtml(r.contribPct)}%)</td><td>${fmt(r.contribucionesMonto)}</td></tr>
-                <tr><td>ART</td><td>${fmt(r.artMonto)}</td></tr>
-                <tr><td>Seguro de vida</td><td>${fmt(r.seguroVidaMonto)}</td></tr>
-                <tr class="recibo-total"><td>Total cargas F.931</td><td>${fmt(r.totalCargas)}</td></tr>
-              </table>
-            </div>
+            <div><canvas id="${canvasId}" height="190"></canvas></div>
+          </div>
+
+          <p style="font-size:10.5px;color:var(--muted);margin-top:16px;">La seguridad social a cargo del empleador incluye SIPA, obra social, FATERYH, SERACARH y FMVDD. Recibo generado conforme al art. 140 LCT (reforma de modernización laboral, Decreto 407/2026), con desglose obligatorio del costo laboral total.</p>
+
+          <div style="display:flex;justify-content:space-between;margin-top:26px;font-size:12px;">
+            <div>____________________________<br>Firma del empleador</div>
+            <div style="text-align:right;">____________________________<br>Firma del empleado — recibí conforme</div>
           </div>
         </div>
       `;
+    }
+
+    function drawCostoChart(canvasId, liq){
+      const ctx = document.getElementById(canvasId);
+      if(!ctx || !window.Chart) return;
+      if(chartsByCanvas[canvasId]) chartsByCanvas[canvasId].destroy();
+      const buckets = [
+        {label:'Sueldo Neto', value: liq.sueldoNeto, color:'#2EB7E5'},
+        {label:'Seguridad Social (SIPA)', value: liq.contribSipa + liq.retJubilacion, color:'#B8615B'},
+        {label:'Costo Sindical', value: liq.contribSuterh + liq.retSindical, color:'#8D5BB8'},
+        {label:'Obra Social', value: liq.contribObraSocial + liq.retObraSocial, color:'#6EA37A'},
+        {label:'PAMI y otras cargas', value: liq.retPami + liq.contribFateryh + liq.contribSeracarh + liq.fmvdd, color:'#E8952C'},
+        {label:'ART y seguro de vida', value: liq.art + liq.seguroVida, color:'#C9A84C'},
+      ].filter(b=>b.value>0);
+      const total = buckets.reduce((s,b)=>s+b.value,0) || 1;
+      chartsByCanvas[canvasId] = new Chart(ctx, {
+        type: 'pie',
+        data: { labels: buckets.map(b=>b.label), datasets: [{ data: buckets.map(b=>b.value), backgroundColor: buckets.map(b=>b.color), borderWidth: 2, borderColor: '#fff' }] },
+        options: {
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                font: { size: 11, weight: '600' }, padding: 10,
+                generateLabels: (chart)=> chart.data.labels.map((label,i)=>{
+                  const p = Math.round(chart.data.datasets[0].data[i]/total*100);
+                  return { text: `${label} — ${p}%`, fillStyle: chart.data.datasets[0].backgroundColor[i], strokeStyle:'#fff', lineWidth:1, index:i };
+                })
+              }
+            },
+            tooltip: { callbacks: { label: (c)=> `${c.label}: ${fmt(c.parsed)} (${Math.round(c.parsed/total*100)}%)` } }
+          }
+        }
+      });
     }
 
     function renderList(){
@@ -8605,7 +8986,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <div class="card-top">
             <div>
               <b>${escapeHtml(r.empleadoNombre)}</b>
-              <div class="card-meta">${escapeHtml(r.periodo)} · Neto: ${fmt(r.sueldoNeto)}</div>
+              <div class="card-meta">${escapeHtml(r.periodo)} · Neto: ${fmt(r.sueldoNeto)} · Costo total empleador: ${fmt(r.costoTotalEmpleador)}</div>
             </div>
             <button class="btn ghost" data-action="toggle" data-id="${r.id}">Ver recibo</button>
           </div>
@@ -8616,12 +8997,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       listEl.querySelectorAll('[data-action="toggle"]').forEach(btn=>{
         btn.addEventListener('click', ()=>{
           const r = liquidaciones.find(x=>x.id===btn.dataset.id);
+          const emp = empleados[r.empleadoIdx] || {};
           const box = document.getElementById('recibo-'+btn.dataset.id);
+          const canvasId = 'chart-recibo-'+r.id;
           if(box.style.display==='none'){
-            box.innerHTML = recibHtml(r) + `<div style="margin-top:10px;"><button class="btn" data-print="${r.id}">Imprimir / Guardar PDF</button></div>`;
+            box.innerHTML = reciboHtml(r, emp, canvasId) + `<div style="margin-top:10px;"><button class="btn" data-print="${r.id}">Imprimir / Guardar PDF</button></div>`;
             box.style.display = 'block';
             btn.textContent = 'Ocultar recibo';
             box.querySelector('[data-print]').addEventListener('click', ()=>window.print());
+            drawCostoChart(canvasId, r);
           } else {
             box.style.display = 'none';
             btn.textContent = 'Ver recibo';
@@ -8632,9 +9016,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     function refreshEmpleadoSelect(){
       empleadoSelect.innerHTML = empleados.length===0
-        ? `<option value="">— Cargá empleados en "Personal del edificio" primero —</option>`
-        : empleados.map((e,i)=>`<option value="${i}">${escapeHtml(e.nombreCompleto||'(sin nombre)')}</option>`).join('');
+        ? `<option value="">— Cargá legajos en "Legajos del personal" primero —</option>`
+        : empleados.map((e,i)=>`<option value="${i}">${escapeHtml(e.nombreCompleto||'(sin nombre)')} — ${escapeHtml(funcionLabelCct589(e.funcion))}</option>`).join('');
+      updateAntiguedadPreview();
     }
+    function updateAntiguedadPreview(){
+      const idx = empleadoSelect.value;
+      const emp = empleados[idx];
+      if(!emp) { antiguedadInput.value=''; return; }
+      antiguedadInput.value = calcAntiguedadAniosCct589(emp.fechaIngresoReconocida || emp.fechaIngreso);
+    }
+    empleadoSelect.addEventListener('change', updateAntiguedadPreview);
 
     document.getElementById(mountId+'-calc').addEventListener('click', ()=>{
       const idx = empleadoSelect.value;
@@ -8643,22 +9035,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         setStatus(statusId,'error');
         return;
       }
-      const base = {
-        id: uid(),
-        empleadoNombre: emp.nombreCompleto, empleadoCuil: emp.cuil, empleadoCategoria: emp.categoria, empleadoFechaIngreso: emp.fechaIngreso,
+      const inputs = {
+        empleadoIdx: idx,
         periodo: document.getElementById(mountId+'-periodo').value,
-        basico: document.getElementById(mountId+'-basico').value,
+        antiguedadAnios: document.getElementById(mountId+'-antiguedad').value,
         hs50: document.getElementById(mountId+'-hs50').value || '0',
         hs100: document.getElementById(mountId+'-hs100').value || '0',
-        otros: document.getElementById(mountId+'-otros').value || '0',
-        sindicatoPct: document.getElementById(mountId+'-sindicato').value,
-        aportesPct: document.getElementById(mountId+'-aportes').value,
-        contribPct: document.getElementById(mountId+'-contrib').value,
-        artFijo: document.getElementById(mountId+'-artfijo').value,
-        artPct: document.getElementById(mountId+'-artpct').value,
-        seguroVida: document.getElementById(mountId+'-seguro').value
+        diasInasistencia: document.getElementById(mountId+'-inasistencias').value || '0',
+        importeVacaciones: document.getElementById(mountId+'-vacaciones').value || '0',
       };
-      const record = computeRecord(base);
+      const record = computeLiquidacion(emp, inputs);
       liquidaciones.push(record);
       renderList();
       saveData(storageKey, liquidaciones, statusId);
@@ -8666,12 +9052,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     Promise.all([
       loadData('naken-empleados', []),
-      loadData('naken-consorcio-datos', {edificio:'', barrio:''}),
+      loadData('naken-cct589-config', null),
+      loadData('naken-consorcio-datos', {edificio:'', barrio:'', cuit:''}),
       loadData(storageKey, [])
-    ]).then(([emp, cfg, liq])=>{
-      empleados = emp;
-      consorcioDatos = cfg;
-      liquidaciones = liq;
+    ]).then(([emp, savedCfg, cfgConsorcio, liq])=>{
+      empleados = emp || [];
+      if(savedCfg){ cfg = Object.assign(JSON.parse(JSON.stringify(CCT589_CONFIG_DEFAULT)), savedCfg); cfg.basicos = Object.assign({}, CCT589_CONFIG_DEFAULT.basicos, savedCfg.basicos||{}); }
+      consorcioDatos = cfgConsorcio || {edificio:'', barrio:'', cuit:''};
+      liquidaciones = liq || [];
       refreshEmpleadoSelect();
       renderList();
     });
@@ -8772,26 +9160,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       defaultValue: 'https://www.arca.gob.ar/aportesenlinea/'
     });
 
-    mountLedger('empleados-mount', 'naken-empleados', [
-      {key:'nombreCompleto', label:'Nombre completo', placeholder:''},
-      {key:'cuil', label:'CUIL', placeholder:'20-XXXXXXXX-X'},
-      {key:'categoria', label:'Categoría', placeholder:'Encargado permanente'},
-      {key:'fechaIngreso', label:'Fecha de ingreso', placeholder:'DD/MM/AAAA'},
-    ], {emptyText:'Sin empleados cargados.'});
-
-    mountLedger('personal-mount', 'naken-escala-salarial', [
-      {key:'categoria', label:'Categoría', placeholder:'Encargado permanente'},
-      {key:'vivienda', label:'Básico con vivienda', numeric:true, placeholder:'$ 0'},
-      {key:'sinVivienda', label:'Básico sin vivienda', numeric:true, placeholder:'$ 0'},
-      {key:'vigencia', label:'Vigencia desde', placeholder:'MM/AAAA'},
-      {key:'notas', label:'Notas', placeholder:''},
-    ], {emptyText:'Sin categorías cargadas.'});
-
     mountDocumentosVivo('documentos-vivo-mount');
 
     mountGestionAsamblea('asistencia-mount');
     if(role==='admin') mountUsuarios('usuarios-mount');
-    if(role==='admin') mountLiquidaciones('liquidaciones-mount', 'naken-liquidaciones-sueldo');
+    if(role==='admin') mountCct589Config('cct589-config-mount', 'naken-cct589-config');
+    if(role==='admin') mountEmpleadosCct589('empleados-mount', 'naken-empleados');
+    if(role==='admin') mountLiquidacionesCct589('liquidaciones-mount', 'naken-liquidaciones-sueldo');
     if(role==='admin') mountCalcHonorarios('calchonorarios-mount');
 
     refreshAsambleaBadge();
