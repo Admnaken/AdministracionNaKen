@@ -1557,6 +1557,10 @@
         <div id="arca-link-mount"></div>
         <p class="panel-note" style="margin-top:10px;margin-bottom:12px;">Para verificar los aportes de un empleado, entrá al link de ARCA y cargá su CUIL manualmente — no permite pasarlo por la dirección web.</p>
 
+        <div id="backup-sheet-url-mount"></div>
+        <div id="backup-sheet-id-mount" style="margin-top:10px;"></div>
+        <p class="panel-note" style="margin-top:10px;margin-bottom:12px;">Cada liquidación que calculás acá se manda sola, como respaldo, a la fila correspondiente de la hoja "Personal_CargasSociales" de la planilla de ESTE consorcio — de ahí sale la boleta con el formato legal completo, lista para archivar o entregar. La URL del puente es la misma para todos tus consorcios; el link de la planilla es propio de cada uno.</p>
+
         <div class="subhead" style="margin-top:0;">Escala salarial y cargas sociales (CCT 589/10)</div>
         <p class="panel-note">Actualizá estos valores cada vez que salga un nuevo acuerdo paritario homologado SUTERH/FATERYH. Todos los legajos y liquidaciones toman los datos de acá automáticamente.</p>
         <div id="cct589-config-mount"></div>
@@ -8719,6 +8723,77 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     function fmt(n){ return '$ ' + (n||0).toLocaleString('es-AR',{maximumFractionDigits:2}); }
     function pct(n){ return (n||0).toLocaleString('es-AR',{maximumFractionDigits:2}) + '%'; }
 
+    // Debe ser textualmente IGUAL a la lista de Escala_CCT589_Config!$A$6:$A$16 de la planilla,
+    // para que el VLOOKUP de la columna "Categoría" encuentre el básico. No siempre coincide con
+    // la etiqueta que se muestra en la app (ej. "Personal jornalizado" no lleva la aclaración).
+    const FUNCION_A_TEXTO_PLANILLA = {
+      enc_perm_cv: 'Encargado permanente con vivienda (4ª categoría)',
+      enc_perm_sv: 'Encargado permanente sin vivienda (3ª categoría)',
+      enc_noperm_cv: 'Encargado no permanente con vivienda (2ª cat. / media jornada)',
+      enc_noperm_sv: 'Encargado no permanente sin vivienda (1ª cat. / media jornada)',
+      ayud_perm_cv: 'Ayudante permanente con vivienda',
+      ayud_perm_sv: 'Ayudante permanente sin vivienda',
+      suplente: 'Suplente con horario',
+      administrativo: 'Personal administrativo',
+      maestranza: 'Personal de maestranza',
+      vigilancia: 'Personal de vigilancia (media jornada)',
+      jornalizado: 'Personal jornalizado',
+    };
+
+    function buildBackupPayload(record, emp){
+      const siNo = v => v ? 'Sí' : 'No';
+      return {
+        periodo: record.periodo, nombreCompleto: emp.nombreCompleto, cuil: emp.cuil,
+        categoria: FUNCION_A_TEXTO_PLANILLA[emp.funcion] || emp.funcion,
+        fechaIngreso: emp.fechaIngreso, jubiladoReincorporado: siNo(emp.jubiladoReincorporado),
+        presentismo: siNo(emp.presentismo), tituloIntegral: siNo(emp.tituloIntegral),
+        zonaDesfavorable: siNo(emp.zonaDesfavorable), retiroResiduos: siNo(emp.retiroResiduos),
+        limpiezaCocheras: siNo(emp.limpiezaCocheras), manejoCalderas: siNo(emp.manejoCalderas),
+        mantJardin: siNo(emp.mantJardin), limpiezaPiletas: siNo(emp.limpiezaPiletas),
+        sumaFijaRemun: siNo(emp.sumaFijaRemun), hs50: record.hs50, hs100: record.hs100,
+        diasInasistencia: record.diasInasistencia, legajo: emp.legajo,
+        afiliadoSindical: siNo(emp.afiliadoSindical), antiguedadReconocida: record.antiguedadAnios,
+      };
+    }
+
+    function extractSheetId(input){
+      if(!input) return '';
+      const s = input.trim();
+      const m = s.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if(m) return m[1];
+      if(/^[a-zA-Z0-9-_]{20,}$/.test(s)) return s; // ya es un ID pelado
+      return '';
+    }
+
+    async function enviarRespaldo(record, emp, statusNode){
+      const url = await loadData('naken-backup-sheet-url', '');
+      if(!url){ if(statusNode) statusNode.textContent = ''; return; }
+      const sheetLink = await loadData('naken-backup-sheet-id', '');
+      const sheetId = extractSheetId(sheetLink);
+      if(!sheetId){
+        if(statusNode) statusNode.textContent = 'Falta vincular la planilla de este consorcio (ver "Planilla de este consorcio" arriba).';
+        return;
+      }
+      if(statusNode) statusNode.textContent = 'Enviando respaldo a la planilla…';
+      try{
+        const payload = buildBackupPayload(record, emp);
+        payload.sheetId = sheetId;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {'Content-Type': 'text/plain;charset=utf-8'},
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(()=>null);
+        if(data && data.ok){
+          if(statusNode) statusNode.textContent = `✓ Respaldo guardado en la planilla (${data.consorcio||'consorcio'})`;
+        } else {
+          if(statusNode) statusNode.textContent = 'No se pudo guardar el respaldo: ' + ((data && data.error) || 'revisá la URL del puente y la planilla configuradas.');
+        }
+      } catch(err){
+        if(statusNode) statusNode.textContent = 'No se pudo enviar el respaldo (sin conexión con la planilla).';
+      }
+    }
+
     mount.innerHTML = `
       <div class="new-ticket" style="background:#fff;">
         <h3>Nueva liquidación mensual</h3>
@@ -8754,7 +8829,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         </div>
         <p class="panel-note" style="margin:0 0 10px;">El básico, los adicionales y las cargas sociales se toman automáticamente del legajo del empleado y de la configuración CCT 589/10. El recibo desglosa el costo laboral total a cargo del consorcio, conforme al art. 140 LCT.</p>
         <div class="toolbar">
-          <span></span>
+          <span id="${mountId}-backup-status" style="font-size:11.5px;color:var(--muted);"></span>
           <div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}<button class="btn primary" id="${mountId}-calc">Calcular y guardar</button></div>
         </div>
       </div>
@@ -8988,11 +9063,26 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               <b>${escapeHtml(r.empleadoNombre)}</b>
               <div class="card-meta">${escapeHtml(r.periodo)} · Neto: ${fmt(r.sueldoNeto)} · Costo total empleador: ${fmt(r.costoTotalEmpleador)}</div>
             </div>
-            <button class="btn ghost" data-action="toggle" data-id="${r.id}">Ver recibo</button>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn ghost" data-action="resend" data-id="${r.id}">↻ Reenviar respaldo</button>
+              <button class="btn ghost" data-action="toggle" data-id="${r.id}">Ver recibo</button>
+            </div>
           </div>
           <div id="recibo-${r.id}" style="display:none;margin-top:12px;"></div>
         `;
         listEl.appendChild(card);
+      });
+      listEl.querySelectorAll('[data-action="resend"]').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const r = liquidaciones.find(x=>x.id===btn.dataset.id);
+          const emp = empleados[r.empleadoIdx] || {};
+          const original = btn.textContent;
+          btn.textContent = 'Enviando…';
+          btn.disabled = true;
+          await enviarRespaldo(r, emp, document.getElementById(mountId+'-backup-status'));
+          btn.textContent = original;
+          btn.disabled = false;
+        });
       });
       listEl.querySelectorAll('[data-action="toggle"]').forEach(btn=>{
         btn.addEventListener('click', ()=>{
@@ -9028,7 +9118,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
     empleadoSelect.addEventListener('change', updateAntiguedadPreview);
 
-    document.getElementById(mountId+'-calc').addEventListener('click', ()=>{
+    document.getElementById(mountId+'-calc').addEventListener('click', async ()=>{
       const idx = empleadoSelect.value;
       const emp = empleados[idx];
       if(!emp || !emp.nombreCompleto){
@@ -9047,7 +9137,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const record = computeLiquidacion(emp, inputs);
       liquidaciones.push(record);
       renderList();
-      saveData(storageKey, liquidaciones, statusId);
+      await saveData(storageKey, liquidaciones, statusId);
+      const backupStatusNode = document.getElementById(mountId+'-backup-status');
+      enviarRespaldo(record, emp, backupStatusNode);
     });
 
     Promise.all([
@@ -9165,6 +9257,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     mountGestionAsamblea('asistencia-mount');
     if(role==='admin') mountUsuarios('usuarios-mount');
     if(role==='admin') mountCct589Config('cct589-config-mount', 'naken-cct589-config');
+    if(role==='admin') mountLinkField('backup-sheet-url-mount', 'naken-backup-sheet-url', {
+      title: 'Respaldo automático a Google Sheets — URL del puente',
+      hint: 'La URL de tu Google Apps Script centralizado (se instala una sola vez y sirve para todos los consorcios — ver instrucciones). Es la misma en todos tus consorcios.',
+      placeholder: 'https://script.google.com/macros/s/AKfycb.../exec',
+      buttonLabel: 'Probar el puente',
+      emptyText: 'Todavía no conectaste el puente de respaldo.',
+    });
+    if(role==='admin') mountLinkField('backup-sheet-id-mount', 'naken-backup-sheet-id', {
+      title: 'Planilla de este consorcio',
+      hint: 'Pegá el link de la Google Sheet de ESTE consorcio en particular (la que tiene la hoja "Personal_CargasSociales"). A diferencia de la URL del puente, esto es propio de cada consorcio.',
+      placeholder: 'https://docs.google.com/spreadsheets/d/…/edit',
+      buttonLabel: 'Abrir planilla de este consorcio',
+      emptyText: 'Todavía no vinculaste la planilla de este consorcio.',
+    });
     if(role==='admin') mountEmpleadosCct589('empleados-mount', 'naken-empleados');
     if(role==='admin') mountLiquidacionesCct589('liquidaciones-mount', 'naken-liquidaciones-sueldo');
     if(role==='admin') mountCalcHonorarios('calchonorarios-mount');
