@@ -1558,7 +1558,6 @@
         <p class="panel-note" style="margin-top:10px;margin-bottom:12px;">Para verificar los aportes de un empleado, entrá al link de ARCA y cargá su CUIL manualmente — no permite pasarlo por la dirección web.</p>
 
         <div id="backup-sheet-url-mount"></div>
-        <div id="backup-sheet-id-mount" style="margin-top:10px;"></div>
         <p class="panel-note" style="margin-top:10px;margin-bottom:12px;">Cada liquidación que calculás acá se manda sola, como respaldo, a la fila correspondiente de la hoja "Personal_CargasSociales" de la planilla de ESTE consorcio — de ahí sale la boleta con el formato legal completo, lista para archivar o entregar. La URL del puente es la misma para todos tus consorcios; el link de la planilla es propio de cada uno.</p>
 
         <div class="subhead" style="margin-top:0;">Escala salarial y cargas sociales (CCT 589/10)</div>
@@ -1676,6 +1675,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
      y devolver un 404 momentáneo aunque el backend esté sano — se ve andando
      bien si lo probás de a un pedido por vez. Reintenta con una pequeña espera
      creciente antes de darse por vencido. */
+  /* Token de sesión: lo entrega el backend después de un login exitoso
+     (window.storage.login). Se guarda en memoria, no en localStorage —
+     se pierde al recargar la página, así que hay que loguearse de nuevo;
+     es la forma más simple de que no quede una sesión "colgada" en un
+     dispositivo compartido. */
+  let SESSION_TOKEN = null;
+
   async function fetchConReintento(hacerFetch, intentos=4){
     let ultimoError;
     for(let i=0; i<intentos; i++){
@@ -1695,9 +1701,55 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
 
   window.storage = {
+    async login(username, password){
+      const data = await fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'login', username, password, masterToken: APPS_SCRIPT_TOKEN })
+      }));
+      if(data.ok) SESSION_TOKEN = data.sessionToken;
+      return data;
+    },
+    async bootstrapAdmin(username, password){
+      const data = await fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'bootstrapAdmin', username, password, masterToken: APPS_SCRIPT_TOKEN })
+      }));
+      if(data.ok) SESSION_TOKEN = data.sessionToken;
+      return data;
+    },
+    async adminConfigured(){
+      const data = await fetchConReintento(()=>fetch(`${APPS_SCRIPT_URL}?action=adminConfigured`));
+      return !!data.configurado;
+    },
+    async cambiarCredencialesAdmin(username, password){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'cambiarCredencialesAdmin', username, password, sessionToken: SESSION_TOKEN })
+      }));
+    },
+    async restablecerPasswordUsuario(usuarioId, password){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'restablecerPasswordUsuario', usuarioId, password, sessionToken: SESSION_TOKEN })
+      }));
+    },
+    async solicitarAcceso(payload){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'solicitarAcceso', masterToken: APPS_SCRIPT_TOKEN }, payload))
+      }));
+    },
+    cerrarSesion(){ SESSION_TOKEN = null; },
+    getSessionToken(){ return SESSION_TOKEN; },
     async get(key){
-      const url = `${APPS_SCRIPT_URL}?action=get&key=${encodeURIComponent(key)}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
+      const url = `${APPS_SCRIPT_URL}?action=get&key=${encodeURIComponent(key)}&sessionToken=${encodeURIComponent(SESSION_TOKEN||'')}`;
       const data = await fetchConReintento(()=>fetch(url));
+      if(data.sessionExpired){ SESSION_TOKEN = null; window.dispatchEvent(new CustomEvent('naken-sesion-vencida')); }
       if(data.error) throw new Error(data.error);
       if(!data.found) throw new Error('not found');
       return { key, value: data.value, shared: false };
@@ -1706,7 +1758,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const data = await fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // evita el preflight de CORS
-        body: JSON.stringify({ action:'set', key, value, token: APPS_SCRIPT_TOKEN })
+        body: JSON.stringify({ action:'set', key, value, sessionToken: SESSION_TOKEN })
       }));
       return data.ok ? { key, value, shared:false } : null;
     },
@@ -1714,12 +1766,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const data = await fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action:'delete', key, token: APPS_SCRIPT_TOKEN })
+        body: JSON.stringify({ action:'delete', key, sessionToken: SESSION_TOKEN })
       }));
       return data.ok ? { key, deleted:true, shared:false } : null;
     },
     async list(prefix){
-      const url = `${APPS_SCRIPT_URL}?action=list&prefix=${encodeURIComponent(prefix||'')}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
+      const url = `${APPS_SCRIPT_URL}?action=list&prefix=${encodeURIComponent(prefix||'')}&sessionToken=${encodeURIComponent(SESSION_TOKEN||'')}`;
       const data = await fetchConReintento(()=>fetch(url));
       return { keys: data.keys || [], prefix, shared:false };
     }
@@ -1744,7 +1796,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               mimeType: file.type || 'application/octet-stream',
               data: base64,
               subfolder: subfolder || '',
-              token: APPS_SCRIPT_TOKEN
+              sessionToken: window.storage.getSessionToken()
             })
           });
           const data = await res.json();
@@ -3431,11 +3483,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     gateScreen.style.display = 'block';
     whoami.textContent = 'Acceso';
 
-    let adminUser = '';
-    let adminCode = '';
-    try{ adminUser = await loadData('naken-admin-username', ''); }catch(e){ adminUser = ''; }
-    try{ adminCode = await loadData('naken-admin-code', ''); }catch(e){ adminCode = ''; }
-    const adminConfigured = !!(adminUser && adminCode);
+    let adminConfigured = false;
+    try{ adminConfigured = await window.storage.adminConfigured(); }catch(e){ adminConfigured = false; }
     hideSplash();
 
     if(!adminConfigured){
@@ -3467,8 +3516,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         if(p1 !== p2){ msg.innerHTML = `<div class="gate-msg error">Las claves no coinciden.</div>`; return; }
         if(!validAdminCode(p1)){ msg.innerHTML = `<div class="gate-msg error">Tiene que tener 6 caracteres, con al menos una letra, un número y un símbolo especial.</div>`; return; }
         await withLoading(btn, 'Guardando…', async ()=>{
-          await saveData('naken-admin-username', user);
-          await saveData('naken-admin-code', p1);
+          const res = await window.storage.bootstrapAdmin(user, p1);
+          if(!res.ok){ msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error||'No se pudo crear el administrador.')}</div>`; return; }
           adminAuthenticated = true;
           applyRole('admin');
         });
@@ -3605,41 +3654,29 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         return;
       }
 
-      if(username.toLowerCase() === adminUser.toLowerCase() && password === adminCode){
-        adminAuthenticated = true;
-        applyRole('admin');
-        return;
-      }
-
       await withLoading(btn, 'Verificando…', async ()=>{
-        const usuarios = await loadData('naken-usuarios', []);
-        const match = usuarios.find(u=>u.username===username && u.password===password);
-        if(!match){
-          msg.innerHTML = `<div class="gate-msg error">Usuario o contraseña incorrectos.</div>`;
+        const res = await window.storage.login(username, password);
+        if(!res.ok){
+          msg.innerHTML = res.pending
+            ? `<div class="gate-msg pending">Tu solicitud todavía no fue habilitada por la administración.</div>`
+            : `<div class="gate-msg error">${escapeHtml(res.error || 'Usuario o contraseña incorrectos.')}</div>`;
           return;
         }
-        if(match.estado !== 'habilitado'){
-          msg.innerHTML = `<div class="gate-msg pending">Tu solicitud todavía no fue habilitada por la administración.</div>`;
+
+        if(res.role === 'admin'){
+          adminAuthenticated = true;
+          applyRole('admin');
           return;
         }
-        match.ultimoIngreso = new Date().toLocaleString('es-AR');
 
         const edificios = await getEdificios();
-        let ed = match.consorcioId ? edificios.find(e=>e.id===match.consorcioId) : null;
-        if(!ed){
-          ed = edificios.find(e=>e.nombre.trim().toLowerCase()===String(match.consorcio||'').trim().toLowerCase());
-        }
-        if(ed && match.consorcioId !== ed.id) match.consorcioId = ed.id; // auto-corrige referencias viejas/rotas
-        await saveData('naken-usuarios', usuarios);
-
-        setActiveConsorcioId(ed ? ed.id : null);
-        currentUser = match;
-        currentUser.consorcioId = ed ? ed.id : (match.consorcioId || null);
-        currentUser.consorcioSpreadsheetId = ed ? (ed.spreadsheetId || '') : '';
+        const ed = res.consorcioId ? edificios.find(e=>e.id===res.consorcioId) : null;
         if(!ed){
           msg.innerHTML = `<div class="gate-msg error">Tu usuario no está vinculado a ningún consorcio activo. Avisale a la administración para que lo revise antes de seguir.</div>`;
           return;
         }
+        setActiveConsorcioId(ed.id);
+        currentUser = { nombreCompleto: res.nombreCompleto, unidad: res.unidad, consorcioId: ed.id, consorcioSpreadsheetId: ed.spreadsheetId || '' };
         applyRole('propietario');
       });
     });
@@ -3675,12 +3712,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       }
 
       await withLoading(btn, 'Verificando…', async ()=>{
-        const usuarios = await loadData('naken-usuarios', []);
-        if(usuarios.find(u=>u.username===username)){
-          msg.innerHTML = `<div class="gate-msg error">Ese usuario ya existe, elegí otro.</div>`;
-          return;
-        }
-
         const consorcio = consorcioSel==='__nuevo__' ? consorcioNuevo : consorcioSel;
         const edificioRegistrado = consorcioSel==='__nuevo__'
           ? await addEdificioSiNoExiste(consorcio)
@@ -3712,8 +3743,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           // vas cargando los códigos de a poco.
         }
 
-        usuarios.push({id:uid(), consorcio, consorcioId: edificioRegistrado ? edificioRegistrado.id : null, nombreCompleto, unidad, username, password, porcentual, estado});
-        await saveData('naken-usuarios', usuarios);
+        const res = await window.storage.solicitarAcceso({
+          consorcio, consorcioId: edificioRegistrado ? edificioRegistrado.id : null,
+          nombreCompleto, unidad, username, password, porcentual, estado
+        });
+        if(!res.ok){
+          msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error || 'No se pudo enviar la solicitud.')}</div>`;
+          return;
+        }
         msg.innerHTML = verificado
           ? `<div class="gate-msg ok">¡Listo! Tu acceso ya está habilitado — entrá con tu usuario y clave desde "Ya tengo mi acceso".</div>`
           : `<div class="gate-msg ok">Solicitud enviada. Vas a poder ingresar cuando la administración la habilite.</div>`;
@@ -4226,24 +4263,29 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   async function getEdificios(){
     const now = Date.now();
     if(_cache.edificios && (now - _cache.edificiosAt) < CACHE_TTL_MS) return _cache.edificios;
-    _cache.edificios = await loadData('naken-edificios', []);
+    const data = await fetch(`${APPS_SCRIPT_URL}?action=listarEdificios&masterToken=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`).then(r=>r.json());
+    _cache.edificios = (data && data.ok) ? data.edificios : [];
     _cache.edificiosAt = now;
     return _cache.edificios;
   }
   async function addEdificioSiNoExiste(nombre){
-    const lista = await getEdificios();
-    const yaExiste = lista.find(e=>e.nombre.trim().toLowerCase() === nombre.trim().toLowerCase());
-    if(yaExiste) return yaExiste;
-    const nuevo = { id: uid(), nombre: nombre.trim(), estado: 'pendiente', spreadsheetId: '', carpetaId: '' };
-    lista.push(nuevo);
-    await saveData('naken-edificios', lista);
-    return nuevo;
+    const res = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action:'agregarEdificioSiNoExiste', nombre, masterToken: APPS_SCRIPT_TOKEN })
+    }).then(r=>r.json());
+    if(res && res.ok){
+      _cache.edificios = res.edificios;
+      _cache.edificiosAt = Date.now();
+      return res.edificio;
+    }
+    return null;
   }
 
   /* ---------- Liquidación en vivo (lee directo de la planilla de Google Sheets del consorcio) ---------- */
   async function fetchLiquidacion(spreadsheetId, unidad, periodo){
     if(!spreadsheetId || !unidad) return null;
-    const url = `${APPS_SCRIPT_URL}?action=liquidacion&spreadsheetId=${encodeURIComponent(spreadsheetId)}&unidad=${encodeURIComponent(unidad)}&periodo=${encodeURIComponent(periodo||'')}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
+    const url = `${APPS_SCRIPT_URL}?action=liquidacion&spreadsheetId=${encodeURIComponent(spreadsheetId)}&unidad=${encodeURIComponent(unidad)}&periodo=${encodeURIComponent(periodo||'')}&sessionToken=${encodeURIComponent(window.storage.getSessionToken()||'')}`;
     try{
       const res = await fetch(url);
       const data = await res.json();
@@ -4259,7 +4301,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const now = Date.now();
     const cached = _cache.resumen[cacheKey];
     if(cached && (now - cached.at) < CACHE_TTL_MS) return cached.data;
-    const url = `${APPS_SCRIPT_URL}?action=resumenConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&periodo=${encodeURIComponent(periodo||'')}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
+    const url = `${APPS_SCRIPT_URL}?action=resumenConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&periodo=${encodeURIComponent(periodo||'')}&sessionToken=${encodeURIComponent(window.storage.getSessionToken()||'')}`;
     try{
       const res = await fetch(url);
       const data = await res.json();
@@ -4273,7 +4315,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   /* ---------- Documentos y buenas prácticas: lee la hoja DocumentosLegales_Ley941 del consorcio ---------- */
   async function fetchDocumentosConsorcio(spreadsheetId){
     if(!spreadsheetId) return null;
-    const url = `${APPS_SCRIPT_URL}?action=documentosConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
+    const url = `${APPS_SCRIPT_URL}?action=documentosConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&sessionToken=${encodeURIComponent(window.storage.getSessionToken()||'')}`;
     try{
       const res = await fetch(url);
       const data = await res.json();
@@ -4285,7 +4327,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   /* ---------- Unidades funcionales de un consorcio: para el desplegable del formulario de alta ---------- */
   async function fetchUnidadesConsorcio(spreadsheetId){
     if(!spreadsheetId) return null;
-    const url = `${APPS_SCRIPT_URL}?action=unidadesConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
+    const url = `${APPS_SCRIPT_URL}?action=unidadesConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}`;
     try{
       const res = await fetch(url);
       const data = await res.json();
@@ -4371,7 +4413,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const now = Date.now();
     const cached = _cache.config[spreadsheetId];
     if(cached && (now - cached.at) < CACHE_TTL_MS) return cached.data;
-    const url = `${APPS_SCRIPT_URL}?action=configConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
+    const url = `${APPS_SCRIPT_URL}?action=configConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&sessionToken=${encodeURIComponent(window.storage.getSessionToken()||'')}`;
     try{
       const res = await fetch(url);
       const data = await res.json();
@@ -6253,9 +6295,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           msg.innerHTML = `<div class="gate-msg error">Tiene que tener 6 caracteres, con al menos una letra, un número y un símbolo especial.</div>`;
           return;
         }
-        await saveData('naken-admin-code', v1, mountId+'-code-status');
       }
-      await saveData('naken-admin-username', newUser, mountId+'-code-status');
+      setStatus(mountId+'-code-status','saving');
+      const res = await window.storage.cambiarCredencialesAdmin(newUser, v1 || '');
+      if(!res.ok){
+        setStatus(mountId+'-code-status','error');
+        msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error||'No se pudo actualizar.')}</div>`;
+        return;
+      }
+      setStatus(mountId+'-code-status','saved');
       msg.innerHTML = `<div class="gate-msg ok">Datos actualizados.</div>`;
       document.getElementById('admin-code-change-new').value = '';
       document.getElementById('admin-code-change-new2').value = '';
@@ -6342,33 +6390,19 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const enabledEl = document.getElementById(mountId+'-enabled');
       enabledEl.innerHTML = enabled.length===0
         ? `<div class="empty">Todavía no hay propietarios habilitados.</div>`
-        : `<table class="ledger"><thead><tr><th>Consorcio</th><th>Nombre</th><th>Unidad</th><th>Usuario</th><th>Clave</th><th>Porcentual</th><th>Último ingreso</th><th></th><th class="row-del"></th></tr></thead><tbody>` +
+        : `<table class="ledger"><thead><tr><th>Consorcio</th><th>Nombre</th><th>Unidad</th><th>Usuario</th><th>Porcentual</th><th>Último ingreso</th><th></th><th class="row-del"></th></tr></thead><tbody>` +
           enabled.map(u=>`
             <tr>
               <td><input type="text" value="${escapeHtml(u.consorcio||'')}" data-id="${u.id}" data-f="consorcio"></td>
               <td><input type="text" value="${escapeHtml(u.nombreCompleto)}" data-id="${u.id}" data-f="nombreCompleto"></td>
               <td><input type="text" value="${escapeHtml(u.unidad)}" data-id="${u.id}" data-f="unidad"></td>
               <td><input type="text" value="${escapeHtml(u.username)}" disabled></td>
-              <td>
-                <div style="display:flex;align-items:center;gap:4px;">
-                  <input type="password" value="${escapeHtml(u.password)}" disabled id="pw-${u.id}" style="width:70px;">
-                  <button class="btn ghost" data-action="ver-clave" data-id="${u.id}" title="Mostrar/ocultar clave" style="padding:5px 8px;font-size:10px;">Ver</button>
-                </div>
-              </td>
               <td class="num"><input type="text" value="${escapeHtml(u.porcentual)}" data-id="${u.id}" data-f="porcentual"></td>
               <td><input type="text" value="${escapeHtml(u.ultimoIngreso||'Nunca')}" disabled></td>
               <td><button class="btn ghost" data-action="reset-pw" data-id="${u.id}" style="white-space:nowrap;">Restablecer clave</button></td>
               <td class="row-del"><button data-action="deshabilitar" data-id="${u.id}" title="Deshabilitar acceso">✕</button></td>
             </tr>
           `).join('') + `</tbody></table>`;
-
-      enabledEl.querySelectorAll('[data-action="ver-clave"]').forEach(b=>{
-        b.addEventListener('click', ()=>{
-          const input = document.getElementById('pw-'+b.dataset.id);
-          if(input.type==='password'){ input.type='text'; b.textContent='Ocultar'; }
-          else{ input.type='password'; b.textContent='Ver'; }
-        });
-      });
 
       enabledEl.querySelectorAll('[data-action="reset-pw"]').forEach(b=>{
         b.addEventListener('click', async ()=>{
@@ -6378,10 +6412,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             alert('La contraseña tiene que ser de 5 dígitos numéricos.');
             return;
           }
-          const usuarios = await loadData('naken-usuarios', []);
-          const u = usuarios.find(x=>x.id===b.dataset.id);
-          if(u) u.password = nueva;
-          await saveData('naken-usuarios', usuarios);
+          const res = await window.storage.restablecerPasswordUsuario(b.dataset.id, nueva);
+          if(!res.ok){ alert('No se pudo actualizar: ' + (res.error||'')); return; }
           alert('Contraseña actualizada. Pasásela al propietario por un canal seguro.');
         });
       });
@@ -8788,10 +8820,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     async function enviarRespaldo(record, emp, statusNode){
       const url = await loadData('naken-backup-sheet-url', '');
       if(!url){ if(statusNode) statusNode.textContent = ''; return; }
-      const sheetLink = await loadData('naken-backup-sheet-id', '');
-      const sheetId = extractSheetId(sheetLink);
+      const sheetId = await getSpreadsheetIdActivo();
       if(!sheetId){
-        if(statusNode) statusNode.textContent = 'Falta vincular la planilla de este consorcio (ver "Planilla de este consorcio" arriba).';
+        if(statusNode) statusNode.textContent = 'Este consorcio todavía no tiene la planilla vinculada (Config. general del consorcio → ID de la planilla).';
         return;
       }
       if(statusNode) statusNode.textContent = 'Enviando respaldo a la planilla…';
@@ -8807,7 +8838,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         if(data && data.ok){
           if(statusNode) statusNode.textContent = `✓ Respaldo guardado en la planilla (${data.consorcio||'consorcio'})`;
         } else {
-          if(statusNode) statusNode.textContent = 'No se pudo guardar el respaldo: ' + ((data && data.error) || 'revisá la URL del puente y la planilla configuradas.');
+          if(statusNode) statusNode.textContent = 'No se pudo guardar el respaldo: ' + ((data && data.error) || 'revisá la URL del puente configurada.');
         }
       } catch(err){
         if(statusNode) statusNode.textContent = 'No se pudo enviar el respaldo (sin conexión con la planilla).';
@@ -9279,17 +9310,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     if(role==='admin') mountCct589Config('cct589-config-mount', 'naken-cct589-config');
     if(role==='admin') mountLinkField('backup-sheet-url-mount', 'naken-backup-sheet-url', {
       title: 'Respaldo automático a Google Sheets — URL del puente',
-      hint: 'La URL de tu Google Apps Script centralizado (se instala una sola vez y sirve para todos los consorcios — ver instrucciones). Es la misma en todos tus consorcios.',
+      hint: 'La URL de tu Google Apps Script centralizado (se instala una sola vez y sirve para todos los consorcios — ver instrucciones). Es la misma en todos tus consorcios. La planilla de este consorcio puntual ya está vinculada desde el panel general (Config. del consorcio → ID de planilla) — no hace falta cargarla de nuevo acá.',
       placeholder: 'https://script.google.com/macros/s/AKfycb.../exec',
       buttonLabel: 'Probar el puente',
       emptyText: 'Todavía no conectaste el puente de respaldo.',
-    });
-    if(role==='admin') mountLinkField('backup-sheet-id-mount', 'naken-backup-sheet-id', {
-      title: 'Planilla de este consorcio',
-      hint: 'Pegá el link de la Google Sheet de ESTE consorcio en particular (la que tiene la hoja "Personal_CargasSociales"). A diferencia de la URL del puente, esto es propio de cada consorcio.',
-      placeholder: 'https://docs.google.com/spreadsheets/d/…/edit',
-      buttonLabel: 'Abrir planilla de este consorcio',
-      emptyText: 'Todavía no vinculaste la planilla de este consorcio.',
     });
     if(role==='admin') mountEmpleadosCct589('empleados-mount', 'naken-empleados');
     if(role==='admin') mountLiquidacionesCct589('liquidaciones-mount', 'naken-liquidaciones-sueldo');
