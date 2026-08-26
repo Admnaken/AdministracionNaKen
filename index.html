@@ -1767,6 +1767,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify({ action:'restablecerPasswordUsuario', usuarioId, password, sessionToken: SESSION_TOKEN })
       }));
     },
+    async cerrarMes(spreadsheetId, confirmar){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'cerrarMes', spreadsheetId, confirmar: !!confirmar, sessionToken: SESSION_TOKEN })
+      }));
+    },
     async solicitarAcceso(payload){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -6341,6 +6348,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <div style="display:flex;align-items:center;gap:12px;">${statusEl(mountId+'-cfg-status')}<button class="btn primary" id="cfg-save">Guardar datos</button></div>
       </div>
 
+      <div class="subhead">Cierre del período de expensas — consorcio activo</div>
+      <p class="panel-note" style="margin-bottom:10px;">Archiva la liquidación del mes actual (con sus valores fijos, para que no se mueva después) y pasa <code>Prorrateo_Mensual</code> al mes siguiente, con los saldos de cada propietario ya calculados a partir de lo archivado. Los pagos, intereses y cargos particulares del mes que cierra quedan en cero para empezar el mes nuevo limpio.</p>
+      <div id="${mountId}-cerrar-mes"></div>
+
       <div class="subhead">Edificios que administrás</div>
       <p class="panel-note" style="margin-bottom:10px;">Esta lista es la que ve un propietario nuevo al pedir acceso: le da confianza reconocer su edificio en el desplegable. Cargá acá los consorcios que ya administrás; los que se agregan solos porque alguien tocó "Mi edificio no está en la lista" quedan marcados como <b>nuevo</b> hasta que vos los confirmes.</p>
       <div class="toolbar" style="margin-bottom:10px;">
@@ -6425,6 +6436,50 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
       saveData('naken-consorcio-datos', data, mountId+'-cfg-status');
     });
+
+    async function renderCerrarMes(){
+      const cont = document.getElementById(mountId+'-cerrar-mes');
+      if(!cont) return;
+      const spreadsheetId = await getSpreadsheetIdActivo();
+      if(!spreadsheetId){
+        cont.innerHTML = `<div class="empty">El consorcio activo todavía no tiene la planilla de liquidación vinculada.</div>`;
+        return;
+      }
+      cont.innerHTML = `
+        <div class="toolbar">
+          <span></span>
+          <button class="btn primary" id="${mountId}-cerrar-mes-btn">Cerrar el mes actual y avanzar</button>
+        </div>
+        <div id="${mountId}-cerrar-mes-msg" style="margin-top:8px;"></div>
+      `;
+      document.getElementById(mountId+'-cerrar-mes-btn').addEventListener('click', async ()=>{
+        const msg = document.getElementById(mountId+'-cerrar-mes-msg');
+        const btn = document.getElementById(mountId+'-cerrar-mes-btn');
+        await withLoading(btn, 'Consultando…', async ()=>{
+          const preview = await window.storage.cerrarMes(spreadsheetId, false);
+          if(!preview.ok){ msg.innerHTML = `<div class="gate-msg error">${escapeHtml(preview.error||'No se pudo consultar.')}</div>`; return; }
+          msg.innerHTML = `
+            <div class="gate-msg pending">
+              Se va a archivar <b>${escapeHtml(preview.periodoActual)}</b> como hoja
+              <code>${escapeHtml(preview.hojaAArchivar)}</code>, y el período activo pasa a
+              <b>${escapeHtml(preview.proximoPeriodo)}</b>. Los pagos, intereses y cargos particulares
+              del mes que cierra quedan en cero. Esto no se puede deshacer solo — ¿confirmás?
+              <div class="toolbar" style="margin-top:10px;"><span></span><button class="btn primary" id="${mountId}-cerrar-mes-confirmar">Sí, cerrar el mes</button></div>
+            </div>
+          `;
+          document.getElementById(mountId+'-cerrar-mes-confirmar').addEventListener('click', async ()=>{
+            const btnConfirmar = document.getElementById(mountId+'-cerrar-mes-confirmar');
+            await withLoading(btnConfirmar, 'Cerrando el mes…', async ()=>{
+              const res = await window.storage.cerrarMes(spreadsheetId, true);
+              if(!res.ok){ msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error||'No se pudo cerrar el mes.')}</div>`; return; }
+              msg.innerHTML = `<div class="gate-msg ok">✓ ${escapeHtml(res.periodoCerrado)} quedó archivado en "${escapeHtml(res.hojaArchivada)}". El período activo ahora es ${escapeHtml(res.proximoPeriodo)}.</div>`;
+              _cache.resumen = {}; _cache.config = {}; // fuerza a releer los datos frescos en el resto de la app
+            });
+          });
+        });
+      });
+    }
+    renderCerrarMes();
 
     async function refreshLists(){
       const usuarios = await loadData('naken-usuarios', []);
