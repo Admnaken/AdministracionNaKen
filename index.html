@@ -1670,37 +1670,57 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     });
   }
 
+  /* Google Apps Script Web App tiene un límite de ejecuciones simultáneas por
+     implementación: cuando la app carga y dispara muchos window.storage.get()
+     en paralelo (uno por cada panel), algunos pueden chocar contra ese límite
+     y devolver un 404 momentáneo aunque el backend esté sano — se ve andando
+     bien si lo probás de a un pedido por vez. Reintenta con una pequeña espera
+     creciente antes de darse por vencido. */
+  async function fetchConReintento(hacerFetch, intentos=4){
+    let ultimoError;
+    for(let i=0; i<intentos; i++){
+      try{
+        const res = await hacerFetch();
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        return await res.json();
+      }catch(err){
+        ultimoError = err;
+        if(i < intentos-1){
+          const espera = 400 * Math.pow(2, i) + Math.random()*200; // 400ms, 800ms, 1600ms + jitter
+          await new Promise(r=>setTimeout(r, espera));
+        }
+      }
+    }
+    throw ultimoError;
+  }
+
   window.storage = {
     async get(key){
       const url = `${APPS_SCRIPT_URL}?action=get&key=${encodeURIComponent(key)}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
-      const res = await fetch(url);
-      const data = await res.json();
+      const data = await fetchConReintento(()=>fetch(url));
       if(data.error) throw new Error(data.error);
       if(!data.found) throw new Error('not found');
       return { key, value: data.value, shared: false };
     },
     async set(key, value){
-      const res = await fetch(APPS_SCRIPT_URL, {
+      const data = await fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // evita el preflight de CORS
         body: JSON.stringify({ action:'set', key, value, token: APPS_SCRIPT_TOKEN })
-      });
-      const data = await res.json();
+      }));
       return data.ok ? { key, value, shared:false } : null;
     },
     async delete(key){
-      const res = await fetch(APPS_SCRIPT_URL, {
+      const data = await fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action:'delete', key, token: APPS_SCRIPT_TOKEN })
-      });
-      const data = await res.json();
+      }));
       return data.ok ? { key, deleted:true, shared:false } : null;
     },
     async list(prefix){
       const url = `${APPS_SCRIPT_URL}?action=list&prefix=${encodeURIComponent(prefix||'')}&token=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`;
-      const res = await fetch(url);
-      const data = await res.json();
+      const data = await fetchConReintento(()=>fetch(url));
       return { keys: data.keys || [], prefix, shared:false };
     }
   };
