@@ -1348,6 +1348,7 @@
         <div id="resumen-contact-mount"></div>
         <div id="mi-liquidacion-mount"></div>
         <div id="resumen-kpi" class="kpi-row"></div>
+        <div id="resumen-comparativa-mount"></div>
         <div class="dash-grid">
           <div class="dash-card">
             <h3>¿En qué se usa el dinero del consorcio?</h3>
@@ -1357,6 +1358,7 @@
           <div class="dash-card">
             <h3>Expensas por período</h3>
             <canvas id="chart-expensas"></canvas>
+            <p id="chart-expensas-caption" style="font-size:12px;color:var(--muted);text-align:center;margin:10px 0 0;line-height:1.5;"></p>
           </div>
         </div>
       </section>
@@ -2186,12 +2188,19 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       <div class="kpi"><div class="label">Última expensa publicada</div><div class="value" style="font-size:16px;">${resumen && resumen.periodo ? escapeHtml(formatPeriodo(resumen.periodo)) : 'Sin datos'}</div></div>
     `;
 
-    // ¿En qué se usa el dinero? — directo de Resumen_Rubros_Mensual de la planilla, más el aporte a
-    // Fondo de Reserva (que no es un gasto facturado, así que no está en Resumen_Rubros_Mensual, pero
-    // sí es parte de lo que paga el propietario cada mes — sin esto, el gráfico no llegaba al 100%).
-    const rubros = (resumen && resumen.resumenRubros) ? resumen.resumenRubros.filter(r=>num(r.total)>0) : [];
+    // ¿En qué se usa el dinero? — agrupado directo de los gastos del período actual (mismo array
+    // que ya usa la tabla de "Tu liquidación"), en vez de depender de la hoja Resumen_Rubros_Mensual
+    // (que es una foto de un solo período, atada a una celda selector que hay que actualizar a
+    // mano — si alguien se olvida, el gráfico sale vacío aunque los gastos sí estén cargados).
+    const gastosDelPeriodo = (resumen && resumen.gastos) ? resumen.gastos : [];
+    const porRubroActual = {};
+    gastosDelPeriodo.forEach(g=>{
+      const rubro = g.rubro || '(sin rubro)';
+      porRubroActual[rubro] = (porRubroActual[rubro]||0) + num(g.importe);
+    });
     const aporteReserva = resumen && resumen.totales ? num(resumen.totales.aporteFondoReservaGeneral) : 0;
-    if(aporteReserva > 0) rubros.push({ rubro: 'Fondo de Reserva', total: aporteReserva });
+    if(aporteReserva > 0) porRubroActual['Fondo de Reserva'] = (porRubroActual['Fondo de Reserva']||0) + aporteReserva;
+    const rubros = Object.entries(porRubroActual).filter(([,v])=>v>0).map(([rubro,total])=>({rubro,total}));
     const bucketColors = ['#2EB7E5','#5B8DB8','#E8952C','#8D5BB8','#C9A84C','#6EA37A','#B8615B','#9AA39C'];
     const catLabels = rubros.map(r=>r.rubro);
     const catValues = rubros.map(r=>num(r.total));
@@ -2238,9 +2247,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const porPeriodo = (resumen && resumen.totalesPorPeriodo) ? resumen.totalesPorPeriodo.slice(-6) : [];
     if(chartExpensas) chartExpensas.destroy();
     const ctx2 = document.getElementById('chart-expensas');
+    const captionEl2 = document.getElementById('chart-expensas-caption');
     if(ctx2 && window.Chart){
       if(porPeriodo.length===0){
         ctx2.getContext('2d').clearRect(0,0,ctx2.width,ctx2.height);
+        if(captionEl2) captionEl2.textContent = '';
       } else {
         chartExpensas = new Chart(ctx2, {
           type: 'bar',
@@ -2250,6 +2261,64 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           },
           options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
         });
+        if(captionEl2) captionEl2.textContent = porPeriodo.length===1
+          ? 'Todavía hay un solo período cargado — el gráfico va a empezar a mostrar la evolución apenas se publique el próximo mes.'
+          : 'Últimos ' + porPeriodo.length + ' períodos con gastos cargados.';
+      }
+    }
+
+    // Comparación con el período anterior: no solo "pagaste más o menos", sino POR QUÉ — qué
+    // rubros subieron o bajaron y cuánto explican la diferencia. Usa rubrosPorPeriodo (desglose
+    // por rubro de cada mes) para no tener que ir a buscar gasto por gasto a mano.
+    const comparativaMount = document.getElementById('resumen-comparativa-mount');
+    if(comparativaMount){
+      const rubrosPorPeriodo = (resumen && resumen.rubrosPorPeriodo) ? resumen.rubrosPorPeriodo : [];
+      if(rubrosPorPeriodo.length < 2){
+        comparativaMount.innerHTML = '';
+      } else {
+        const actual = rubrosPorPeriodo[rubrosPorPeriodo.length-1];
+        const anterior = rubrosPorPeriodo[rubrosPorPeriodo.length-2];
+        const totalActual = Object.values(actual.rubros).reduce((s,v)=>s+num(v),0);
+        const totalAnterior = Object.values(anterior.rubros).reduce((s,v)=>s+num(v),0);
+        const delta = totalActual - totalAnterior;
+        const deltaPct = totalAnterior>0 ? Math.round(Math.abs(delta)/totalAnterior*100) : null;
+
+        const todosLosRubros = new Set([...Object.keys(actual.rubros), ...Object.keys(anterior.rubros)]);
+        const diffs = Array.from(todosLosRubros).map(rubro=>{
+          const a = num(actual.rubros[rubro]);
+          const b = num(anterior.rubros[rubro]);
+          return { rubro, actual: a, anterior: b, delta: a - b };
+        }).filter(d=>Math.abs(d.delta) > 1)
+          .sort((x,y)=>Math.abs(y.delta)-Math.abs(x.delta))
+          .slice(0,3);
+
+        const subioOBajo = delta >= 0 ? 'más' : 'menos';
+        const colorPrincipal = delta >= 0 ? 'var(--danger, #C0392B)' : 'var(--ok, #2E8B57)';
+        const flecha = delta >= 0 ? '▲' : '▼';
+
+        comparativaMount.innerHTML = `
+          <div class="dash-card" style="margin-bottom:22px;border-left:4px solid ${colorPrincipal};">
+            <h3 style="margin-top:0;">Comparado con ${escapeHtml(formatPeriodo(anterior.periodo))}</h3>
+            <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+              <span style="font-size:28px;font-weight:700;color:${colorPrincipal};">${flecha} ${fmt(Math.abs(delta))}</span>
+              <span style="font-size:15px;color:var(--muted);">pagaste ${subioOBajo} este mes${deltaPct!==null ? ` (${deltaPct}%)` : ''}</span>
+            </div>
+            ${diffs.length===0 ? `<p class="panel-note" style="margin:0;">Los gastos se mantuvieron prácticamente iguales rubro por rubro.</p>` : `
+              <p class="panel-note" style="margin:0 0 8px;">Esto es lo que más explica la diferencia:</p>
+              <div style="display:flex;flex-direction:column;gap:6px;">
+                ${diffs.map(d=>{
+                  const sube = d.delta >= 0;
+                  return `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg-subtle,#F7F7F5);border-radius:6px;font-size:13.5px;">
+                      <span>${sube?'▲':'▼'} ${escapeHtml(d.rubro)}</span>
+                      <span style="font-weight:600;color:${sube?colorPrincipal:'var(--ok, #2E8B57)'};">${sube?'+':'−'}${fmt(Math.abs(d.delta))}</span>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </div>
+        `;
       }
     }
   }
