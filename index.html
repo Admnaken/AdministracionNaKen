@@ -1682,22 +1682,50 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
      dispositivo compartido. */
   let SESSION_TOKEN = null;
 
+  /* Cola de concurrencia: Google Apps Script tiene un límite de ejecuciones
+     simultáneas por implementación. La app dispara muchos window.storage.get()
+     en paralelo apenas carga la página (uno por cada panel) — sin esto,
+     todos salen a la vez y varios chocan contra ese límite. Con la cola,
+     solo un puñado sale al mismo tiempo; el resto espera su turno en fila,
+     sin perder ningún pedido. */
+  const MAX_PEDIDOS_SIMULTANEOS = 3;
+  let pedidosActivos = 0;
+  const colaDePedidos = [];
+
+  function conCupo(tarea){
+    return new Promise((resolve, reject)=>{
+      const ejecutar = async ()=>{
+        pedidosActivos++;
+        try{ resolve(await tarea()); }
+        catch(err){ reject(err); }
+        finally{
+          pedidosActivos--;
+          if(colaDePedidos.length > 0) colaDePedidos.shift()();
+        }
+      };
+      if(pedidosActivos < MAX_PEDIDOS_SIMULTANEOS) ejecutar();
+      else colaDePedidos.push(ejecutar);
+    });
+  }
+
   async function fetchConReintento(hacerFetch, intentos=4){
-    let ultimoError;
-    for(let i=0; i<intentos; i++){
-      try{
-        const res = await hacerFetch();
-        if(!res.ok) throw new Error('HTTP ' + res.status);
-        return await res.json();
-      }catch(err){
-        ultimoError = err;
-        if(i < intentos-1){
-          const espera = 400 * Math.pow(2, i) + Math.random()*200; // 400ms, 800ms, 1600ms + jitter
-          await new Promise(r=>setTimeout(r, espera));
+    return conCupo(async ()=>{
+      let ultimoError;
+      for(let i=0; i<intentos; i++){
+        try{
+          const res = await hacerFetch();
+          if(!res.ok) throw new Error('HTTP ' + res.status);
+          return await res.json();
+        }catch(err){
+          ultimoError = err;
+          if(i < intentos-1){
+            const espera = 400 * Math.pow(2, i) + Math.random()*200; // 400ms, 800ms, 1600ms + jitter
+            await new Promise(r=>setTimeout(r, espera));
+          }
         }
       }
-    }
-    throw ultimoError;
+      throw ultimoError;
+    });
   }
 
   window.storage = {
@@ -1774,7 +1802,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const url = `${APPS_SCRIPT_URL}?action=list&prefix=${encodeURIComponent(prefix||'')}&sessionToken=${encodeURIComponent(SESSION_TOKEN||'')}`;
       const data = await fetchConReintento(()=>fetch(url));
       return { keys: data.keys || [], prefix, shared:false };
-    }
+    },
+    // Expuesto para que otras partes de la app (llamadas directas a la
+    // planilla de un consorcio: liquidación, resumen, documentos, etc.)
+    // también respeten el límite de pedidos simultáneos.
+    conCupo,
   };
 
   // Sube un archivo (foto/audio/video) a una carpeta de Drive vía el mismo Apps Script,
@@ -1787,7 +1819,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       reader.onload = async () => {
         try{
           const base64 = reader.result.split(',')[1];
-          const res = await fetch(APPS_SCRIPT_URL, {
+          const res = await conCupo(()=>fetch(APPS_SCRIPT_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify({
@@ -1798,7 +1830,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               subfolder: subfolder || '',
               sessionToken: window.storage.getSessionToken()
             })
-          });
+          }));
           const data = await res.json();
           if(data.ok && data.url) resolve(data.url);
           else reject(new Error(data.error || 'No se pudo subir el archivo'));
@@ -1812,7 +1844,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    *  viaje de vuelta al navegador — la comparación la hace el Apps Script. */
   window.verificarInvitacion = async function(spreadsheetId, unidad, nombreCompleto, codigo){
     try{
-      const res = await fetch(APPS_SCRIPT_URL, {
+      const res = await conCupo(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({
@@ -1820,7 +1852,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           spreadsheetId, unidad, nombreCompleto, codigo,
           token: APPS_SCRIPT_TOKEN
         })
-      });
+      }));
       const data = await res.json();
       return data && data.ok ? data : { ok:false, valido:false, tieneCodigo:false };
     }catch(err){
@@ -4263,17 +4295,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   async function getEdificios(){
     const now = Date.now();
     if(_cache.edificios && (now - _cache.edificiosAt) < CACHE_TTL_MS) return _cache.edificios;
-    const data = await fetch(`${APPS_SCRIPT_URL}?action=listarEdificios&masterToken=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`).then(r=>r.json());
+    const data = await window.storage.conCupo(()=>fetch(`${APPS_SCRIPT_URL}?action=listarEdificios&masterToken=${encodeURIComponent(APPS_SCRIPT_TOKEN)}`).then(r=>r.json()));
     _cache.edificios = (data && data.ok) ? data.edificios : [];
     _cache.edificiosAt = now;
     return _cache.edificios;
   }
   async function addEdificioSiNoExiste(nombre){
-    const res = await fetch(APPS_SCRIPT_URL, {
+    const res = await window.storage.conCupo(()=>fetch(APPS_SCRIPT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action:'agregarEdificioSiNoExiste', nombre, masterToken: APPS_SCRIPT_TOKEN })
-    }).then(r=>r.json());
+    }).then(r=>r.json()));
     if(res && res.ok){
       _cache.edificios = res.edificios;
       _cache.edificiosAt = Date.now();
@@ -4287,8 +4319,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     if(!spreadsheetId || !unidad) return null;
     const url = `${APPS_SCRIPT_URL}?action=liquidacion&spreadsheetId=${encodeURIComponent(spreadsheetId)}&unidad=${encodeURIComponent(unidad)}&periodo=${encodeURIComponent(periodo||'')}&sessionToken=${encodeURIComponent(window.storage.getSessionToken()||'')}`;
     try{
-      const res = await fetch(url);
-      const data = await res.json();
+      const data = await window.storage.conCupo(()=>fetch(url).then(r=>r.json()));
       return data && data.ok ? data : null;
     }catch(e){
       return null;
@@ -4303,8 +4334,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     if(cached && (now - cached.at) < CACHE_TTL_MS) return cached.data;
     const url = `${APPS_SCRIPT_URL}?action=resumenConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&periodo=${encodeURIComponent(periodo||'')}&sessionToken=${encodeURIComponent(window.storage.getSessionToken()||'')}`;
     try{
-      const res = await fetch(url);
-      const data = await res.json();
+      const data = await window.storage.conCupo(()=>fetch(url).then(r=>r.json()));
       const result = data && data.ok ? data : null;
       _cache.resumen[cacheKey] = { data: result, at: now };
       return result;
@@ -4317,8 +4347,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     if(!spreadsheetId) return null;
     const url = `${APPS_SCRIPT_URL}?action=documentosConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&sessionToken=${encodeURIComponent(window.storage.getSessionToken()||'')}`;
     try{
-      const res = await fetch(url);
-      const data = await res.json();
+      const data = await window.storage.conCupo(()=>fetch(url).then(r=>r.json()));
       return data && data.ok ? data : null;
     }catch(e){
       return null;
@@ -4329,8 +4358,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     if(!spreadsheetId) return null;
     const url = `${APPS_SCRIPT_URL}?action=unidadesConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}`;
     try{
-      const res = await fetch(url);
-      const data = await res.json();
+      const data = await window.storage.conCupo(()=>fetch(url).then(r=>r.json()));
       return data && data.ok ? data : null;
     }catch(e){
       return null;
@@ -4415,8 +4443,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     if(cached && (now - cached.at) < CACHE_TTL_MS) return cached.data;
     const url = `${APPS_SCRIPT_URL}?action=configConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&sessionToken=${encodeURIComponent(window.storage.getSessionToken()||'')}`;
     try{
-      const res = await fetch(url);
-      const data = await res.json();
+      const data = await window.storage.conCupo(()=>fetch(url).then(r=>r.json()));
       const result = data && data.ok ? data : null;
       _cache.config[spreadsheetId] = { data: result, at: now };
       return result;
