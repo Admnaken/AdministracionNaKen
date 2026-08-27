@@ -4190,6 +4190,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
   /** Deshabilita un botón, le cambia el texto mientras corre `fn` (evita doble clic / dobles envíos),
    *  y lo vuelve a dejar como estaba al terminar (salvo que la pantalla ya se haya reemplazado). */
+  // Red de seguridad: si algo asincrónico en cualquier parte de la app falla y nadie lo
+  // atrapó explícitamente (un botón que no pasa por withLoading, por ejemplo), esto evita
+  // que quede en silencio total -- al menos avisa que algo salió mal.
+  window.addEventListener('unhandledrejection', (event)=>{
+    console.error('Error no atrapado:', event.reason);
+    const msg = (event.reason && event.reason.message) ? event.reason.message : String(event.reason);
+    alert('Algo salió mal:\n\n' + msg + '\n\nProbá de nuevo — si sigue pasando, puede ser un problema de conexión con el servidor.');
+  });
+
   async function withLoading(btn, textoCargando, fn){
     if(!btn || btn.disabled) return; // ya está corriendo, ignoramos el clic de más
     const original = btn.textContent;
@@ -4197,6 +4206,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     btn.textContent = textoCargando;
     try{
       await fn();
+    } catch(err){
+      console.error(err);
+      alert('Algo salió mal y no se pudo completar la acción:\n\n' + (err && err.message ? err.message : String(err)) + '\n\nProbá de nuevo — si sigue pasando, puede ser un problema de conexión con el servidor.');
     } finally {
       if(document.body.contains(btn)){ btn.disabled = false; btn.textContent = original; }
     }
