@@ -1774,6 +1774,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify({ action:'cerrarMes', spreadsheetId, confirmar: !!confirmar, sessionToken: SESSION_TOKEN })
       }));
     },
+    async registrarPagoVerificado(spreadsheetId, unidad, monto, periodo){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'registrarPagoVerificado', spreadsheetId, unidad, monto, periodo, sessionToken: SESSION_TOKEN })
+      }));
+    },
     async solicitarAcceso(payload){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -5429,6 +5436,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               ${['Pendiente de verificar','Verificado','Observado'].map(e=>`<option ${p.estado===e?'selected':''}>${e}</option>`).join('')}
             </select>
             <div class="cp-confirm-wrap" data-id="${p.id}"></div>
+            ${p.notaAdmin ? `<div class="card-meta" style="margin-top:6px;">${escapeHtml(p.notaAdmin)}</div>` : ''}
           ` : (p.notaAdmin ? `<div class="card-meta" style="margin-top:6px;">Nota de la administración: ${escapeHtml(p.notaAdmin)}</div>` : '')}
         `;
         listEl.appendChild(card);
@@ -5462,7 +5470,21 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               if(p){
                 p.estado = nuevo;
                 if(necesitaNota) p.notaAdmin = wrap.querySelector('.cp-nota').value.trim();
-                if(nuevo==='Verificado') p.notaAdmin = '';
+                if(nuevo==='Verificado'){
+                  p.notaAdmin = '';
+                  const spreadsheetId = await getSpreadsheetIdActivo();
+                  const monto = parseFloat((p.monto||'0').toString().replace(/\./g,'').replace(',','.'));
+                  if(spreadsheetId && p.unidad && !isNaN(monto) && monto>0){
+                    const resDeuda = await window.storage.registrarPagoVerificado(spreadsheetId, p.unidad, monto, p.periodo);
+                    if(resDeuda && resDeuda.ok && resDeuda.aplicadoAutomaticamente){
+                      p.notaAdmin = `Deuda actualizada sola: nuevo saldo pagado $${resDeuda.pagoRecibidoAcumulado.toLocaleString('es-AR')}.`;
+                    } else if(resDeuda && resDeuda.aviso){
+                      p.notaAdmin = resDeuda.aviso;
+                    } else if(resDeuda && !resDeuda.ok){
+                      p.notaAdmin = 'No se pudo actualizar la deuda automáticamente: ' + (resDeuda.error||'') + ' — revisalo a mano.';
+                    }
+                  }
+                }
               }
               await saveData('naken-pagos-informados', pagos2, statusId);
               flashButtonSuccess(btn, '✓ Listo');
