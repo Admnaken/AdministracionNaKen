@@ -1781,6 +1781,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify({ action:'registrarPagoVerificado', spreadsheetId, unidad, monto, periodo, sessionToken: SESSION_TOKEN })
       }));
     },
+    async sembrarDeudaInicial(spreadsheetId, periodoAnterior, deudas){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'sembrarDeudaInicial', spreadsheetId, periodoAnterior, deudas, sessionToken: SESSION_TOKEN })
+      }));
+    },
     async solicitarAcceso(payload){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -6208,6 +6215,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       </div>
       <div id="${mountId}-edificios-list"></div>
 
+      <div class="subhead">Alta de un consorcio nuevo — paso a paso</div>
+      <p class="panel-note" style="margin-bottom:10px;">Seguí este orden para que no falte nada al empezar con un consorcio: evita que la primera liquidación salga con datos incompletos.</p>
+      <div id="${mountId}-alta-wizard"></div>
+
       <div class="subhead">Solicitudes pendientes</div>
       <div class="cards" id="${mountId}-pending"></div>
 
@@ -6518,6 +6529,151 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
     });
     refreshEdificios();
+
+    /* ---------- Alta de consorcio nuevo — paso a paso ---------- */
+    async function renderAltaWizard(){
+      const wiz = document.getElementById(mountId+'-alta-wizard');
+      if(!wiz) return;
+      const edificios = await getEdificios();
+      if(edificios.length===0){
+        wiz.innerHTML = `<div class="empty">Agregá primero un edificio arriba para empezar el alta.</div>`;
+        return;
+      }
+      wiz.innerHTML = `
+        <div class="field-grid" style="grid-template-columns:1fr;margin-bottom:14px;">
+          <div>
+            <label>¿Qué consorcio estás dando de alta?</label>
+            <select id="${mountId}-alta-edificio">
+              ${edificios.map(e=>`<option value="${e.id}">${escapeHtml(e.nombre)}${e.spreadsheetId?' — planilla vinculada':' — sin planilla todavía'}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div id="${mountId}-alta-pasos"></div>
+      `;
+      document.getElementById(mountId+'-alta-edificio').addEventListener('change', renderAltaPasos);
+      renderAltaPasos();
+
+      async function renderAltaPasos(){
+        const sel = document.getElementById(mountId+'-alta-edificio').value;
+        const lista = await getEdificios();
+        const ed = lista.find(e=>e.id===sel);
+        const pasos = document.getElementById(mountId+'-alta-pasos');
+        if(!ed || !pasos) return;
+
+        const paso1ok = true; // ya existe en la lista de arriba
+        const paso2ok = !!ed.spreadsheetId;
+
+        pasos.innerHTML = `
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <div class="infoblock" style="border-color:${paso1ok?'var(--ok,#2E8B57)':'var(--gray-200)'};">
+              <h3>1. Edificio registrado ${paso1ok?'✓':''}</h3>
+              <p style="margin:0;font-size:13px;">${escapeHtml(ed.nombre)} — ya está en la lista de arriba.</p>
+            </div>
+            <div class="infoblock" style="border-color:${paso2ok?'var(--ok,#2E8B57)':'var(--danger,#C0392B)'};">
+              <h3>2. Planilla vinculada ${paso2ok?'✓':'⚠ pendiente'}</h3>
+              <p style="margin:0;font-size:13px;">${paso2ok ? 'ID de planilla ya cargado.' : 'Pegá el ID o el link de la planilla de este edificio en la tabla de arriba antes de seguir.'}</p>
+            </div>
+            <div class="infoblock">
+              <h3>3. Configurar en la planilla (Google Sheets, a mano)</h3>
+              <p style="margin:0 0 6px;font-size:13px;">Estos pasos siguen siendo directo en la hoja de cálculo — la app todavía no los automatiza:</p>
+              <ul style="margin:0;padding-left:18px;font-size:13px;">
+                <li><b>Config_NAKEN</b>: datos de la administración, del consorcio, forma de pago, días de vencimiento y % de recargo/interés.</li>
+                <li><b>Propietarios</b>: unidades funcionales, % Fondo A/B, código de invitación de cada uno.</li>
+                <li><b>Prorrateo_Mensual → B2</b>: el primer período que vas a gestionar de verdad.</li>
+              </ul>
+            </div>
+            <div class="infoblock">
+              <h3>4. ¿Este consorcio tiene deuda heredada de una gestión anterior?</h3>
+              <p style="margin:0 0 10px;font-size:13px;">Si algún propietario ya arrastra deuda de antes de que asumieras, cargala acá — se guarda como si fuera "el mes anterior", para que el primer período que gestiones traiga el Saldo Anterior correcto de cada unidad, automáticamente.</p>
+              <div id="${mountId}-alta-deuda-wrap"></div>
+            </div>
+          </div>
+        `;
+
+        renderAltaDeuda(ed);
+      }
+
+      function renderAltaDeuda(ed){
+        const wrap = document.getElementById(mountId+'-alta-deuda-wrap');
+        if(!wrap) return;
+        if(!ed.spreadsheetId){
+          wrap.innerHTML = `<div class="empty">Vinculá primero la planilla (paso 2) para poder cargar deuda heredada.</div>`;
+          return;
+        }
+        wrap.innerHTML = `
+          <div class="field-grid" style="grid-template-columns:1fr;margin-bottom:10px;">
+            <div>
+              <label>Período anterior al primero que vas a gestionar (MM/AAAA)</label>
+              <input type="text" id="${mountId}-alta-periodo" placeholder="Ej: si arrancás en 10/2026, poné 09/2026">
+            </div>
+          </div>
+          <table class="ledger">
+            <thead><tr><th>UF</th><th>Piso/Dpto.</th><th>Propietario</th><th>Deuda ($)</th><th class="row-del"></th></tr></thead>
+            <tbody id="${mountId}-alta-deuda-body"></tbody>
+          </table>
+          <div class="toolbar">
+            <button class="btn" id="${mountId}-alta-deuda-add">+ Agregar unidad</button>
+            <div style="display:flex;align-items:center;gap:12px;">
+              <span id="${mountId}-alta-deuda-msg" style="font-size:12px;color:var(--muted);"></span>
+              <button class="btn primary" id="${mountId}-alta-deuda-crear">Crear historial de deuda inicial</button>
+            </div>
+          </div>
+        `;
+        const body = document.getElementById(mountId+'-alta-deuda-body');
+        function addRow(){
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td><input type="text" data-f="uf" placeholder="Ej: 4B"></td>
+            <td><input type="text" data-f="pisoDpto" placeholder="Ej: Piso 4 Dpto B"></td>
+            <td><input type="text" data-f="propietario" placeholder="Nombre"></td>
+            <td class="num"><input type="text" data-f="deuda" placeholder="0"></td>
+            <td class="row-del"><button data-action="del">✕</button></td>
+          `;
+          tr.querySelector('[data-action="del"]').addEventListener('click', ()=>tr.remove());
+          body.appendChild(tr);
+        }
+        addRow();
+        document.getElementById(mountId+'-alta-deuda-add').addEventListener('click', addRow);
+        document.getElementById(mountId+'-alta-deuda-crear').addEventListener('click', async ()=>{
+          const btn = document.getElementById(mountId+'-alta-deuda-crear');
+          const msg = document.getElementById(mountId+'-alta-deuda-msg');
+          const periodoAnterior = document.getElementById(mountId+'-alta-periodo').value.trim();
+          if(!/^\d{2}\/\d{4}$/.test(periodoAnterior)){
+            msg.textContent = 'El período anterior tiene que tener el formato MM/AAAA.';
+            msg.style.color = 'var(--danger)';
+            return;
+          }
+          const deudas = [];
+          body.querySelectorAll('tr').forEach(tr=>{
+            const uf = tr.querySelector('[data-f="uf"]').value.trim();
+            if(!uf) return;
+            deudas.push({
+              uf,
+              pisoDpto: tr.querySelector('[data-f="pisoDpto"]').value.trim(),
+              propietario: tr.querySelector('[data-f="propietario"]').value.trim(),
+              deuda: tr.querySelector('[data-f="deuda"]').value.trim(),
+            });
+          });
+          if(deudas.length===0){
+            msg.textContent = 'Cargá al menos una unidad con su UF.';
+            msg.style.color = 'var(--danger)';
+            return;
+          }
+          if(!confirm(`Se va a crear una hoja "Prorrateo_${periodoAnterior.replace('/','-')}" en la planilla, con la deuda de ${deudas.length} unidad(es). ¿Confirmás?`)) return;
+          await withLoading(btn, 'Creando…', async ()=>{
+            const res = await window.storage.sembrarDeudaInicial(ed.spreadsheetId, periodoAnterior, deudas);
+            if(!res.ok){
+              msg.textContent = res.error || 'No se pudo crear.';
+              msg.style.color = 'var(--danger)';
+              return;
+            }
+            msg.textContent = `✓ Listo: "${res.hojaCreada}" creada con ${res.unidadesCargadas} unidad(es). Ya podés configurar el primer período real en Prorrateo_Mensual.`;
+            msg.style.color = 'var(--ok,#2E8B57)';
+          });
+        });
+      }
+    }
+    renderAltaWizard();
 
     refreshLists();
   }
