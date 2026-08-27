@@ -1826,6 +1826,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const data = await fetchConReintento(()=>fetch(url));
       return { keys: data.keys || [], prefix, shared:false };
     },
+    async getPropios(key, tipo){
+      const url = `${APPS_SCRIPT_URL}?action=getPropios&key=${encodeURIComponent(key)}&tipo=${encodeURIComponent(tipo)}&sessionToken=${encodeURIComponent(SESSION_TOKEN||'')}`;
+      const data = await fetchConReintento(()=>fetch(url));
+      if(data.sessionExpired){ SESSION_TOKEN = null; window.dispatchEvent(new CustomEvent('naken-sesion-vencida')); }
+      if(!data.ok) throw new Error(data.error || 'No se pudo leer.');
+      return JSON.parse(data.value || '[]');
+    },
     // Expuesto para que otras partes de la app (llamadas directas a la
     // planilla de un consorcio: liquidación, resumen, documentos, etc.)
     // también respeten el límite de pedidos simultáneos.
@@ -2591,13 +2598,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
   async function refreshConflictosBadge(){
     try{
-      const casos = await loadData('naken-conflictos', []);
+      const casos = await loadPropios('naken-conflictos', 'conflictos', []);
       const relevantes = conflictosRelevantes(casos);
       setNavBadge('nb-conflictos', countUnseen(relevantes, seenKeyFor('conflictos'), c=>c.id+'::'+conflictoSig(c)));
     }catch(e){}
   }
   async function markConflictosSeen(){
-    const casos = await loadData('naken-conflictos', []);
+    const casos = await loadPropios('naken-conflictos', 'conflictos', []);
     const relevantes = conflictosRelevantes(casos);
     markAllSeen(relevantes, seenKeyFor('conflictos'), c=>c.id+'::'+conflictoSig(c));
     setNavBadge('nb-conflictos', 0);
@@ -3007,7 +3014,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
 
     async function renderList(){
-      const casos = await loadData('naken-conflictos', []);
+      const casos = await loadPropios('naken-conflictos', 'conflictos', []);
       const listEl = document.getElementById('cf-list');
       const visibles = role==='admin'
         ? casos
@@ -4576,6 +4583,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return res ? JSON.parse(res.value) : fallback;
     }catch(e){ return fallback; }
   }
+  /** Como loadData, pero para reclamos/conflictos: el filtrado de qué le corresponde ver a cada
+   *  propietario (lo suyo, lo "Común a todos", o la versión reducida sin datos del denunciante en
+   *  conflictos sin formalizar) lo hace el SERVIDOR, no el navegador — así no hay forma de
+   *  saltearlo pidiendo la clave completa directo por la API. */
+  async function loadPropios(key, tipo, fallback){
+    try{
+      return await window.storage.getPropios(nsKey(key), tipo);
+    }catch(e){ return fallback; }
+  }
   async function saveData(key, data, statusId){
     if(statusId) setStatus(statusId,'saving');
     if(key==='naken-edificios'){ _cache.edificios = null; }
@@ -5065,10 +5081,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
     }
 
-    loadData(storageKey, []).then(d=>{ items = d; render(); });
+    if(opts.hasAlcance){
+      // Reclamos: el filtrado de qué le corresponde ver a cada propietario (lo suyo, o lo "Común
+      // a todos") lo hace el servidor, no el navegador — ver loadPropios.
+      loadPropios(storageKey, 'reclamos', []).then(d=>{ items = d; render(); });
+    } else {
+      // Preguntas de asamblea: las ve todo el mundo tal cual, sin filtrar.
+      loadData(storageKey, []).then(d=>{ items = d; render(); });
+    }
   }
-
-  /* ---------- Manual (free text) ---------- */
   function mountManual(mountId, storageKey, defaultText){
     const mount = document.getElementById(mountId);
     const statusId = mountId+'-status';
