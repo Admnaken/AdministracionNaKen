@@ -4004,6 +4004,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       panels.forEach(p=>p.classList.remove('active'));
       document.getElementById('panel-'+btn.dataset.panel).classList.add('active');
       updateNavIconColors();
+      montarPanelSiHaceFalta(btn.dataset.panel); // recién ahora se pide al backend, la primera vez que se visita
       if(btn.dataset.panel==='asamblea') markAsambleaSeen();
       if(btn.dataset.panel==='conflictos') markConflictosSeen();
     });
@@ -9411,14 +9412,19 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
 
   /* ---------- Render all modules for current role ---------- */
-  function renderAll(){
-    mountResumen();
-
-    mountExpensasVivo('expensas-mount');
-
-    mountFormaPago('formapago-mount');
-
-    mountTickets('reclamos-mount', 'naken-reclamos', {
+  /* ---------------------------------------------------------------------
+     Montaje BAJO DEMANDA: antes, renderAll() montaba los ~27 paneles de
+     la app de una sola vez, sin importar cuál estaba visible -- eso
+     disparaba docenas de pedidos al backend en simultáneo cada vez que
+     alguien entraba (o cambiaba de consorcio), saturando la cola de
+     concurrencia y volviendo todo mucho más lento de lo necesario.
+     Ahora cada panel se monta recién la primera vez que se visita.
+     --------------------------------------------------------------------- */
+  const montadoresDePanel = {
+    resumen: () => mountResumen(),
+    expensas: () => mountExpensasVivo('expensas-mount'),
+    formapago: () => mountFormaPago('formapago-mount'),
+    reclamos: () => mountTickets('reclamos-mount', 'naken-reclamos', {
       newLabel:'Nuevo reclamo, pedido o consulta',
       tipos:['Reclamo','Pedido','Consulta'],
       contentLabel:'Detalle',
@@ -9426,31 +9432,25 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       submitLabel:'Enviar a la administración',
       emptyText:'No hay reclamos ni consultas cargadas.',
       hasAlcance: true
-    });
-
-    mountFacturasVivo('facturas-mount');
-
-    mountAsambleaSistema('asamblea-mount');
-
-    mountConflictos('conflictos-mount');
-
-    mountLedger('deudas-mount', 'naken-deudas', [
+    }),
+    facturas: () => mountFacturasVivo('facturas-mount'),
+    asamblea: () => mountAsambleaSistema('asamblea-mount'),
+    conflictos: () => mountConflictos('conflictos-mount'),
+    deudas: () => mountLedger('deudas-mount', 'naken-deudas', [
       {key:'unidad', label:'Unidad', placeholder:'4° B'},
       {key:'meses', label:'Meses adeudados', placeholder:'3'},
       {key:'monto', label:'Monto adeudado ($)', numeric:true, placeholder:'0'},
       {key:'estado', label:'Estado del reclamo', placeholder:'Intimado / En gestión / Judicializado'},
-    ], {emptyText:'No hay unidades con deuda registrada.'});
-
-    mountLedger('juicios-mount', 'naken-juicios', [
+    ], {emptyText:'No hay unidades con deuda registrada.'}),
+    juicios: () => mountLedger('juicios-mount', 'naken-juicios', [
       {key:'caratula', label:'Carátula', placeholder:''},
       {key:'tipo', label:'Tipo', placeholder:'A favor / En contra'},
       {key:'expediente', label:'Expediente', placeholder:'N°'},
       {key:'juzgado', label:'Juzgado', placeholder:''},
       {key:'objeto', label:'Objeto', type:'textarea', placeholder:'Qué se reclama'},
       {key:'estado', label:'Estado', placeholder:'En trámite / Sentencia / Archivado'},
-    ], {emptyText:'No hay juicios cargados.'});
-
-    mountLibroBancoConciliacion('reserva-mount', 'naken-reserva-movimientos', 'naken-reserva-conciliacion', {
+    ], {emptyText:'No hay juicios cargados.'}),
+    reserva: () => mountLibroBancoConciliacion('reserva-mount', 'naken-reserva-movimientos', 'naken-reserva-conciliacion', {
       cuentaKey: 'naken-reserva-cuenta-bancaria',
       tituloCorto: 'el Fondo de Reserva',
       nombreCuenta: 'Fondo de Reserva',
@@ -9458,73 +9458,41 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       movTipos: RESERVA_TIPOS_MOVIMIENTO,
       notaIntro: RESERVA_NOTA_INTRO,
       notaLegal: RESERVA_NOTA_LEGAL_PDF,
-    });
-
-    mountLibroBancoConciliacion('conciliaciones-mount', 'naken-movimientos', 'naken-conciliacion-bancaria', {
+    }),
+    conciliaciones: () => mountLibroBancoConciliacion('conciliaciones-mount', 'naken-movimientos', 'naken-conciliacion-bancaria', {
       cuentaKey: 'naken-cuenta-bancaria',
       tituloCorto: 'la cuenta corriente',
       nombreCuenta: 'Cuenta Corriente',
       pdfPrefijo: 'Conciliacion',
-    });
-
-    mountLibroCaja('caja-mount', 'naken-caja-movimientos', 'naken-caja-arqueos');
-
-    if(role==='admin'){
-      mountNovedades('novedades-mount', 'naken-novedades');
-    }
-
-    mountLedger('polizas-mount', 'naken-polizas', [
-      {key:'proveedor', label:'Proveedor', placeholder:''},
-      {key:'numeroPoliza', label:'N° de póliza', placeholder:''},
-      {key:'descripcion', label:'Descripción', placeholder:'Ej: Incendio, RC, ABE'},
-      {key:'fechaVencimiento', label:'Vencimiento', placeholder:'DD/MM/AAAA'},
-    ], {emptyText:'Sin pólizas cargadas.'});
-
-    mountLedger('depositos-mount', 'naken-depositos-no-identificados', [
-      {key:'fecha', label:'Fecha', placeholder:'DD/MM/AAAA'},
-      {key:'concepto', label:'Concepto', placeholder:''},
-      {key:'importe', label:'Importe ($)', numeric:true, placeholder:'0'},
-    ], {emptyText:'No hay depósitos sin identificar.'});
-
-    mountObleasQR('obleas-qr-mount', 'naken-obleas-qr');
-
-    mountProveedores('proveedores-mount', 'naken-proveedores');
-
-    mountLedger('honorarios-mount', 'naken-honorarios', [
+    }),
+    caja: () => mountLibroCaja('caja-mount', 'naken-caja-movimientos', 'naken-caja-arqueos'),
+    novedades: () => { if(role==='admin') mountNovedades('novedades-mount', 'naken-novedades'); },
+    segurosdepositos: () => {
+      mountLedger('polizas-mount', 'naken-polizas', [
+        {key:'proveedor', label:'Proveedor', placeholder:''},
+        {key:'numeroPoliza', label:'N° de póliza', placeholder:''},
+        {key:'descripcion', label:'Descripción', placeholder:'Ej: Incendio, RC, ABE'},
+        {key:'fechaVencimiento', label:'Vencimiento', placeholder:'DD/MM/AAAA'},
+      ], {emptyText:'Sin pólizas cargadas.'});
+      mountLedger('depositos-mount', 'naken-depositos-no-identificados', [
+        {key:'fecha', label:'Fecha', placeholder:'DD/MM/AAAA'},
+        {key:'concepto', label:'Concepto', placeholder:''},
+        {key:'importe', label:'Importe ($)', numeric:true, placeholder:'0'},
+      ], {emptyText:'No hay depósitos sin identificar.'});
+    },
+    proveedores: () => {
+      mountObleasQR('obleas-qr-mount', 'naken-obleas-qr');
+      mountProveedores('proveedores-mount', 'naken-proveedores');
+    },
+    honorarios: () => mountLedger('honorarios-mount', 'naken-honorarios', [
       {key:'profesional', label:'Profesional', placeholder:'Nombre'},
       {key:'rol', label:'Rol', placeholder:'Administrador / Abogado / Contador / Técnico'},
       {key:'periodo', label:'Período', placeholder:'Julio 2026'},
       {key:'monto', label:'Monto ($)', numeric:true, placeholder:'0'},
-    ], {emptyText:'Sin honorarios cargados.'});
-
-    mountLinkField('arca-link-mount', 'naken-arca-link', {
-      title: 'Aportes en Línea — ARCA (ex AFIP)',
-      hint: 'Portal oficial para verificar si los aportes de un empleado están al día. Hay que ingresar el CUIL manualmente en la página, no se puede pasar por el link.',
-      placeholder: 'https://www.arca.gob.ar/aportesenlinea/',
-      buttonLabel: 'Ir a Aportes en Línea',
-      defaultValue: 'https://www.arca.gob.ar/aportesenlinea/'
-    });
-
-    mountDocumentosVivo('documentos-vivo-mount');
-
-    mountGestionAsamblea('asistencia-mount');
-    if(role==='admin') mountUsuarios('usuarios-mount');
-    if(role==='admin') mountCct589Config('cct589-config-mount', 'naken-cct589-config');
-    if(role==='admin') mountLinkField('backup-sheet-url-mount', 'naken-backup-sheet-url', {
-      title: 'Respaldo automático a Google Sheets — URL del puente',
-      hint: 'La URL de tu Google Apps Script centralizado (se instala una sola vez y sirve para todos los consorcios — ver instrucciones). Es la misma en todos tus consorcios. La planilla de este consorcio puntual ya está vinculada desde el panel general (Config. del consorcio → ID de planilla) — no hace falta cargarla de nuevo acá.',
-      placeholder: 'https://script.google.com/macros/s/AKfycb.../exec',
-      buttonLabel: 'Probar el puente',
-      emptyText: 'Todavía no conectaste el puente de respaldo.',
-    });
-    if(role==='admin') mountEmpleadosCct589('empleados-mount', 'naken-empleados');
-    if(role==='admin') mountLiquidacionesCct589('liquidaciones-mount', 'naken-liquidaciones-sueldo');
-    if(role==='admin') mountCalcHonorarios('calchonorarios-mount');
-
-    refreshAsambleaBadge();
-    refreshConflictosBadge();
-
-    mountManual('manual-mount', 'naken-manual',
+    ], {emptyText:'Sin honorarios cargados.'}),
+    manual: () => {
+      mountDocumentosVivo('documentos-vivo-mount');
+      mountManual('manual-mount', 'naken-manual',
 `Esta administración se compromete a:
 
 1. Mantener los fondos del consorcio exclusivamente en la cuenta bancaria del consorcio, nunca en cuentas personales.
@@ -9534,6 +9502,51 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 5. Informar el estado de deudas, juicios y fondo de reserva de forma actualizada.
 6. Convocar a asamblea cuando el reglamento o la ley lo exijan, y ante cualquier pedido fundado de los propietarios.
 7. Entregar toda la documentación sin demoras ni condicionamientos, en caso de cese en el cargo.`);
+    },
+    asistencia: () => mountGestionAsamblea('asistencia-mount'),
+    usuarios: () => { if(role==='admin') mountUsuarios('usuarios-mount'); },
+    calchonorarios: () => { if(role==='admin') mountCalcHonorarios('calchonorarios-mount'); },
+    personal: () => {
+      if(role!=='admin') return;
+      mountLinkField('arca-link-mount', 'naken-arca-link', {
+        title: 'Aportes en Línea — ARCA (ex AFIP)',
+        hint: 'Portal oficial para verificar si los aportes de un empleado están al día. Hay que ingresar el CUIL manualmente en la página, no se puede pasar por el link.',
+        placeholder: 'https://www.arca.gob.ar/aportesenlinea/',
+        buttonLabel: 'Ir a Aportes en Línea',
+        defaultValue: 'https://www.arca.gob.ar/aportesenlinea/'
+      });
+      mountCct589Config('cct589-config-mount', 'naken-cct589-config');
+      mountLinkField('backup-sheet-url-mount', 'naken-backup-sheet-url', {
+        title: 'Respaldo automático a Google Sheets — URL del puente',
+        hint: 'La URL de tu Google Apps Script centralizado (se instala una sola vez y sirve para todos los consorcios — ver instrucciones). Es la misma en todos tus consorcios. La planilla de este consorcio puntual ya está vinculada desde el panel general (Config. del consorcio → ID de planilla) — no hace falta cargarla de nuevo acá.',
+        placeholder: 'https://script.google.com/macros/s/AKfycb.../exec',
+        buttonLabel: 'Probar el puente',
+        emptyText: 'Todavía no conectaste el puente de respaldo.',
+      });
+      mountEmpleadosCct589('empleados-mount', 'naken-empleados');
+      mountLiquidacionesCct589('liquidaciones-mount', 'naken-liquidaciones-sueldo');
+    },
+    remocion: () => {}, // contenido estático, sin datos que montar
+  };
+
+  const panelesMontados = new Set();
+  function montarPanelSiHaceFalta(nombrePanel){
+    if(panelesMontados.has(nombrePanel)) return;
+    const fn = montadoresDePanel[nombrePanel];
+    if(!fn) return;
+    fn();
+    panelesMontados.add(nombrePanel);
+  }
+
+  function renderAll(){
+    // Refresca: el panel que se está viendo en este momento (por ejemplo, al cambiar de
+    // consorcio en el switcher, o al apretar "Actualizar"), o "resumen" si es la primera vez.
+    panelesMontados.clear();
+    const panelActivoBtn = document.querySelector('.navbtn.active');
+    const nombrePanel = (panelActivoBtn && panelActivoBtn.dataset.panel) || 'resumen';
+    montarPanelSiHaceFalta(nombrePanel);
+    refreshAsambleaBadge();
+    refreshConflictosBadge();
   }
 
   renderLoginGate();
