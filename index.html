@@ -6225,8 +6225,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       </div>
       <div id="${mountId}-edificios-list"></div>
 
-      <div class="subhead">Alta de un consorcio nuevo — paso a paso</div>
-      <p class="panel-note" style="margin-bottom:10px;">Seguí este orden para que no falte nada al empezar con un consorcio: evita que la primera liquidación salga con datos incompletos.</p>
+      <div class="subhead">Deuda heredada de una gestión anterior</div>
+      <p class="panel-note" style="margin-bottom:10px;">Para dar de alta un edificio nuevo y vincular su planilla, andá a "Todos los consorcios" (arriba de todo, con el botón "+ Nuevo consorcio"). Esto de acá es el último paso, solo si ese consorcio ya tenía deuda de antes de que lo administraras.</p>
       <div id="${mountId}-alta-wizard"></div>
 
       <div class="subhead">Solicitudes pendientes</div>
@@ -6546,15 +6546,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       if(!wiz) return;
       const edificios = await getEdificios();
       if(edificios.length===0){
-        wiz.innerHTML = `<div class="empty">Agregá primero un edificio arriba para empezar el alta.</div>`;
+        wiz.innerHTML = `<div class="empty">Agregá primero un edificio en "Todos los consorcios" para empezar.</div>`;
         return;
       }
+      const activoId = getActiveConsorcioId();
       wiz.innerHTML = `
         <div class="field-grid" style="grid-template-columns:1fr;margin-bottom:14px;">
           <div>
-            <label>¿Qué consorcio estás dando de alta?</label>
+            <label>¿A qué consorcio le cargás la deuda heredada?</label>
             <select id="${mountId}-alta-edificio">
-              ${edificios.map(e=>`<option value="${e.id}">${escapeHtml(e.nombre)}${e.spreadsheetId?' — planilla vinculada':' — sin planilla todavía'}</option>`).join('')}
+              ${edificios.map(e=>`<option value="${e.id}" ${e.id===activoId?'selected':''}>${escapeHtml(e.nombre)}${e.spreadsheetId?'':' — sin planilla todavía'}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -6570,22 +6571,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const pasos = document.getElementById(mountId+'-alta-pasos');
         if(!ed || !pasos) return;
 
-        const paso1ok = true; // ya existe en la lista de arriba
-        const paso2ok = !!ed.spreadsheetId;
+        if(!ed.spreadsheetId){
+          pasos.innerHTML = `
+            <div class="infoblock" style="border-color:var(--danger,#C0392B);">
+              <h3>Falta vincular la planilla de ${escapeHtml(ed.nombre)}</h3>
+              <p style="margin:0;font-size:13px;">Anda a "Todos los consorcios" (arriba de todo) y pegá el ID de la planilla de este edificio en su tarjeta — ahí también podés registrar edificios nuevos y ver el resumen de cada uno. Una vez vinculada, volvé acá para cargar la deuda heredada, si corresponde.</p>
+            </div>
+          `;
+          return;
+        }
 
         pasos.innerHTML = `
           <div style="display:flex;flex-direction:column;gap:10px;">
-            <div class="infoblock" style="border-color:${paso1ok?'var(--ok,#2E8B57)':'var(--gray-200)'};">
-              <h3>1. Edificio registrado ${paso1ok?'✓':''}</h3>
-              <p style="margin:0;font-size:13px;">${escapeHtml(ed.nombre)} — ya está en la lista de arriba.</p>
-            </div>
-            <div class="infoblock" style="border-color:${paso2ok?'var(--ok,#2E8B57)':'var(--danger,#C0392B)'};">
-              <h3>2. Planilla vinculada ${paso2ok?'✓':'⚠ pendiente'}</h3>
-              <p style="margin:0;font-size:13px;">${paso2ok ? 'ID de planilla ya cargado.' : 'Pegá el ID o el link de la planilla de este edificio en la tabla de arriba antes de seguir.'}</p>
-            </div>
             <div class="infoblock">
-              <h3>3. Configurar en la planilla (Google Sheets, a mano)</h3>
-              <p style="margin:0 0 6px;font-size:13px;">Estos pasos siguen siendo directo en la hoja de cálculo — la app todavía no los automatiza:</p>
+              <h3>Recordatorio: esto sigue siendo directo en la planilla (Google Sheets, a mano)</h3>
               <ul style="margin:0;padding-left:18px;font-size:13px;">
                 <li><b>Config_NAKEN</b>: datos de la administración, del consorcio, forma de pago, días de vencimiento y % de recargo/interés.</li>
                 <li><b>Propietarios</b>: unidades funcionales, % Fondo A/B, código de invitación de cada uno.</li>
@@ -6593,7 +6592,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               </ul>
             </div>
             <div class="infoblock">
-              <h3>4. ¿Este consorcio tiene deuda heredada de una gestión anterior?</h3>
+              <h3>¿Este consorcio tiene deuda heredada de una gestión anterior?</h3>
               <p style="margin:0 0 10px;font-size:13px;">Si algún propietario ya arrastra deuda de antes de que asumieras, cargala acá — se guarda como si fuera "el mes anterior", para que el primer período que gestiones traiga el Saldo Anterior correcto de cada unidad, automáticamente.</p>
               <div id="${mountId}-alta-deuda-wrap"></div>
             </div>
