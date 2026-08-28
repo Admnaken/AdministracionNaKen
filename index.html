@@ -1795,6 +1795,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify(Object.assign({ action:'crearConflictoPropio', key, sessionToken: SESSION_TOKEN }, datos))
       }));
     },
+    async informarPagoPropio(key, datos){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'informarPagoPropio', key, sessionToken: SESSION_TOKEN }, datos))
+      }));
+    },
     async actualizarConflictoPropio(key, casoId, accion, extra){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -2012,36 +2019,54 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     function renderCards(){
       const cardsEl = document.getElementById(mountId+'-cards');
-      cardsEl.innerHTML = OBLEAS_QR_CATEGORIAS.map(cat=>{
+      const categorias = isAdmin ? OBLEAS_QR_CATEGORIAS : OBLEAS_QR_CATEGORIAS.filter(cat=>(datos[cat.key]||{}).aplica !== false);
+      if(!isAdmin && categorias.length===0){
+        cardsEl.innerHTML = `<div class="empty">Este consorcio todavía no tiene certificaciones cargadas.</div>`;
+        return;
+      }
+      cardsEl.innerHTML = categorias.map(cat=>{
         const d = datos[cat.key] || {};
+        const aplica = d.aplica !== false; // por defecto sí aplica, así no se esconde nada que ya estaba cargado
         const estado = estadoOblea(d.fechaVencimiento);
         const editable = isAdmin;
         return `
-          <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px 16px;background:#fff;margin-bottom:12px;" data-cat="${cat.key}">
+          <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px 16px;background:#fff;margin-bottom:12px;${editable && !aplica ? 'opacity:.6;' : ''}" data-cat="${cat.key}">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
               <b style="font-family:'Playfair Display',serif;font-size:15.5px;color:var(--primary);">${cat.nombre}</b>
-              <span class="badge ${estado.clase}">${estado.texto}</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:${editable?'10px':'0'};">
-              ${d.archivoUrl ? `
-                <a href="${escapeHtml(d.archivoUrl)}" target="_blank" rel="noopener" class="btn ghost" style="text-decoration:none;font-size:12px;">Ver documento ↗</a>
-                <span style="font-size:12px;color:var(--muted);">${escapeHtml(d.archivoNombre||'')}</span>
-              ` : `<span style="font-size:12.5px;color:var(--muted);">Sin documento cargado.</span>`}
+              ${aplica ? `<span class="badge ${estado.clase}">${estado.texto}</span>` : `<span class="badge escalado">No aplica a este edificio</span>`}
             </div>
             ${editable ? `
-              <div class="field-grid" style="grid-template-columns:1fr 1fr;margin-bottom:0;">
-                <div>
-                  <label>Fecha de vencimiento</label>
-                  <input type="text" data-field="fechaVencimiento" value="${escapeHtml(d.fechaVencimiento||'')}" placeholder="DD/MM/AAAA">
-                </div>
-                <div>
-                  <label>Subir / reemplazar documento</label>
-                  <input type="file" data-field="archivo" accept="application/pdf,image/*">
-                </div>
+              <div style="margin-bottom:10px;">
+                <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">¿Este consorcio tiene este servicio?</label>
+                <select data-field="aplica" style="max-width:160px;">
+                  <option value="si" ${aplica?'selected':''}>Sí</option>
+                  <option value="no" ${!aplica?'selected':''}>No</option>
+                </select>
+                ${!aplica ? `<p class="panel-note" style="margin:6px 0 0;font-size:11.5px;">Marcado como "No aplica" — esta caja no le va a aparecer al propietario.</p>` : ''}
               </div>
-              <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
-                <span data-status style="font-size:12px;color:var(--muted);"></span>
+            ` : ''}
+            ${aplica ? `
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:${editable?'10px':'0'};">
+                ${d.archivoUrl ? `
+                  <a href="${escapeHtml(d.archivoUrl)}" target="_blank" rel="noopener" class="btn ghost" style="text-decoration:none;font-size:12px;">Ver documento ↗</a>
+                  <span style="font-size:12px;color:var(--muted);">${escapeHtml(d.archivoNombre||'')}</span>
+                ` : `<span style="font-size:12.5px;color:var(--muted);">Sin documento cargado.</span>`}
               </div>
+              ${editable ? `
+                <div class="field-grid" style="grid-template-columns:1fr 1fr;margin-bottom:0;">
+                  <div>
+                    <label>Fecha de vencimiento</label>
+                    <input type="text" data-field="fechaVencimiento" value="${escapeHtml(d.fechaVencimiento||'')}" placeholder="DD/MM/AAAA">
+                  </div>
+                  <div>
+                    <label>Subir / reemplazar documento</label>
+                    <input type="file" data-field="archivo" accept="application/pdf,image/*">
+                  </div>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;margin-top:6px;">
+                  <span data-status style="font-size:12px;color:var(--muted);"></span>
+                </div>
+              ` : ''}
             ` : ''}
           </div>
         `;
@@ -2052,18 +2077,30 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           const catKey = card.dataset.cat;
           if(!datos[catKey]) datos[catKey] = {};
 
-          let fechaTimer;
-          const fechaInput = card.querySelector('[data-field="fechaVencimiento"]');
-          fechaInput.addEventListener('input', ()=>{
-            clearTimeout(fechaTimer);
-            fechaTimer = setTimeout(async ()=>{
-              datos[catKey].fechaVencimiento = fechaInput.value;
+          const aplicaSelect = card.querySelector('[data-field="aplica"]');
+          if(aplicaSelect){
+            aplicaSelect.addEventListener('change', async ()=>{
+              datos[catKey].aplica = aplicaSelect.value==='si';
               await saveData(storageKey, datos);
               renderCards();
-            }, 700);
-          });
+            });
+          }
+
+          const fechaInput = card.querySelector('[data-field="fechaVencimiento"]');
+          if(fechaInput){
+            let fechaTimer;
+            fechaInput.addEventListener('input', ()=>{
+              clearTimeout(fechaTimer);
+              fechaTimer = setTimeout(async ()=>{
+                datos[catKey].fechaVencimiento = fechaInput.value;
+                await saveData(storageKey, datos);
+                renderCards();
+              }, 700);
+            });
+          }
 
           const fileInput = card.querySelector('[data-field="archivo"]');
+          if(fileInput){
           fileInput.addEventListener('change', async (e)=>{
             const file = e.target.files[0];
             const statusSpan = card.querySelector('[data-status]');
@@ -2098,6 +2135,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               statusSpan.style.color = 'var(--danger)';
             }
           });
+          }
         });
       }
     }
@@ -2210,8 +2248,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const spreadsheetIdActivo = await getSpreadsheetIdActivo();
     const [resumen, reclamos, pagosInformados] = await Promise.all([
       spreadsheetIdActivo ? fetchResumenConsorcio(spreadsheetIdActivo) : Promise.resolve(null),
-      loadData('naken-reclamos', []),
-      loadData('naken-pagos-informados', [])
+      role==='admin' ? loadData('naken-reclamos', []) : loadPropios('naken-reclamos', 'reclamos', []),
+      role==='admin' ? loadData('naken-pagos-informados', []) : Promise.resolve([]),
     ]);
 
     function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
@@ -3608,7 +3646,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           return;
         }
         setActiveConsorcioId(ed.id);
-        currentUser = { nombreCompleto: res.nombreCompleto, unidad: res.unidad, consorcioId: ed.id, consorcioSpreadsheetId: ed.spreadsheetId || '' };
+        currentUser = { nombreCompleto: res.nombreCompleto, unidad: res.unidad, consorcio: ed.nombre, consorcioId: ed.id, consorcioSpreadsheetId: ed.spreadsheetId || '' };
         applyRole('propietario');
       });
     });
@@ -4373,7 +4411,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   // o el consorcio elegido en el switcher si es el administrador.
   async function getSpreadsheetIdActivo(){
     if(role==='propietario' && currentUser){
-      return getSpreadsheetIdDelConsorcio(currentUser.consorcio);
+      return currentUser.consorcioSpreadsheetId || '';
     }
     const id = getActiveConsorcioId();
     if(!id) return '';
@@ -5252,8 +5290,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
 
     async function renderLista(){
-      const pagos = await loadData('naken-pagos-informados', []);
-      const visibles = role==='admin' ? pagos : pagos.filter(p=>currentUser && p.unidad===currentUser.unidad);
+      const visibles = role==='admin' ? await loadData('naken-pagos-informados', []) : await loadPropios('naken-pagos-informados', 'pagos', []);
       const listEl = document.getElementById(listMountId+'-lista');
       if(!listEl) return;
       if(visibles.length===0){
@@ -5380,10 +5417,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const periodoManual = document.getElementById('cp-periodo-manual');
         const [resumen, pagosPrevios] = await Promise.all([
           currentUser.consorcioSpreadsheetId ? fetchResumenConsorcio(currentUser.consorcioSpreadsheetId) : Promise.resolve(null),
-          loadData('naken-pagos-informados', [])
+          loadPropios('naken-pagos-informados', 'pagos', [])
         ]);
         const yaVerificados = new Set(
-          pagosPrevios.filter(p=>p.unidad===currentUser.unidad && p.estado==='Verificado').map(p=>p.periodo)
+          pagosPrevios.filter(p=>p.estado==='Verificado').map(p=>p.periodo)
         );
         const periodos = (resumen && resumen.periodosDisponibles) ? resumen.periodosDisponibles.filter(p=>!yaVerificados.has(formatPeriodo(p)) && !yaVerificados.has(p)) : [];
         periodoSelect.innerHTML =
@@ -5423,17 +5460,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const periodo = periodoSelect.value==='__otro__' ? document.getElementById('cp-periodo-manual').value.trim() : periodoSelect.value;
         const comprobante = document.getElementById('cp-comprobante-link').value;
         if(!monto){ setStatus(statusId,'error'); return; }
-        const pagos = await loadData('naken-pagos-informados', []);
-        pagos.push({
-          id: uid(),
-          unidad: currentUser.unidad,
-          propietario: currentUser.nombreCompleto,
-          fecha: new Date().toLocaleDateString('es-AR'),
-          monto, periodo, comprobante,
-          estado: 'Pendiente de verificar',
-          notaAdmin: ''
-        });
-        await saveData('naken-pagos-informados', pagos, statusId);
+        setStatus(statusId,'saving');
+        const res = await window.storage.informarPagoPropio(nsKey('naken-pagos-informados'), { monto, periodo, comprobante });
+        if(!res.ok){
+          setStatus(statusId,'error');
+          alert(res.error || 'No se pudo informar el pago.');
+          return;
+        }
+        setStatus(statusId,'saved');
         document.getElementById('cp-monto').value = '';
         document.getElementById('cp-periodo-manual').value = '';
         document.getElementById('cp-periodo-manual').style.display = 'none';
