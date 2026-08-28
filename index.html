@@ -2185,13 +2185,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   /* ---------- Resumen (dashboard con gráficos) ---------- */
   let chartGastos = null, chartExpensas = null;
   async function mountResumen(mountId_unused){
-    mountContactBlock('resumen-contact-mount');
+    mountContactBlock('resumen-contact-mount'); // corre en paralelo, no bloquea el resto
 
-    // Liquidación real de la unidad, tomada en vivo de la planilla del consorcio
+    // Liquidación real de la unidad: se lanza en paralelo (sin await acá) para no encadenar
+    // este pedido al servidor antes del resumen general -- son datos independientes, no hay
+    // motivo para esperar uno para arrancar el otro.
+    (async function cargarMiLiquidacion(){
     const miLiqMount = document.getElementById('mi-liquidacion-mount');
     if(miLiqMount){
       if(role==='propietario' && currentUser){
-        const spreadsheetId = await getSpreadsheetIdDelConsorcio(currentUser.consorcio);
+        const spreadsheetId = currentUser.consorcioSpreadsheetId || '';
         if(!spreadsheetId){
           miLiqMount.innerHTML = '';
         } else {
@@ -2244,6 +2247,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         miLiqMount.innerHTML = '';
       }
     }
+    })();
 
     const spreadsheetIdActivo = await getSpreadsheetIdActivo();
     const [resumen, reclamos, pagosInformados] = await Promise.all([
