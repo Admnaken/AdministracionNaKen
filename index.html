@@ -1788,6 +1788,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify({ action:'sembrarDeudaInicial', spreadsheetId, periodoAnterior, deudas, sessionToken: SESSION_TOKEN })
       }));
     },
+    async crearConflictoPropio(key, datos){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'crearConflictoPropio', key, sessionToken: SESSION_TOKEN }, datos))
+      }));
+    },
+    async actualizarConflictoPropio(key, casoId, accion, extra){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'actualizarConflictoPropio', key, casoId, accion, sessionToken: SESSION_TOKEN }, extra||{}))
+      }));
+    },
     async solicitarAcceso(payload){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -2957,38 +2971,26 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           setStatus(statusId,'error');
           return;
         }
-        const casos = await loadData('naken-conflictos', []);
-        casos.push({
-          id: uid(),
-          fecha: new Date().toLocaleDateString('es-AR'),
+        setStatus(statusId,'saving');
+        const fechaHecho = (()=>{
+          const raw = document.getElementById('cf-fechahecho').value;
+          if(!raw) return '';
+          const d = new Date(raw);
+          return isNaN(d.getTime()) ? raw : d.toLocaleString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+        })();
+        const res = await window.storage.crearConflictoPropio(nsKey('naken-conflictos'), {
           tipo: document.getElementById('cf-tipo').value,
-          unidadDenunciante: denunciante,
           unidadDenunciada: denunciada,
-          fechaHecho: (()=>{
-            const raw = document.getElementById('cf-fechahecho').value;
-            if(!raw) return '';
-            const d = new Date(raw);
-            return isNaN(d.getTime()) ? raw : d.toLocaleString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-          })(),
+          fechaHecho,
           evidencia: document.getElementById('cf-evidencia').value.trim(),
           descripcion: document.getElementById('cf-descripcion').value.trim(),
-          estado: 'Pendiente',
-          notificacion: '',
-          mediacionLink: '',
-          mediacionFecha: '',
-          descargo: '',
-          descargoTipo: '',
-          descargoFecha: '',
-          formalizada: false,
-          cierreMotivo: '',
-          decisionDenunciante: '',
-          decisionDenuncianteFecha: '',
-          decisionDenunciado: '',
-          decisionDenunciadoFecha: '',
-          resultadoReunion: '',
-          resultadoReunionFecha: ''
         });
-        await saveData('naken-conflictos', casos, statusId);
+        if(!res.ok){
+          setStatus(statusId,'error');
+          alert(res.error || 'No se pudo cargar el caso.');
+          return;
+        }
+        setStatus(statusId,'saved');
         document.getElementById('cf-denunciada').value = '';
         document.getElementById('cf-fechahecho').value = '';
         document.getElementById('cf-fecha-confirmada').textContent = '';
@@ -3304,14 +3306,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             const texto = ta ? ta.value.trim() : '';
             const admite = b.dataset.action==='descargo-admite';
             if(!admite && !texto){ alert('Contanos tu versión antes de enviar.'); return; }
-            const casos2 = await loadData('naken-conflictos', []);
-            const caso = casos2.find(x=>x.id===b.dataset.id);
-            if(!caso) return;
-            caso.descargo = texto || (admite ? 'El propietario confirmó su compromiso a que no se repita.' : '');
-            caso.descargoTipo = admite ? 'admite' : 'niega';
-            caso.descargoFecha = new Date().toLocaleString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-            caso.estado = 'Descargo recibido';
-            await saveData('naken-conflictos', casos2, statusId);
+            const res = await window.storage.actualizarConflictoPropio(nsKey('naken-conflictos'), b.dataset.id, 'descargo', { texto, admite });
+            if(!res.ok){ alert(res.error || 'No se pudo enviar.'); return; }
             flashButtonSuccess(b, '✓ Enviado');
             refreshConflictosBadge();
             renderList();
@@ -3319,29 +3315,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         });
         listEl.querySelectorAll('[data-action="decidir-continuar"], [data-action="decidir-desistir"]').forEach(b=>{
           b.addEventListener('click', async ()=>{
-            const casos2 = await loadData('naken-conflictos', []);
-            const caso = casos2.find(x=>x.id===b.dataset.id);
-            if(!caso) return;
-            const decision = b.dataset.action==='decidir-continuar' ? 'Continuar' : 'Desistir';
-            const fecha = new Date().toLocaleDateString('es-AR');
-            const esDenunciante = currentUser.unidad===caso.unidadDenunciante;
-            if(esDenunciante){ caso.decisionDenunciante = decision; caso.decisionDenuncianteFecha = fecha; }
-            else { caso.decisionDenunciado = decision; caso.decisionDenunciadoFecha = fecha; }
-
-            // Evaluamos si con esta decisión ya se puede cerrar el caso o pasar a la reunión.
-            if(caso.decisionDenunciante==='Desistir'){
-              caso.estado = 'Cerrado sin acuerdo';
-              caso.cierreMotivo = 'El denunciante decidió no continuar.';
-            } else if(caso.decisionDenunciado==='Desistir'){
-              caso.estado = 'Cerrado sin acuerdo';
-              caso.cierreMotivo = caso.decisionDenunciante==='Continuar'
-                ? 'El denunciante quería continuar, pero el denunciado no aceptó avanzar con la mediación. Queda fuera de la competencia de la administración.'
-                : 'El denunciado no aceptó avanzar con la mediación.';
-            } else if(caso.decisionDenunciante==='Continuar' && caso.decisionDenunciado==='Continuar'){
-              caso.estado = 'Mediación formal';
-            }
-
-            await saveData('naken-conflictos', casos2, statusId);
+            const continuar = b.dataset.action==='decidir-continuar';
+            const res = await window.storage.actualizarConflictoPropio(nsKey('naken-conflictos'), b.dataset.id, 'decidir', { continuar });
+            if(!res.ok){ alert(res.error || 'No se pudo enviar.'); return; }
             flashButtonSuccess(b, '✓ Enviado');
             refreshConflictosBadge();
             renderList();
@@ -3349,8 +3325,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         });
         listEl.querySelectorAll('[data-action="pdf-mediacion"]').forEach(b=>{
           b.addEventListener('click', async ()=>{
-            const casos2 = await loadData('naken-conflictos', []);
-            const caso = casos2.find(x=>x.id===b.dataset.id);
+            // Reutiliza los casos ya cargados en esta misma vista (ya filtrados por el servidor) --
+            // no hace falta un pedido nuevo solo para encontrar el propio caso.
+            const caso = casos.find(x=>x.id===b.dataset.id);
             if(!caso) return;
             const original = b.textContent;
             b.textContent = 'Generando…';
