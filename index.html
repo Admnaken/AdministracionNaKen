@@ -2178,8 +2178,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <div class="kpi"><div class="label">Total proveedores</div><div class="value">${rows.length}</div></div>
       `;
     }
-    updateKpi();
-    setInterval(updateKpi, 1500);
+    updateKpi(); // sin setInterval: estos vencimientos no cambian segundo a segundo, no hace
+    // falta pegarle al servidor cada 1,5s para siempre mientras la pestaña esté abierta -- eso
+    // fue justo lo que generaba cientos de pedidos innecesarios con la página solo abierta.
   }
 
   /* ---------- Resumen (dashboard con gráficos) ---------- */
@@ -5500,36 +5501,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
 
     renderLista();
-  }
-
-  /* ---------- Fondo de reserva (with running total) ---------- */
-  function mountReserva(mountId, storageKey){
-    const mount = document.getElementById(mountId);
-    mount.innerHTML = `<div id="${mountId}-kpi" class="kpi-row"></div><div id="${mountId}-table"></div>`;
-    const cols = [
-      {key:'fecha', label:'Fecha', placeholder:'MM/AAAA'},
-      {key:'concepto', label:'Concepto', placeholder:'Aporte mensual / uso del fondo'},
-      {key:'monto', label:'Monto ($)', numeric:true, placeholder:'0'},
-    ];
-    mountLedgerWithTotal(mountId+'-table', storageKey, cols, mountId+'-kpi');
-  }
-
-  function mountLedgerWithTotal(tableMountId, storageKey, columns, kpiMountId){
-    // wraps mountLedger but also computes a running saldo KPI after each load/save
-    mountLedger(tableMountId, storageKey, columns, {emptyText:'Sin movimientos cargados todavía.'});
-    async function updateKpi(){
-      const rows = await loadData(storageKey, []);
-      const total = rows.reduce((sum,r)=>{
-        const n = parseFloat((r.monto||'0').toString().replace(/\./g,'').replace(',','.'));
-        return sum + (isNaN(n)?0:n);
-      },0);
-      const kpi = document.getElementById(kpiMountId);
-      if(kpi){
-        kpi.innerHTML = `<div class="kpi"><div class="label">Saldo acumulado</div><div class="value">$ ${total.toLocaleString('es-AR')}</div></div>`;
-      }
-    }
-    updateKpi();
-    setInterval(updateKpi, 1500);
   }
 
   /* ---------- Registro de asistencia a asamblea (doble cómputo + mayorías CCyCN) ---------- */
