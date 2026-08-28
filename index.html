@@ -2771,10 +2771,19 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       alternateRowStyles: { fillColor: COLOR_FONDO_ALT }
     };
 
-    const [edificios, usuarios] = await Promise.all([getEdificios(), loadData('naken-usuarios', [])]);
+    const spreadsheetIdActivo = await getSpreadsheetIdActivo();
+    const [edificios, usuarios, cfgConsorcio] = await Promise.all([
+      getEdificios(),
+      loadData('naken-usuarios', []),
+      spreadsheetIdActivo ? fetchConfigConsorcio(spreadsheetIdActivo) : Promise.resolve(null),
+    ]);
     const consorcioId = getActiveConsorcioId();
     const edificio = edificios.find(e=>e.id===consorcioId);
     const nombreConsorcio = edificio ? edificio.nombre : '';
+    const admin = cfgConsorcio && cfgConsorcio.administracion;
+    const firmaAdministrador = admin && admin.nombre
+      ? `${admin.nombre}${admin.rpa ? ' - Mat. RPA '+admin.rpa : ''}`
+      : 'Administrador del consorcio';
     const usuariosConsorcio = usuarios.filter(u=>!consorcioId || u.consorcioId===consorcioId);
     const buscarUsuario = (unidad)=> usuariosConsorcio.find(u=>(u.unidad||'').trim().toLowerCase()===(unidad||'').trim().toLowerCase());
     const parteA = buscarUsuario(c.unidadDenunciante);
@@ -2812,14 +2821,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     doc.setFontSize(9);
     doc.setTextColor(...COLOR_TEXTO);
     doc.text('Registro de conflicto entre copropietarios', M, y); y+=5;
-    doc.text('Administrador: Lic. Sebastián R. Espeche - Mat. RPA 20066', M, y); y+=8;
+    doc.text('Administrador: '+firmaAdministrador, M, y); y+=8;
 
     heading('DATOS DEL CASO');
     doc.autoTable({
       ...AUTOTABLE_BASE, startY: y, margin:{left:M,right:M}, theme:'grid',
       body: [
         ['N° de caso', c.id, 'Fecha de apertura', c.fecha||'—'],
-        ['Estado del caso', c.estado||'—', 'Administrador / Mediador', 'Lic. Sebastián R. Espeche - Mat. RPA 20066'],
+        ['Estado del caso', c.estado||'—', 'Administrador / Mediador', firmaAdministrador],
       ]
     });
     y = doc.lastAutoTable.finalY + 8;
@@ -6730,7 +6739,21 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
      4 pasos: 1) cotejo Saldo Libro Banco vs Saldo Extracto, 2) partidas en tránsito
      (transitorias/permanentes), 3) ajuste y volcado a la liquidación del mes en curso,
      4) archivo de la hoja de conciliación (PDF) firmada por la administración. */
-  const CONCILIACION_ADMIN_FIRMA = 'Lic. Sebastián R. Espeche — Matrícula RPA 20066 — Administración NAKEN';
+  /** Firma del administrador para los PDFs (mediación, conciliación, arqueo de caja): se saca
+   *  de Config_NAKEN del consorcio activo -- antes estaba fijo en el código, con el mismo nombre
+   *  para cualquier consorcio, cualquier administración que use esta app. */
+  async function getFirmaAdministrador(){
+    try{
+      const spreadsheetId = await getSpreadsheetIdActivo();
+      if(!spreadsheetId) return 'Administrador del consorcio';
+      const cfg = await fetchConfigConsorcio(spreadsheetId);
+      const admin = cfg && cfg.administracion;
+      if(!admin || !admin.nombre) return 'Administrador del consorcio';
+      return `${admin.nombre}${admin.rpa ? ' — Matrícula RPA '+admin.rpa : ''}`;
+    }catch(e){
+      return 'Administrador del consorcio';
+    }
+  }
   const CONCILIACION_TIPOS_PARTIDA = [
     'Cheque emitido no cobrado',
     'Transferencia de expensas no acreditada',
@@ -7487,6 +7510,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     async function generarPdfConciliacion(p){
       if(!window.jspdf){ alert('No se pudo cargar el generador de PDF. Revisá tu conexión e intentá de nuevo.'); return; }
       syncPeriodoFromDom();
+      const firmaAdministrador = await getFirmaAdministrador();
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
       const M = 14;
@@ -7540,7 +7564,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       doc.setFontSize(9);
       doc.setTextColor(...COLOR_TEXTO);
       doc.text('Registro de rendición mensual', M, y); y+=5;
-      doc.text('Administrador: Lic. Sebastián R. Espeche - Mat. RPA 20066', M, y); y+=10;
+      doc.text('Administrador: '+firmaAdministrador, M, y); y+=10;
 
       heading('DATOS DEL PERÍODO');
       const diferencia = calcDiferencia(p);
@@ -7664,7 +7688,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         if(huboEgresos) parrafo(opts.notaLegal, {size:8, acento:true});
       }
       y += 3;
-      parrafo(CONCILIACION_ADMIN_FIRMA, {bold:true, size:9});
+      parrafo(firmaAdministrador, {bold:true, size:9});
 
       const fileName = `${pdfPrefijo}_N${String(p.numero||0).padStart(3,'0')}_${(p.periodo||'periodo').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`;
       const reportBytes = doc.output('arraybuffer');
@@ -8208,6 +8232,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     async function generarPdfArqueo(a){
       if(!window.jspdf){ alert('No se pudo cargar el generador de PDF. Revisá tu conexión e intentá de nuevo.'); return; }
       syncArqueoFromDom();
+      const firmaAdministrador = await getFirmaAdministrador();
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
       const M = 14;
@@ -8261,7 +8286,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       doc.setFontSize(9);
       doc.setTextColor(...COLOR_TEXTO);
       doc.text('Registro del Libro de Caja (Ley 941 CABA)', M, y); y+=5;
-      doc.text('Administrador: Lic. Sebastián R. Espeche - Mat. RPA 20066', M, y); y+=10;
+      doc.text('Administrador: '+firmaAdministrador, M, y); y+=10;
 
       heading('DATOS DEL ARQUEO');
       const diferencia = calcDiferenciaArqueo(a);
@@ -8299,7 +8324,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         parrafo(`Evidencia fotográfica del arqueo: ${a.evidenciaNombre||'(ver archivo adjunto)'} — se incluye a continuación de esta hoja como parte del mismo documento.`, {size:8});
       }
       y += 3;
-      parrafo(CONCILIACION_ADMIN_FIRMA, {bold:true, size:9});
+      parrafo(firmaAdministrador, {bold:true, size:9});
 
       const fileName = `Arqueo_Caja_N${String(a.numero||0).padStart(3,'0')}_${(a.fecha||'fecha').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`;
       const reportBytes = doc.output('arraybuffer');
