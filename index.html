@@ -1832,7 +1832,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // evita el preflight de CORS
         body: JSON.stringify({ action:'set', key, value, sessionToken: SESSION_TOKEN })
       }));
-      return data.ok ? { key, value, shared:false } : null;
+      if(data.sessionExpired){ SESSION_TOKEN = null; window.dispatchEvent(new CustomEvent('naken-sesion-vencida')); }
+      if(!data.ok) throw new Error(data.error || 'No se pudo guardar.');
+      return { key, value, shared:false };
     },
     async delete(key){
       const data = await fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
@@ -4626,9 +4628,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     if(statusId) setStatus(statusId,'saving');
     if(key==='naken-edificios'){ _cache.edificios = null; }
     try{
-      const res = await window.storage.set(nsKey(key), JSON.stringify(data), true);
-      if(statusId) setStatus(statusId, res ? 'saved' : 'error');
-    }catch(e){ if(statusId) setStatus(statusId,'error'); }
+      await window.storage.set(nsKey(key), JSON.stringify(data), true);
+      if(statusId) setStatus(statusId, 'saved');
+    }catch(e){
+      if(statusId) setStatus(statusId,'error');
+      throw e; // ya no se traga en silencio -- quien llamó a saveData() puede mostrar el motivo real
+    }
   }
 
   /* ---------- Generic ledger table module ---------- */
@@ -9464,27 +9469,30 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     empleadoSelect.addEventListener('change', updateAntiguedadPreview);
 
     document.getElementById(mountId+'-calc').addEventListener('click', async ()=>{
+      const btn = document.getElementById(mountId+'-calc');
       const idx = empleadoSelect.value;
       const emp = empleados[idx];
       if(!emp || !emp.nombreCompleto){
         setStatus(statusId,'error');
         return;
       }
-      const inputs = {
-        empleadoIdx: idx,
-        periodo: document.getElementById(mountId+'-periodo').value,
-        antiguedadAnios: document.getElementById(mountId+'-antiguedad').value,
-        hs50: document.getElementById(mountId+'-hs50').value || '0',
-        hs100: document.getElementById(mountId+'-hs100').value || '0',
-        diasInasistencia: document.getElementById(mountId+'-inasistencias').value || '0',
-        importeVacaciones: document.getElementById(mountId+'-vacaciones').value || '0',
-      };
-      const record = computeLiquidacion(emp, inputs);
-      liquidaciones.push(record);
-      renderList();
-      await saveData(storageKey, liquidaciones, statusId);
-      const backupStatusNode = document.getElementById(mountId+'-backup-status');
-      enviarRespaldo(record, emp, backupStatusNode);
+      await withLoading(btn, 'Calculando…', async ()=>{
+        const inputs = {
+          empleadoIdx: idx,
+          periodo: document.getElementById(mountId+'-periodo').value,
+          antiguedadAnios: document.getElementById(mountId+'-antiguedad').value,
+          hs50: document.getElementById(mountId+'-hs50').value || '0',
+          hs100: document.getElementById(mountId+'-hs100').value || '0',
+          diasInasistencia: document.getElementById(mountId+'-inasistencias').value || '0',
+          importeVacaciones: document.getElementById(mountId+'-vacaciones').value || '0',
+        };
+        const record = computeLiquidacion(emp, inputs);
+        liquidaciones.push(record);
+        renderList();
+        await saveData(storageKey, liquidaciones, statusId);
+        const backupStatusNode = document.getElementById(mountId+'-backup-status');
+        enviarRespaldo(record, emp, backupStatusNode);
+      });
     });
 
     Promise.all([
