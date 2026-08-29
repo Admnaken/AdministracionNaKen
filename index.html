@@ -6537,7 +6537,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
       listEl.querySelectorAll('[data-action="del-edificio"]').forEach(b=>{
         b.addEventListener('click', async ()=>{
-          if(!confirm('¿Quitar este edificio de la lista? No afecta a los propietarios ya habilitados.')) return;
+          const usuarios = await loadData('naken-usuarios', []);
+          const afectados = usuarios.filter(u=>u.consorcioId===b.dataset.id && u.estado==='habilitado').length;
+          const aviso = afectados>0
+            ? `⚠ Este edificio tiene ${afectados} propietario(s) habilitado(s) — si lo sacás de la lista, van a dejar de poder entrar (su sesión queda sin consorcio vinculado). ¿Confirmás igual?`
+            : '¿Quitar este edificio de la lista?';
+          if(!confirm(aviso)) return;
           const lista = (await getEdificios()).filter(x=>x.id!==b.dataset.id);
           await saveData('naken-edificios', lista);
           refreshEdificios();
