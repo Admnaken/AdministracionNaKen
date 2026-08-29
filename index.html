@@ -4777,6 +4777,96 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     loadData(storageKey, opts.defaultRows || []).then(d=>{ rows = d; render(); });
   }
 
+  /* ---------- Deudas del consorcio: el monto sale en vivo de Prorrateo_Mensual (misma fuente
+     que "Tu liquidación" y el KPI del Resumen, para que nunca haya dos números de deuda
+     desincronizados). El admin solo carga el estado de gestión de cada unidad morosa. Al
+     propietario se le muestra el agregado, no el detalle unidad por unidad. ---------- */
+  async function mountDeudasConsorcio(mountId){
+    const mount = document.getElementById(mountId);
+    mount.innerHTML = `<div class="empty">Cargando…</div>`;
+
+    const spreadsheetId = await getSpreadsheetIdActivo();
+    if(!spreadsheetId){
+      mount.innerHTML = `<div class="empty">Este consorcio todavía no tiene la planilla de liquidación vinculada.</div>`;
+      return;
+    }
+    const resumen = await fetchResumenConsorcio(spreadsheetId);
+    const unidadesConDeuda = ((resumen && resumen.unidades) || []).filter(u => Number(u.deuda) > 0);
+    const deudaTotal = Number((resumen && resumen.deudaTotal) || 0);
+
+    if(role!=='admin'){
+      mount.innerHTML = `
+        <div class="kpi-row">
+          <div class="kpi ${deudaTotal>0?'highlight':''}"><div class="label">Deuda total del consorcio</div><div class="value">$ ${deudaTotal.toLocaleString('es-AR')}</div></div>
+          <div class="kpi"><div class="label">Unidades en mora</div><div class="value">${unidadesConDeuda.length}</div></div>
+        </div>
+        <p class="panel-note" style="margin-top:14px;">Por privacidad, no se muestra acá el detalle unidad por unidad — cada propietario ve su propia deuda en "Tu liquidación" (pantalla de Resumen). Para una consulta puntual, escribile a la administración.</p>
+      `;
+      return;
+    }
+
+    const estados = await loadData('naken-deudas', []);
+    const estadoDe = (uf, pisoDpto) => estados.find(e =>
+      (e.uf && e.uf===uf) || (e.pisoDpto && pisoDpto && e.pisoDpto.trim().toLowerCase()===pisoDpto.trim().toLowerCase())
+    );
+
+    mount.innerHTML = `
+      <div class="kpi-row">
+        <div class="kpi ${deudaTotal>0?'highlight':''}"><div class="label">Deuda total del consorcio</div><div class="value">$ ${deudaTotal.toLocaleString('es-AR')}</div></div>
+        <div class="kpi"><div class="label">Unidades en mora</div><div class="value">${unidadesConDeuda.length}</div></div>
+      </div>
+      <p class="panel-note" style="margin:12px 0;">El monto sale solo de la planilla de liquidación (misma fuente que "Tu liquidación" y el Resumen) — acá solo cargás el estado de gestión de cada unidad morosa.</p>
+      ${unidadesConDeuda.length===0 ? `<div class="empty">No hay unidades con deuda en el período actual.</div>` : `
+      <table class="ledger">
+        <thead><tr><th>Unidad</th><th>Propietario</th><th>Deuda ($)</th><th>Estado de gestión</th><th>Notas</th></tr></thead>
+        <tbody id="${mountId}-body"></tbody>
+      </table>
+      <div class="toolbar"><span></span><div style="display:flex;align-items:center;gap:12px;">${statusEl(mountId+'-status')}</div></div>
+      `}
+    `;
+
+    if(unidadesConDeuda.length===0) return;
+
+    const body = document.getElementById(mountId+'-body');
+    const statusId = mountId+'-status';
+    body.innerHTML = unidadesConDeuda.map(u=>{
+      const e = estadoDe(u.uf, u.pisoDpto) || {};
+      return `
+        <tr data-uf="${escapeHtml(u.uf)}" data-piso="${escapeHtml(u.pisoDpto||'')}">
+          <td>${escapeHtml(u.pisoDpto || u.uf)}</td>
+          <td>${escapeHtml(u.propietario||'—')}</td>
+          <td class="num"><input type="text" value="$ ${Number(u.deuda).toLocaleString('es-AR')}" disabled></td>
+          <td>
+            <select data-field="estado">
+              ${['Al día','Intimado','En gestión','Judicializado'].map(op=>`<option ${e.estado===op?'selected':''}>${op}</option>`).join('')}
+            </select>
+          </td>
+          <td><input type="text" data-field="notas" value="${escapeHtml(e.notas||'')}" placeholder="Opcional"></td>
+        </tr>
+      `;
+    }).join('');
+
+    let saveTimer;
+    function scheduleSave(){
+      setStatus(statusId,'saving');
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(async ()=>{
+        const nuevos = [];
+        body.querySelectorAll('tr').forEach(tr=>{
+          nuevos.push({
+            uf: tr.dataset.uf,
+            pisoDpto: tr.dataset.piso,
+            estado: tr.querySelector('[data-field="estado"]').value,
+            notas: tr.querySelector('[data-field="notas"]').value,
+          });
+        });
+        await saveData('naken-deudas', nuevos, statusId);
+      }, 700);
+    }
+    body.addEventListener('input', scheduleSave);
+    body.addEventListener('change', scheduleSave);
+  }
+
   /* ---------- Ticket-style module (reclamos / preguntas) ---------- */
   function badgeClass(estado){
     if(estado==='Resuelto') return 'resuelto';
@@ -9437,12 +9527,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     facturas: () => mountFacturasVivo('facturas-mount'),
     asamblea: () => mountAsambleaSistema('asamblea-mount'),
     conflictos: () => mountConflictos('conflictos-mount'),
-    deudas: () => mountLedger('deudas-mount', 'naken-deudas', [
-      {key:'unidad', label:'Unidad', placeholder:'4° B'},
-      {key:'meses', label:'Meses adeudados', placeholder:'3'},
-      {key:'monto', label:'Monto adeudado ($)', numeric:true, placeholder:'0'},
-      {key:'estado', label:'Estado del reclamo', placeholder:'Intimado / En gestión / Judicializado'},
-    ], {emptyText:'No hay unidades con deuda registrada.'}),
+    deudas: () => mountDeudasConsorcio('deudas-mount'),
     juicios: () => mountLedger('juicios-mount', 'naken-juicios', [
       {key:'caratula', label:'Carátula', placeholder:''},
       {key:'tipo', label:'Tipo', placeholder:'A favor / En contra'},
