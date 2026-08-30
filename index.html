@@ -9242,6 +9242,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     function reciboHtml(liq, emp, canvasId){
       const antigDiffiere = emp.fechaIngresoReconocida && emp.fechaIngresoReconocida !== emp.fechaIngreso;
+      // El % que se muestra junto a cada concepto se deriva del monto ya calculado (no depende
+      // de una config aparte) -- así siempre coincide exactamente con lo que se usó de verdad.
+      const pctDe = (monto, base) => base>0 ? (monto/base*100) : 0;
+      const pctSipaPatr = pctDe(liq.contribSipa, liq.sueldoBrutoRemun);
+      const pctObraSocialPatr = pctDe(liq.contribObraSocial, liq.sueldoBrutoRemun);
+      const pctFateryh = pctDe(liq.contribFateryh, liq.sueldoBrutoRemun);
+      const pctSuterhPatr = pctDe(liq.contribSuterh, liq.sueldoBrutoRemun);
+      const pctSeracarh = pctDe(liq.contribSeracarh, liq.sueldoBrutoRemun);
+      const pctArt = pctDe(liq.art, liq.sueldoBrutoRemun);
+      const pctAntig = liq.antiguedadAnios>0 && liq.basico>0 ? (liq.adicAntiguedad/(liq.basico*liq.antiguedadAnios)*100) : 0;
+      const pctJubilacion = pctDe(liq.retJubilacion, liq.sueldoBrutoRemun);
+      const pctPami = pctDe(liq.retPami, liq.sueldoBrutoRemun);
+      const pctObraSocialTrab = pctDe(liq.retObraSocial, liq.sueldoBrutoRemun);
+      const pctSindical = pctDe(liq.retSindical, liq.sueldoBrutoRemun);
       return `
         <div class="recibo" style="max-width:820px;">
           <div class="recibo-head">
@@ -9276,13 +9290,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
           <h4>Contribuciones patronales (a cargo del consorcio)</h4>
           <table style="width:100%;font-size:12.5px;border-collapse:collapse;">
-            <tr><td>SIPA patronal (${pct(cfg.contribSipaPct)})</td><td style="text-align:right;">${fmt(liq.contribSipa)}</td></tr>
-            <tr><td>Obra social patronal (${pct(cfg.contribObraSocialPct)})</td><td style="text-align:right;">${fmt(liq.contribObraSocial)}</td></tr>
-            <tr><td>FATERYH (${pct(cfg.contribFateryhPct)})</td><td style="text-align:right;">${fmt(liq.contribFateryh)}</td></tr>
-            ${num(cfg.contribSuterhPct)>0 ? `<tr><td>SUTERH patronal (${pct(cfg.contribSuterhPct)})</td><td style="text-align:right;">${fmt(liq.contribSuterh)}</td></tr>` : ''}
-            <tr><td>SERACARH (${pct(cfg.contribSeracarhPct)})</td><td style="text-align:right;">${fmt(liq.contribSeracarh)}</td></tr>
-            ${num(cfg.fmvddMonto)>0 ? `<tr><td>FMVDD</td><td style="text-align:right;">${fmt(liq.fmvdd)}</td></tr>` : ''}
-            <tr><td>ART (${pct(cfg.artPct)})</td><td style="text-align:right;">${fmt(liq.art)}</td></tr>
+            <tr><td>SIPA patronal (${pct(pctSipaPatr)})</td><td style="text-align:right;">${fmt(liq.contribSipa)}</td></tr>
+            <tr><td>Obra social patronal (${pct(pctObraSocialPatr)})</td><td style="text-align:right;">${fmt(liq.contribObraSocial)}</td></tr>
+            <tr><td>FATERYH (${pct(pctFateryh)})</td><td style="text-align:right;">${fmt(liq.contribFateryh)}</td></tr>
+            ${liq.contribSuterh>0 ? `<tr><td>SUTERH patronal (${pct(pctSuterhPatr)})</td><td style="text-align:right;">${fmt(liq.contribSuterh)}</td></tr>` : ''}
+            <tr><td>SERACARH (${pct(pctSeracarh)})</td><td style="text-align:right;">${fmt(liq.contribSeracarh)}</td></tr>
+            ${liq.fmvdd>0 ? `<tr><td>FMVDD</td><td style="text-align:right;">${fmt(liq.fmvdd)}</td></tr>` : ''}
+            <tr><td>ART (${pct(pctArt)})</td><td style="text-align:right;">${fmt(liq.art)}</td></tr>
             <tr><td>Seguro de vida obligatorio</td><td style="text-align:right;">${fmt(liq.seguroVida)}</td></tr>
             <tr class="recibo-total"><td>Sub total contribuciones empleador</td><td style="text-align:right;">${fmt(liq.totalContribPatronales)}</td></tr>
           </table>
@@ -9290,7 +9304,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <h4 style="margin-top:16px;">Sueldo bruto — Haberes</h4>
           <table style="width:100%;font-size:12.5px;border-collapse:collapse;">
             <tr><td>Sueldo básico</td><td style="text-align:right;">${fmt(liq.basico)}</td></tr>
-            <tr><td>Antigüedad (${liq.antiguedadAnios} años × ${pct(cfg.antiguedadPct)})</td><td style="text-align:right;">${fmt(liq.adicAntiguedad)}</td></tr>
+            <tr><td>Antigüedad (${liq.antiguedadAnios} años × ${pct(pctAntig)})</td><td style="text-align:right;">${fmt(liq.adicAntiguedad)}</td></tr>
             ${emp.presentismo?`<tr><td>Presentismo</td><td style="text-align:right;">${fmt(liq.adicPresentismo)}</td></tr>`:''}
             ${emp.tituloIntegral?`<tr><td>Título Encargado Integral</td><td style="text-align:right;">${fmt(liq.adicTitulo)}</td></tr>`:''}
             ${emp.zonaDesfavorable?`<tr><td>Zona desfavorable</td><td style="text-align:right;">${fmt(liq.adicZona)}</td></tr>`:''}
@@ -9309,10 +9323,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
           <h4 style="margin-top:16px;">Retenciones al trabajador</h4>
           <table style="width:100%;font-size:12.5px;border-collapse:collapse;">
-            ${!emp.jubiladoReincorporado?`<tr><td>Jubilación — SIPA (${pct(cfg.aporteJubilacionPct)})</td><td style="text-align:right;">−${fmt(liq.retJubilacion)}</td></tr>`:'<tr><td colspan="2" style="color:var(--muted);">Jubilado reincorporado: exento de aporte SIPA (Ley 24.241 art. 34)</td></tr>'}
-            <tr><td>Ley 19.032 / INSSJP — PAMI (${pct(cfg.aportePamiPct)})</td><td style="text-align:right;">−${fmt(liq.retPami)}</td></tr>
-            <tr><td>Obra social (${pct(cfg.aporteObraSocialPct)})</td><td style="text-align:right;">−${fmt(liq.retObraSocial)}</td></tr>
-            ${emp.afiliadoSindical?`<tr><td>Cuota sindical SUTERH (${pct(cfg.aporteSindicalPct)})</td><td style="text-align:right;">−${fmt(liq.retSindical)}</td></tr>`:''}
+            ${!emp.jubiladoReincorporado?`<tr><td>Jubilación — SIPA (${pct(pctJubilacion)})</td><td style="text-align:right;">−${fmt(liq.retJubilacion)}</td></tr>`:'<tr><td colspan="2" style="color:var(--muted);">Jubilado reincorporado: exento de aporte SIPA (Ley 24.241 art. 34)</td></tr>'}
+            <tr><td>Ley 19.032 / INSSJP — PAMI (${pct(pctPami)})</td><td style="text-align:right;">−${fmt(liq.retPami)}</td></tr>
+            <tr><td>Obra social (${pct(pctObraSocialTrab)})</td><td style="text-align:right;">−${fmt(liq.retObraSocial)}</td></tr>
+            ${emp.afiliadoSindical?`<tr><td>Cuota sindical SUTERH (${pct(pctSindical)})</td><td style="text-align:right;">−${fmt(liq.retSindical)}</td></tr>`:''}
             <tr class="recibo-total"><td>Total retenciones</td><td style="text-align:right;">−${fmt(liq.totalRetenciones)}</td></tr>
           </table>
 
