@@ -1556,21 +1556,23 @@
           <p class="panel-note">Legajos, escala salarial y cargas sociales del Convenio 589/10 (SUTERH/FATERYH), y liquidación mensual con recibo conforme al art. 140 LCT (reforma de modernización laboral, Decreto 407/2026): desglose obligatorio del costo laboral total a cargo del consorcio, antigüedad reconocida y categorías del convenio.</p>
         </div>
 
-        <div id="arca-link-mount"></div>
-        <p class="panel-note" style="margin-top:10px;margin-bottom:12px;">Para verificar los aportes de un empleado, entrá al link de ARCA y cargá su CUIL manualmente — no permite pasarlo por la dirección web.</p>
-
-        <div id="backup-sheet-url-mount"></div>
-        <p class="panel-note" style="margin-top:10px;margin-bottom:12px;">Cada liquidación que calculás acá se manda sola, como respaldo, a la fila correspondiente de la hoja "Personal_CargasSociales" de la planilla de ESTE consorcio — de ahí sale la boleta con el formato legal completo, lista para archivar o entregar. La URL del puente es la misma para todos tus consorcios; el link de la planilla es propio de cada uno.</p>
-
-        <div class="subhead" style="margin-top:0;">Escala salarial y cargas sociales (CCT 589/10)</div>
-        <p class="panel-note">Actualizá estos valores cada vez que salga un nuevo acuerdo paritario homologado SUTERH/FATERYH. Todos los legajos y liquidaciones toman los datos de acá automáticamente.</p>
-        <div id="cct589-config-mount"></div>
-
-        <div class="subhead">Legajos del personal</div>
+        <div class="subhead" style="margin-top:0;">Legajos del personal</div>
         <div id="empleados-mount"></div>
 
         <div class="subhead">Liquidación mensual y recibo de sueldo</div>
         <div id="liquidaciones-mount"></div>
+
+        <div class="subhead">Escala salarial y cargas sociales (CCT 589/10)</div>
+        <p class="panel-note">De referencia -- se actualiza una sola vez al mes en la hoja "Escala_CCT589_Nacional" de NAKEN-BaseDeDatos, y se aplica sola a todos tus consorcios. Acá solo se muestra la columna que le corresponde a este edificio según su categoría.</p>
+        <div id="cct589-config-mount"></div>
+
+        <div class="subhead">Aportes en Línea — ARCA (ex AFIP)</div>
+        <div id="arca-link-mount"></div>
+        <p class="panel-note" style="margin-top:10px;margin-bottom:12px;">Para verificar los aportes de un empleado, entrá al link de ARCA y cargá su CUIL manualmente — no permite pasarlo por la dirección web.</p>
+
+        <div class="subhead">Respaldo automático a Google Sheets</div>
+        <div id="backup-sheet-url-mount"></div>
+        <p class="panel-note" style="margin-top:10px;margin-bottom:12px;">Cada liquidación que calculás acá se manda sola, como respaldo, a la fila correspondiente de la hoja "Personal_CargasSociales" de la planilla de ESTE consorcio — de ahí sale la boleta con el formato legal completo, lista para archivar o entregar. La URL del puente es la misma para todos tus consorcios; el link de la planilla es propio de cada uno.</p>
       </section>
 
       <!-- MANUAL / DOCUMENTOS -->
@@ -1855,6 +1857,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       if(data.sessionExpired){ SESSION_TOKEN = null; window.dispatchEvent(new CustomEvent('naken-sesion-vencida')); }
       if(!data.ok) throw new Error(data.error || 'No se pudo leer.');
       return JSON.parse(data.value || '[]');
+    },
+    async getEscalaCct589(){
+      const url = `${APPS_SCRIPT_URL}?action=getEscalaCct589&sessionToken=${encodeURIComponent(SESSION_TOKEN||'')}`;
+      return fetchConReintento(()=>fetch(url));
     },
     // Expuesto para que otras partes de la app (llamadas directas a la
     // planilla de un consorcio: liquidación, resumen, documentos, etc.)
@@ -8802,31 +8808,44 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
   /* ---------- Personal y Liquidación de Sueldos — CCT 589/10 (SUTERH/FATERYH) ---------- */
   const FUNCIONES_CCT589 = [
-    {key:'enc_perm_cv', label:'Encargado permanente con vivienda (4ª categoría)'},
-    {key:'enc_perm_sv', label:'Encargado permanente sin vivienda (3ª categoría)'},
-    {key:'enc_noperm_cv', label:'Encargado no permanente con vivienda (2ª cat. / media jornada)'},
-    {key:'enc_noperm_sv', label:'Encargado no permanente sin vivienda (1ª cat. / media jornada)'},
+    {key:'enc_perm_cv', label:'Encargado permanente con vivienda'},
+    {key:'enc_perm_sv', label:'Encargado permanente sin vivienda'},
     {key:'ayud_perm_cv', label:'Ayudante permanente con vivienda'},
     {key:'ayud_perm_sv', label:'Ayudante permanente sin vivienda'},
-    {key:'suplente', label:'Suplente con horario'},
+    {key:'ayud_media', label:'Ayudante media jornada'},
+    {key:'asimilado_cv', label:'Personal asimilado con vivienda'},
+    {key:'asimilado_sv', label:'Personal asimilado sin vivienda'},
+    {key:'mayordomo_cv', label:'Mayordomo con vivienda'},
+    {key:'mayordomo_sv', label:'Mayordomo sin vivienda'},
+    {key:'intendente', label:'Intendente'},
+    {key:'mas1funcion_cv', label:'Personal con más de 1 función, con vivienda'},
+    {key:'mas1funcion_sv', label:'Personal con más de 1 función, sin vivienda'},
+    {key:'guardacoches_cv', label:'Encargado guardacoches con vivienda'},
+    {key:'guardacoches_sv', label:'Encargado guardacoches sin vivienda'},
+    {key:'vigilancia_nocturna', label:'Personal de vigilancia nocturna'},
+    {key:'vigilancia_diurna', label:'Personal de vigilancia diurna'},
+    {key:'vigilancia_media', label:'Personal de vigilancia, media jornada'},
+    {key:'enc_noperm_cv', label:'Encargado no permanente con vivienda'},
+    {key:'enc_noperm_sv', label:'Encargado no permanente sin vivienda'},
+    {key:'ayud_temp', label:'Ayudante temporario'},
+    {key:'ayud_temp_media', label:'Ayudante temporario, media jornada'},
+    {key:'jornalizado', label:'Personal jornalizado (valor por hora)'},
+    {key:'suplente', label:'Suplente con horario (valor por día)'},
     {key:'administrativo', label:'Personal administrativo'},
     {key:'maestranza', label:'Personal de maestranza'},
-    {key:'vigilancia', label:'Personal de vigilancia (media jornada)'},
-    {key:'jornalizado', label:'Personal jornalizado (valor por jornada)'},
   ];
+  // Compatibilidad con legajos ya cargados que usaban la key vieja "vigilancia"
+  // (antes de ampliar a las 25 funciones de la escala oficial completa).
+  function normalizarFuncionCct589(key){
+    return key==='vigilancia' ? 'vigilancia_media' : key;
+  }
   function funcionLabelCct589(key){
-    const f = FUNCIONES_CCT589.find(x=>x.key===key);
+    const f = FUNCIONES_CCT589.find(x=>x.key===normalizarFuncionCct589(key));
     return f ? f.label : (key || '—');
   }
-  const CCT589_CONFIG_DEFAULT = {
-    basicos: { enc_perm_cv: 1197409 },
-    antiguedadPct: 2, presentismoPct: 0, tituloPct: 10, zonaDesfPct: 50,
-    retiroResiduosMonto: 15000, limpiezaCocherasMonto: 0, manejoCalderasMonto: 0, mantJardinMonto: 0, limpiezaPiletasMonto: 0,
-    sumaFijaRemun: 0, horasMensuales: 200, recargo50: 1.5, recargo100: 2, divisorDia: 25,
-    aporteJubilacionPct: 11, aportePamiPct: 3, aporteObraSocialPct: 3, aporteSindicalPct: 2,
-    contribSipaPct: 10.17, contribObraSocialPct: 6, contribFateryhPct: 6, contribSuterhPct: 0, contribSeracarhPct: 0.5,
-    fmvddMonto: 0, artPct: 0, seguroVidaMonto: 0,
-  };
+  // Funciones que corresponden a "con vivienda" -- se usan para sumar el adicional de
+  // "Valor vivienda" automáticamente, sin necesitar un casillero aparte en el legajo.
+  const FUNCIONES_CON_VIVIENDA = ['enc_perm_cv','ayud_perm_cv','asimilado_cv','mayordomo_cv','mas1funcion_cv','guardacoches_cv','enc_noperm_cv'];
 
   function parseFechaAR(str){
     if(!str) return null;
@@ -8845,104 +8864,60 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
 
   /* ---------- Configuración de escala y cargas sociales ---------- */
+  // Esta caja ya no se edita en la app -- la escala se administra en la hoja Escala_CCT589_Nacional
+  // de NAKEN-BaseDeDatos, compartida por todos los consorcios. Acá solo se muestra, de solo
+  // lectura, la columna que le corresponde a ESTE edificio según su categoría (Config_NAKEN).
   function mountCct589Config(mountId, storageKey){
     const mount = document.getElementById(mountId);
-    const statusId = mountId+'-status';
-    let cfg = JSON.parse(JSON.stringify(CCT589_CONFIG_DEFAULT));
+    mount.innerHTML = `<div class="empty">Cargando…</div>`;
 
-    function num(v){ const n = parseFloat((v===undefined||v===null?'':v).toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    async function render(){
+      const spreadsheetId = await getSpreadsheetIdActivo();
+      const [escalaRes, cfgConsorcio] = await Promise.all([
+        window.storage.getEscalaCct589(),
+        spreadsheetId ? fetchConfigConsorcio(spreadsheetId) : Promise.resolve(null),
+      ]);
 
-    function render(){
-      mount.innerHTML = `
-        <div class="new-ticket" style="background:#fff;">
-          <h3>1. Básico mensual por función (CCT 589/10)</h3>
-          <table class="ledger" style="margin-bottom:6px;">
-            <thead><tr><th>Función / Categoría</th><th style="width:200px;">Básico mensual ($)</th></tr></thead>
-            <tbody>
-              ${FUNCIONES_CCT589.map(f=>`
-                <tr>
-                  <td><input type="text" value="${escapeHtml(f.label)}" disabled></td>
-                  <td class="num"><input type="text" data-basico="${f.key}" value="${escapeHtml(cfg.basicos[f.key]||0)}" ${role==='admin'?'':'disabled'}></td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          <p class="panel-note" style="margin:0 0 14px;">Personal jornalizado: cargá el valor por jornada, no el mensual.</p>
-
-          <h3>2. Adicionales convencionales (% sobre el básico o monto fijo)</h3>
-          <div class="field-grid">
-            <div><label>% Antigüedad por año (Art. 11)</label><input type="text" data-f="antiguedadPct" value="${escapeHtml(cfg.antiguedadPct)}"></div>
-            <div><label>% Presentismo</label><input type="text" data-f="presentismoPct" value="${escapeHtml(cfg.presentismoPct)}"></div>
-            <div><label>% Título Encargado Integral</label><input type="text" data-f="tituloPct" value="${escapeHtml(cfg.tituloPct)}"></div>
-            <div><label>% Zona desfavorable</label><input type="text" data-f="zonaDesfPct" value="${escapeHtml(cfg.zonaDesfPct)}"></div>
-            <div><label>Retiro y clasif. residuos ($)</label><input type="text" data-f="retiroResiduosMonto" value="${escapeHtml(cfg.retiroResiduosMonto)}"></div>
-            <div><label>Limpieza de cocheras ($)</label><input type="text" data-f="limpiezaCocherasMonto" value="${escapeHtml(cfg.limpiezaCocherasMonto)}"></div>
-            <div><label>Manejo de calderas ($)</label><input type="text" data-f="manejoCalderasMonto" value="${escapeHtml(cfg.manejoCalderasMonto)}"></div>
-            <div><label>Mantenimiento de jardín ($)</label><input type="text" data-f="mantJardinMonto" value="${escapeHtml(cfg.mantJardinMonto)}"></div>
-            <div><label>Limpieza de piletas ($)</label><input type="text" data-f="limpiezaPiletasMonto" value="${escapeHtml(cfg.limpiezaPiletasMonto)}"></div>
-            <div><label>Suma fija remunerativa ($)</label><input type="text" data-f="sumaFijaRemun" value="${escapeHtml(cfg.sumaFijaRemun)}"></div>
-          </div>
-
-          <h3>3. Jornada y horas extra</h3>
-          <div class="field-grid">
-            <div><label>Horas mensuales jornada legal</label><input type="text" data-f="horasMensuales" value="${escapeHtml(cfg.horasMensuales)}"></div>
-            <div><label>Recargo hora extra 50% (mult.)</label><input type="text" data-f="recargo50" value="${escapeHtml(cfg.recargo50)}"></div>
-            <div><label>Recargo hora extra 100% (mult.)</label><input type="text" data-f="recargo100" value="${escapeHtml(cfg.recargo100)}"></div>
-            <div><label>Divisor valor día (SAC/vacaciones)</label><input type="text" data-f="divisorDia" value="${escapeHtml(cfg.divisorDia)}"></div>
-          </div>
-
-          <h3>4. Aportes personales (retenciones al trabajador, % sobre bruto)</h3>
-          <div class="field-grid">
-            <div><label>Jubilación — SIPA (%)</label><input type="text" data-f="aporteJubilacionPct" value="${escapeHtml(cfg.aporteJubilacionPct)}"></div>
-            <div><label>Ley 19.032 / INSSJP — PAMI (%)</label><input type="text" data-f="aportePamiPct" value="${escapeHtml(cfg.aportePamiPct)}"></div>
-            <div><label>Obra Social — OSPERYH (%)</label><input type="text" data-f="aporteObraSocialPct" value="${escapeHtml(cfg.aporteObraSocialPct)}"></div>
-            <div><label>Cuota sindical SUTERH (%)</label><input type="text" data-f="aporteSindicalPct" value="${escapeHtml(cfg.aporteSindicalPct)}"></div>
-          </div>
-
-          <h3>5. Contribuciones patronales (a cargo del consorcio — F.931 + sindicales)</h3>
-          <div class="field-grid">
-            <div><label>SIPA patronal — F.931 (%)</label><input type="text" data-f="contribSipaPct" value="${escapeHtml(cfg.contribSipaPct)}"></div>
-            <div><label>Obra Social patronal (%)</label><input type="text" data-f="contribObraSocialPct" value="${escapeHtml(cfg.contribObraSocialPct)}"></div>
-            <div><label>FATERYH (%)</label><input type="text" data-f="contribFateryhPct" value="${escapeHtml(cfg.contribFateryhPct)}"></div>
-            <div><label>SUTERH patronal, si aplica (%)</label><input type="text" data-f="contribSuterhPct" value="${escapeHtml(cfg.contribSuterhPct)}"></div>
-            <div><label>SERACARH (%)</label><input type="text" data-f="contribSeracarhPct" value="${escapeHtml(cfg.contribSeracarhPct)}"></div>
-            <div><label>FMVDD, monto fijo ($)</label><input type="text" data-f="fmvddMonto" value="${escapeHtml(cfg.fmvddMonto)}"></div>
-            <div><label>ART — según póliza (%)</label><input type="text" data-f="artPct" value="${escapeHtml(cfg.artPct)}"></div>
-            <div><label>Seguro de vida obligatorio ($)</label><input type="text" data-f="seguroVidaMonto" value="${escapeHtml(cfg.seguroVidaMonto)}"></div>
-          </div>
-
-          <p class="panel-note" style="margin:0 0 10px;">Estos valores son de referencia y deben verificarse contra la última acta paritaria SUTERH/FATERYH homologada y contra el Decreto 814/01 antes de liquidar un legajo real. Los % de jubilación y SIPA patronal no se aplican a empleados jubilados reincorporados (Ley 24.241 art. 34).</p>
-          <div class="toolbar">
-            <span></span>
-            <div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}${role==='admin'?`<button class="btn primary" id="${mountId}-save">Guardar cambios</button>`:''}</div>
-          </div>
-        </div>
-      `;
-      if(role!=='admin'){
-        mount.querySelectorAll('input').forEach(i=>i.disabled=true);
+      if(!escalaRes || !escalaRes.ok){
+        mount.innerHTML = `<div class="empty">No se pudo leer la escala salarial CCT 589/10${escalaRes && escalaRes.error ? ': '+escapeHtml(escalaRes.error) : ''}. Revisá que exista la hoja "Escala_CCT589_Nacional" en NAKEN-BaseDeDatos.</div>`;
         return;
       }
 
-      function readForm(){
-        mount.querySelectorAll('[data-basico]').forEach(i=>{ cfg.basicos[i.dataset.basico] = num(i.value); });
-        mount.querySelectorAll('[data-f]').forEach(i=>{ cfg[i.dataset.f] = num(i.value); });
+      const catRaw = cfgConsorcio && cfgConsorcio.consorcio ? parseInt(cfgConsorcio.consorcio.categoriaCct589, 10) : NaN;
+      const categoria = (catRaw>=1 && catRaw<=4) ? catRaw : null;
+
+      if(!categoria){
+        mount.innerHTML = `<div class="empty">Este consorcio todavía no tiene cargada su categoría según CCT 589/10 — completala en Config_NAKEN (fila 19) para que la liquidación pueda calcular el básico correcto.</div>`;
+        return;
       }
-      let saveTimer;
-      function scheduleSave(){
-        setStatus(statusId,'saving');
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(()=>{ readForm(); saveData(storageKey, cfg, statusId); }, 700);
-      }
-      mount.addEventListener('input', scheduleSave);
-      document.getElementById(mountId+'-save').addEventListener('click', ()=>{ readForm(); saveData(storageKey, cfg, statusId); });
+
+      const idx = categoria - 1;
+      const filas = FUNCIONES_CCT589.map(f=>{
+        const basicoRow = escalaRes.basicos[f.key] || [0,0,0,0];
+        return { label: f.label, basico: Number(basicoRow[idx])||0 };
+      }).filter(f=>f.basico>0);
+
+      mount.innerHTML = `
+        <div class="new-ticket" style="background:#fff;">
+          <div class="kpi-row" style="margin-bottom:14px;">
+            <div class="kpi"><div class="label">Categoría de este edificio</div><div class="value">${categoria}ª</div></div>
+            <div class="kpi"><div class="label">Escala vigente desde</div><div class="value" style="font-size:16px;">${escapeHtml(escalaRes.vigenteDesde||'—')}</div></div>
+          </div>
+          <p class="panel-note" style="margin-bottom:14px;">Esta escala es compartida por todos tus consorcios — se actualiza una sola vez, en la hoja <b>Escala_CCT589_Nacional</b> de <b>NAKEN-BaseDeDatos</b>, cuando salga una paritaria SUTERH/FATERYH nueva. Acá abajo se muestra, de referencia, solo la columna que le corresponde a este edificio según su categoría.</p>
+          ${filas.length===0 ? `<div class="empty">Todavía no hay básicos cargados para la ${categoria}ª categoría en la escala nacional.</div>` : `
+          <table class="ledger">
+            <thead><tr><th>Función</th><th style="width:180px;">Básico (${categoria}ª cat.)</th></tr></thead>
+            <tbody>
+              ${filas.map(f=>`<tr><td>${escapeHtml(f.label)}</td><td class="num">$ ${f.basico.toLocaleString('es-AR')}</td></tr>`).join('')}
+            </tbody>
+          </table>
+          `}
+          ${role==='admin' ? `<p class="panel-note" style="margin-top:14px;">¿Hay que corregir un valor, o cambió la categoría de este edificio? La categoría se edita en Config_NAKEN (fila 19) de la planilla de este consorcio; los básicos y adicionales se editan en la hoja Escala_CCT589_Nacional de NAKEN-BaseDeDatos.</p>` : ''}
+        </div>
+      `;
     }
 
-    loadData(storageKey, null).then(saved=>{
-      if(saved){ cfg = Object.assign(JSON.parse(JSON.stringify(CCT589_CONFIG_DEFAULT)), saved); cfg.basicos = Object.assign({}, CCT589_CONFIG_DEFAULT.basicos, saved.basicos||{}); }
-      render();
-    });
-
-    return { getConfig: ()=>cfg };
+    render();
   }
 
   /* ---------- Legajos del personal ---------- */
@@ -8955,6 +8930,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return { legajo:'', nombreCompleto:'', cuil:'', funcion:FUNCIONES_CCT589[0].key, fechaIngreso:'', fechaIngresoReconocida:'',
         jubiladoReincorporado:false, afiliadoSindical:true, presentismo:false, tituloIntegral:false, zonaDesfavorable:false,
         retiroResiduos:false, limpiezaCocheras:false, manejoCalderas:false, mantJardin:false, limpiezaPiletas:false, sumaFijaRemun:false,
+        clasificacionResiduos:false, movimientoCoches:false, viaticos:false,
         lugarPago:'', formaPagoAportes:'' };
     }
 
@@ -9011,6 +8987,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               ${checkboxRow('Manejo de calderas','manejoCalderas',e,i)}
               ${checkboxRow('Mantenimiento de jardín','mantJardin',e,i)}
               ${checkboxRow('Limpieza de piletas','limpiezaPiletas',e,i)}
+              ${checkboxRow('Clasificación de residuos','clasificacionResiduos',e,i)}
+              ${checkboxRow('Movimiento de coches (cochera)','movimientoCoches',e,i)}
+              ${checkboxRow('Viáticos','viaticos',e,i)}
               ${checkboxRow('Suma fija remunerativa','sumaFijaRemun',e,i)}
             </div>
           </div>
@@ -9066,7 +9045,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const statusId = mountId+'-status';
     let liquidaciones = [];
     let empleados = [];
-    let cfg = JSON.parse(JSON.stringify(CCT589_CONFIG_DEFAULT));
+    let escala = { basicos:{}, adicionales:{}, aportesContrib:{}, vigenteDesde:'' };
+    let categoriaEdificio = 1;
     let consorcioDatos = {edificio:'', barrio:'', cuit:''};
     const chartsByCanvas = {};
 
@@ -9074,28 +9054,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     function fmt(n){ return '$ ' + (n||0).toLocaleString('es-AR',{maximumFractionDigits:2}); }
     function pct(n){ return (n||0).toLocaleString('es-AR',{maximumFractionDigits:2}) + '%'; }
 
-    // Debe ser textualmente IGUAL a la lista de Escala_CCT589_Config!$A$6:$A$16 de la planilla,
-    // para que el VLOOKUP de la columna "Categoría" encuentre el básico. No siempre coincide con
-    // la etiqueta que se muestra en la app (ej. "Personal jornalizado" no lleva la aclaración).
-    const FUNCION_A_TEXTO_PLANILLA = {
-      enc_perm_cv: 'Encargado permanente con vivienda (4ª categoría)',
-      enc_perm_sv: 'Encargado permanente sin vivienda (3ª categoría)',
-      enc_noperm_cv: 'Encargado no permanente con vivienda (2ª cat. / media jornada)',
-      enc_noperm_sv: 'Encargado no permanente sin vivienda (1ª cat. / media jornada)',
-      ayud_perm_cv: 'Ayudante permanente con vivienda',
-      ayud_perm_sv: 'Ayudante permanente sin vivienda',
-      suplente: 'Suplente con horario',
-      administrativo: 'Personal administrativo',
-      maestranza: 'Personal de maestranza',
-      vigilancia: 'Personal de vigilancia (media jornada)',
-      jornalizado: 'Personal jornalizado',
-    };
-
     function buildBackupPayload(record, emp){
       const siNo = v => v ? 'Sí' : 'No';
       return {
         periodo: record.periodo, nombreCompleto: emp.nombreCompleto, cuil: emp.cuil,
-        categoria: FUNCION_A_TEXTO_PLANILLA[emp.funcion] || emp.funcion,
+        categoria: funcionLabelCct589(emp.funcion) + ' — ' + (record.categoriaEdificio||'') + 'ª categoría',
         fechaIngreso: emp.fechaIngreso, jubiladoReincorporado: siNo(emp.jubiladoReincorporado),
         presentismo: siNo(emp.presentismo), tituloIntegral: siNo(emp.tituloIntegral),
         zonaDesfavorable: siNo(emp.zonaDesfavorable), retiroResiduos: siNo(emp.retiroResiduos),
@@ -9192,58 +9155,83 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const antiguedadInput = document.getElementById(mountId+'-antiguedad');
     const listEl = document.getElementById(mountId+'-list');
 
+    // OJO: num() está pensada para texto de un <input> en formato argentino (coma decimal) --
+    // si se le pasa un número JS que YA tiene punto decimal (como los que vienen calculados del
+    // backend, ej. 10.17), lo malinterpreta como si el punto fuera separador de miles y lo
+    // multiplica por 100 o más. Para los valores de la escala (que ya son números reales, no
+    // texto tipeado), hay que usar esta función en cambio, que no reinterpreta nada.
+    function numEscala(v){ const n = Number(v); return isNaN(n) ? 0 : n; }
+
     function computeLiquidacion(emp, inputs){
-      const basico = num(cfg.basicos[emp.funcion]);
+      const funcion = normalizarFuncionCct589(emp.funcion);
+      const basicoFila = escala.basicos[funcion] || [0,0,0,0];
+      const idxCategoria = Math.max(0, Math.min(3, (numEscala(categoriaEdificio)||1) - 1));
+      const basico = numEscala(basicoFila[idxCategoria]);
+      const adic = escala.adicionales || {};
+      const ap = escala.aportesContrib || {};
+
       const antiguedadAnios = inputs.antiguedadAnios !== '' && inputs.antiguedadAnios != null
         ? num(inputs.antiguedadAnios)
         : calcAntiguedadAniosCct589(emp.fechaIngresoReconocida || emp.fechaIngreso);
-      const adicAntiguedad = basico * (num(cfg.antiguedadPct)/100) * antiguedadAnios;
-      const adicPresentismo = emp.presentismo ? basico * (num(cfg.presentismoPct)/100) : 0;
-      const adicTitulo = emp.tituloIntegral ? basico * (num(cfg.tituloPct)/100) : 0;
-      const adicZona = emp.zonaDesfavorable ? basico * (num(cfg.zonaDesfPct)/100) : 0;
-      const impResiduos = emp.retiroResiduos ? num(cfg.retiroResiduosMonto) : 0;
-      const impCocheras = emp.limpiezaCocheras ? num(cfg.limpiezaCocherasMonto) : 0;
-      const impCalderas = emp.manejoCalderas ? num(cfg.manejoCalderasMonto) : 0;
-      const impJardin = emp.mantJardin ? num(cfg.mantJardinMonto) : 0;
-      const impPiletas = emp.limpiezaPiletas ? num(cfg.limpiezaPiletasMonto) : 0;
-      const impSumaFija = emp.sumaFijaRemun ? num(cfg.sumaFijaRemun) : 0;
-      const horasMens = num(cfg.horasMensuales) || 200;
+      // La paritaria trae dos pluses de antigüedad distintos (Resoluc. 106/09 + ART. 11) que se
+      // suman acá -- confirmá con tu asesor si tu convenio los aplica de otra forma.
+      const pctAntiguedadTotal = (numEscala(adic.antiguedadPct106_09) + numEscala(adic.antiguedadPct)) / 100;
+      const adicAntiguedad = basico * pctAntiguedadTotal * antiguedadAnios;
+      const adicPresentismo = emp.presentismo ? basico * (numEscala(adic.presentismoPct)/100) : 0;
+      const adicTitulo = emp.tituloIntegral ? basico * (numEscala(adic.tituloPct)/100) : 0;
+      const adicZona = emp.zonaDesfavorable ? basico * (numEscala(adic.zonaDesfPct)/100) : 0;
+      const impResiduos = emp.retiroResiduos ? numEscala(adic.retiroResiduosMonto) : 0;
+      const impClasifResiduos = emp.clasificacionResiduos ? numEscala(adic.clasificacionResiduosMonto) : 0;
+      // El adicional de vivienda se aplica solo si la función elegida es "con vivienda" -- no hace
+      // falta un casillero aparte en el legajo, ya está implícito en la función.
+      const impVivienda = FUNCIONES_CON_VIVIENDA.includes(funcion) ? numEscala(adic.valorViviendaMonto) : 0;
+      const impCocheras = emp.limpiezaCocheras ? numEscala(adic.limpiezaCocherasMonto) : 0;
+      const impMovCoches = emp.movimientoCoches ? numEscala(adic.movimientoCochesMonto) : 0;
+      const impCalderas = emp.manejoCalderas ? numEscala(adic.manejoCalderasMonto) : 0;
+      const impJardin = emp.mantJardin ? numEscala(adic.mantJardinMonto) : 0;
+      const impPiletas = emp.limpiezaPiletas ? numEscala(adic.limpiezaPiletasMonto) : 0;
+      const impViaticos = emp.viaticos ? numEscala(adic.viaticosMonto) : 0;
+      const impSumaFija = emp.sumaFijaRemun ? numEscala(adic.sumaFijaRemun) : 0;
+      // El adicional remunerativo mensual del convenio se aplica siempre, a todas las categorías.
+      const impAdicionalCct = numEscala(adic.adicionalRemun80000);
+      const horasMens = numEscala(adic.horasMensuales) || 200;
       const valorHora = basico / horasMens;
-      const imp50 = num(inputs.hs50) * valorHora * (num(cfg.recargo50) || 1.5);
-      const imp100 = num(inputs.hs100) * valorHora * (num(cfg.recargo100) || 2);
-      const divisorDia = num(cfg.divisorDia) || 25;
+      const imp50 = num(inputs.hs50) * valorHora * (numEscala(adic.recargo50) || 1.5);
+      const imp100 = num(inputs.hs100) * valorHora * (numEscala(adic.recargo100) || 2);
+      const divisorDia = numEscala(adic.divisorDia) || 25;
       const valorDia = basico / divisorDia;
       const descInasistencias = num(inputs.diasInasistencia) * valorDia;
       const impVacaciones = num(inputs.importeVacaciones);
 
       const sueldoBrutoRemun = basico+adicAntiguedad+adicPresentismo+adicTitulo+adicZona
-        +impResiduos+impCocheras+impCalderas+impJardin+impPiletas+impSumaFija
+        +impResiduos+impClasifResiduos+impVivienda+impCocheras+impMovCoches+impCalderas+impJardin+impPiletas+impViaticos+impSumaFija+impAdicionalCct
         +imp50+imp100+impVacaciones - descInasistencias;
 
       const esJubilado = !!emp.jubiladoReincorporado;
-      const retJubilacion = esJubilado ? 0 : sueldoBrutoRemun * (num(cfg.aporteJubilacionPct)/100);
-      const retPami = sueldoBrutoRemun * (num(cfg.aportePamiPct)/100);
-      const retObraSocial = sueldoBrutoRemun * (num(cfg.aporteObraSocialPct)/100);
-      const retSindical = emp.afiliadoSindical ? sueldoBrutoRemun * (num(cfg.aporteSindicalPct)/100) : 0;
+      const retJubilacion = esJubilado ? 0 : sueldoBrutoRemun * (numEscala(ap.aporteJubilacionPct)/100);
+      const retPami = sueldoBrutoRemun * (numEscala(ap.aportePamiPct)/100);
+      const retObraSocial = sueldoBrutoRemun * (numEscala(ap.aporteObraSocialPct)/100);
+      const retSindical = emp.afiliadoSindical ? sueldoBrutoRemun * (numEscala(ap.aporteSindicalPct)/100) : 0;
       const totalRetenciones = retJubilacion+retPami+retObraSocial+retSindical;
       const sueldoNeto = sueldoBrutoRemun - totalRetenciones;
 
-      const contribSipa = esJubilado ? 0 : sueldoBrutoRemun * (num(cfg.contribSipaPct)/100);
-      const contribObraSocial = sueldoBrutoRemun * (num(cfg.contribObraSocialPct)/100);
-      const contribFateryh = sueldoBrutoRemun * (num(cfg.contribFateryhPct)/100);
-      const contribSuterh = sueldoBrutoRemun * (num(cfg.contribSuterhPct)/100);
-      const contribSeracarh = sueldoBrutoRemun * (num(cfg.contribSeracarhPct)/100);
-      const fmvdd = num(cfg.fmvddMonto);
-      const art = sueldoBrutoRemun * (num(cfg.artPct)/100);
-      const seguroVida = num(cfg.seguroVidaMonto);
+      const contribSipa = esJubilado ? 0 : sueldoBrutoRemun * (numEscala(ap.contribSipaPct)/100);
+      const contribObraSocial = sueldoBrutoRemun * (numEscala(ap.contribObraSocialPct)/100);
+      const contribFateryh = sueldoBrutoRemun * (numEscala(ap.contribFateryhPct)/100);
+      const contribSuterh = sueldoBrutoRemun * (numEscala(ap.contribSuterhPct)/100);
+      const contribSeracarh = sueldoBrutoRemun * (numEscala(ap.contribSeracarhPct)/100);
+      const fmvdd = numEscala(ap.fmvddMonto);
+      const art = sueldoBrutoRemun * (numEscala(ap.artPct)/100);
+      const seguroVida = numEscala(ap.seguroVidaMonto);
       const totalContribPatronales = contribSipa+contribObraSocial+contribFateryh+contribSuterh+contribSeracarh+fmvdd+art+seguroVida;
       const costoTotalEmpleador = sueldoBrutoRemun + totalContribPatronales;
 
       return {
         id: uid(), empleadoIdx: inputs.empleadoIdx, empleadoNombre: emp.nombreCompleto, periodo: inputs.periodo,
         hs50: inputs.hs50, hs100: inputs.hs100, diasInasistencia: inputs.diasInasistencia, importeVacaciones: inputs.importeVacaciones,
+        categoriaEdificio: idxCategoria+1,
         basico, antiguedadAnios, adicAntiguedad, adicPresentismo, adicTitulo, adicZona,
-        impResiduos, impCocheras, impCalderas, impJardin, impPiletas, impSumaFija,
+        impResiduos, impClasifResiduos, impVivienda, impCocheras, impMovCoches, impCalderas, impJardin, impPiletas, impViaticos, impSumaFija, impAdicionalCct,
         valorHora, imp50, imp100, valorDia, descInasistencias, impVacaciones,
         sueldoBrutoRemun, retJubilacion, retPami, retObraSocial, retSindical, totalRetenciones, sueldoNeto,
         contribSipa, contribObraSocial, contribFateryh, contribSuterh, contribSeracarh, fmvdd, art, seguroVida,
@@ -9495,19 +9483,29 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
     });
 
-    Promise.all([
-      loadData('naken-empleados', []),
-      loadData('naken-cct589-config', null),
-      loadData('naken-consorcio-datos', {edificio:'', barrio:'', cuit:''}),
-      loadData(storageKey, [])
-    ]).then(([emp, savedCfg, cfgConsorcio, liq])=>{
+    (async ()=>{
+      const spreadsheetIdActivo = await getSpreadsheetIdActivo();
+      const [emp, escalaRes, cfgConsorcioDatos, cfgConsorcioLiq, liq] = await Promise.all([
+        loadData('naken-empleados', []),
+        window.storage.getEscalaCct589(),
+        loadData('naken-consorcio-datos', {edificio:'', barrio:'', cuit:''}),
+        spreadsheetIdActivo ? fetchConfigConsorcio(spreadsheetIdActivo) : Promise.resolve(null),
+        loadData(storageKey, [])
+      ]);
       empleados = emp || [];
-      if(savedCfg){ cfg = Object.assign(JSON.parse(JSON.stringify(CCT589_CONFIG_DEFAULT)), savedCfg); cfg.basicos = Object.assign({}, CCT589_CONFIG_DEFAULT.basicos, savedCfg.basicos||{}); }
-      consorcioDatos = cfgConsorcio || {edificio:'', barrio:'', cuit:''};
+      if(escalaRes && escalaRes.ok){
+        escala = escalaRes;
+      } else {
+        escala = { basicos:{}, adicionales:{}, aportesContrib:{}, vigenteDesde:'' };
+        console.error('No se pudo leer la escala salarial CCT 589/10:', escalaRes && escalaRes.error);
+      }
+      const catRaw = cfgConsorcioLiq && cfgConsorcioLiq.consorcio ? parseInt(cfgConsorcioLiq.consorcio.categoriaCct589, 10) : NaN;
+      categoriaEdificio = (catRaw>=1 && catRaw<=4) ? catRaw : 1;
+      consorcioDatos = cfgConsorcioDatos || {edificio:'', barrio:'', cuit:''};
       liquidaciones = liq || [];
       refreshEmpleadoSelect();
       renderList();
-    });
+    })();
   }
 
   /* ---------- Render all modules for current role ---------- */
@@ -9602,6 +9600,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     calchonorarios: () => { if(role==='admin') mountCalcHonorarios('calchonorarios-mount'); },
     personal: () => {
       if(role!=='admin') return;
+      mountEmpleadosCct589('empleados-mount', 'naken-empleados');
+      mountLiquidacionesCct589('liquidaciones-mount', 'naken-liquidaciones-sueldo');
+      mountCct589Config('cct589-config-mount', 'naken-cct589-config');
       mountLinkField('arca-link-mount', 'naken-arca-link', {
         title: 'Aportes en Línea — ARCA (ex AFIP)',
         hint: 'Portal oficial para verificar si los aportes de un empleado están al día. Hay que ingresar el CUIL manualmente en la página, no se puede pasar por el link.',
@@ -9609,7 +9610,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         buttonLabel: 'Ir a Aportes en Línea',
         defaultValue: 'https://www.arca.gob.ar/aportesenlinea/'
       });
-      mountCct589Config('cct589-config-mount', 'naken-cct589-config');
       mountLinkField('backup-sheet-url-mount', 'naken-backup-sheet-url', {
         title: 'Respaldo automático a Google Sheets — URL del puente',
         hint: 'La URL de tu Google Apps Script centralizado (se instala una sola vez y sirve para todos los consorcios — ver instrucciones). Es la misma en todos tus consorcios. La planilla de este consorcio puntual ya está vinculada desde el panel general (Config. del consorcio → ID de planilla) — no hace falta cargarla de nuevo acá.',
@@ -9617,8 +9617,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         buttonLabel: 'Probar el puente',
         emptyText: 'Todavía no conectaste el puente de respaldo.',
       });
-      mountEmpleadosCct589('empleados-mount', 'naken-empleados');
-      mountLiquidacionesCct589('liquidaciones-mount', 'naken-liquidaciones-sueldo');
     },
     remocion: () => {}, // contenido estático, sin datos que montar
   };
