@@ -6872,8 +6872,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     mount.innerHTML = `<div class="empty">Cargando…</div>`;
 
-    Promise.all([loadData(movKey, []), loadData(concKey, []), loadData(cuentaKey, {})]).then(([movRows, periodos, cuenta])=>{
-      const saldo = movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0);
+    Promise.all([
+      loadData(movKey, []), loadData(concKey, []), loadData(cuentaKey, {}),
+      opts.mostrarSaldoInicial ? loadData(opts.saldoInicialKey || (movKey+'-saldo-inicial'), 0) : Promise.resolve(0),
+    ]).then(([movRows, periodos, cuenta, si])=>{
+      const saldo = num(si) + movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0);
       const archivadas = periodos.filter(p=>p.cerrado);
       const ultima = archivadas.length ? archivadas[archivadas.length-1] : null;
 
@@ -6921,6 +6924,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     let movRows = [];
     let periodos = [];
     let currentPeriodId = null;
+    let saldoInicial = 0; // solo se usa si opts.mostrarSaldoInicial -- carga única al empezar a usar el fondo
     const extractoArchivoCache = {}; // { [periodoId]: { bytes: ArrayBuffer, mimeType, nombre } } — solo dura la sesión
 
     function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
@@ -6931,6 +6935,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     function calcDiferencia(p){
       const partidasSum = (p.partidas||[]).reduce((acc,it)=> acc + (it.signo==='-' ? -num(it.importe) : num(it.importe)), 0);
       return num(p.saldoExtracto) - (num(p.saldoLibroBanco) + partidasSum);
+    }
+    // La diferencia CRUDA es el punto de partida del Paso 1 (antes de explicar nada con
+    // partidas) -- calcDiferencia() de arriba ya incluye las partidas, así que sirve para el
+    // chequeo final de "¿concilia?", pero no para mostrar cuánto había que conciliar en un
+    // principio (que es justo lo que el Paso 1 necesita mostrar).
+    function calcDiferenciaCruda(p){
+      return num(p.saldoExtracto) - num(p.saldoLibroBanco);
     }
 
     let cuentaBancaria = {};
@@ -6970,9 +6981,41 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const cuentaWrap = document.getElementById(mountId+'-cuenta-wrap');
     const CUENTA_KEY = opts.cuentaKey || (movKey+'-cuenta');
 
-    function renderCuenta(){
+    async function renderCuenta(){
+      // Para LA CUENTA CORRIENTE (no para el Fondo de Reserva, que suele ser una cuenta bancaria
+      // distinta): en vez de mantener un formulario aparte y duplicado, usamos los mismos datos
+      // que ya se cargan en Config_NAKEN → Forma de pago -- así no hace falta cargarlos dos veces,
+      // y si alguno queda desactualizado no hay dos números distintos dando vueltas.
+      if(opts.usarFormaPagoConsorcio){
+        const spreadsheetId = await getSpreadsheetIdActivo();
+        const cfg = spreadsheetId ? await fetchConfigConsorcio(spreadsheetId) : null;
+        const f = (cfg && cfg.formaPago) || {};
+        cuentaBancaria = { banco: f.banco, sucursal: f.sucursal, tipoCuenta: '', numeroCuenta: f.numeroCuenta, cbu: f.cbu, alias: f.alias };
+        cuentaWrap.innerHTML = `
+          <div class="field-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:6px;">
+            <div><label>Banco</label><input type="text" value="${escapeHtml(f.banco||'—')}" disabled></div>
+            <div><label>Sucursal</label><input type="text" value="${escapeHtml(f.sucursal||'—')}" disabled></div>
+            <div><label>N° de cuenta</label><input type="text" value="${escapeHtml(f.numeroCuenta||'—')}" disabled></div>
+            <div><label>CBU</label><input type="text" value="${escapeHtml(f.cbu||'—')}" disabled></div>
+            <div><label>Alias</label><input type="text" value="${escapeHtml(f.alias||'—')}" disabled></div>
+            <div><label>Titular</label><input type="text" value="${escapeHtml(f.titular||'—')}" disabled></div>
+          </div>
+          <p class="panel-note" style="margin-top:0;">Estos son los mismos datos que ya cargaste en "Forma de pago y cobranzas" (Config_NAKEN de la planilla) — se editan ahí, no hace falta cargarlos de nuevo acá.</p>
+        `;
+        return;
+      }
+
       const disabled = isAdmin ? '' : 'disabled';
       cuentaWrap.innerHTML = `
+        ${opts.mostrarSaldoInicial ? `
+        <div class="field-grid" style="grid-template-columns:1fr;margin-bottom:6px;">
+          <div>
+            <label>Saldo inicial del fondo (carga única, al empezar a usarlo en la app)</label>
+            <input type="text" id="${mountId}-saldo-inicial" value="${escapeHtml(saldoInicial||0)}" placeholder="0" ${disabled}>
+          </div>
+        </div>
+        <p class="panel-note" style="margin-top:0;">Si el consorcio ya venía usando el Fondo de Reserva antes de esta app, cargá acá el saldo que tenía al momento de empezar a registrarlo acá. Si es la primera vez que el consorcio arma este fondo, dejalo en 0. Se carga una sola vez -- después el saldo se calcula solo, sumando los movimientos de abajo.</p>
+        ` : ''}
         <div class="field-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:6px;">
           <div>
             <label>Banco</label>
@@ -7017,6 +7060,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             alias: document.getElementById(mountId+'-cta-alias').value.trim(),
           };
           saveData(CUENTA_KEY, cuentaBancaria, mountId+'-cta-status');
+          if(opts.mostrarSaldoInicial){
+            saldoInicial = num(document.getElementById(mountId+'-saldo-inicial').value);
+            saveData(opts.saldoInicialKey || (movKey+'-saldo-inicial'), saldoInicial, mountId+'-cta-status');
+            renderMovKpi();
+          }
         });
       }
     }
@@ -7026,7 +7074,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     function renderMovKpi(){
       const kpi = document.getElementById(mountId+'-kpi-mov');
-      const saldo = movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0);
+      const saldo = saldoInicial + movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0);
       let extra = '';
       if(movTipos){
         extra = movTipos.map(t=>{
@@ -7035,6 +7083,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         }).join('');
       }
       kpi.innerHTML = `
+        ${opts.mostrarSaldoInicial ? `<div class="kpi"><div class="label">Saldo inicial</div><div class="value" style="font-size:15px;">${fmt(saldoInicial)}</div></div>` : ''}
         <div class="kpi highlight"><div class="label">Saldo actual s/Libro Banco</div><div class="value">${fmt(saldo)}</div></div>
         <div class="kpi"><div class="label">Movimientos cargados</div><div class="value">${movRows.length}</div></div>
         ${extra}
@@ -7653,7 +7702,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       doc.text('Administrador: '+firmaAdministrador, M, y); y+=10;
 
       heading('DATOS DEL PERÍODO');
-      const diferencia = calcDiferencia(p);
+      const diferencia = calcDiferencia(p); // ya incluye las partidas -- es el resultado FINAL
+      const diferenciaCruda = calcDiferenciaCruda(p); // antes de explicar nada con partidas
       const ok = Math.abs(diferencia) < 0.01;
       doc.autoTable({
         ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
@@ -7683,7 +7733,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: [
           ['Saldo según Libro Banco al cierre', fmt(num(p.saldoLibroBanco))],
           ['Saldo según extracto bancario', fmt(num(p.saldoExtracto))],
-          ['Diferencia sin conciliar', fmt(diferencia)],
+          ['Diferencia a conciliar', fmt(diferenciaCruda)],
         ]
       });
       y = doc.lastAutoTable.finalY + 8;
@@ -7842,10 +7892,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
 
     /* ----- Carga inicial ----- */
-    Promise.all([loadData(movKey, []), loadData(concKey, []), loadData(CUENTA_KEY, {})]).then(([mv, pr, cta])=>{
+    Promise.all([
+      loadData(movKey, []), loadData(concKey, []), loadData(CUENTA_KEY, {}),
+      opts.mostrarSaldoInicial ? loadData(opts.saldoInicialKey || (movKey+'-saldo-inicial'), 0) : Promise.resolve(0),
+    ]).then(([mv, pr, cta, si])=>{
       movRows = mv;
       periodos = pr;
       cuentaBancaria = cta || {};
+      saldoInicial = num(si);
       let migrado = false;
       periodos.forEach((p,i)=>{
         if(!p.numero){ p.numero = i+1; migrado = true; }
@@ -7874,7 +7928,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     'Otro ingreso',
     'Otro egreso'
   ];
-  const CAJA_NOTA_INTRO = 'El Libro de Caja es uno de los libros obligatorios del administrador según la Ley 941 de CABA (junto con los de Administración, Sueldos, Actas de Asamblea, Actas del Consejo, Registro de Firmas e Inventario). A diferencia del Libro Banco, el efectivo no tiene un extracto bancario que lo respalde — el control se hace con arqueos periódicos: contar el efectivo físico y compararlo contra el saldo que arroja este libro a esa fecha.';
+  const CAJA_NOTA_INTRO = 'El Libro de Caja es uno de los libros obligatorios del administrador según la Ley 941 de CABA (junto con los de Administración, Sueldos, Actas de Asamblea, Actas del Consejo, Registro de Firmas e Inventario). A diferencia del Libro Banco, el efectivo no tiene un extracto bancario que lo respalde — el control se hace con arqueos periódicos: contar el efectivo físico y compararlo contra el saldo que arroja este libro a esa fecha. Ojo: este libro es independiente de Gastos_Mensual — un gasto pagado con caja no se prorratea solo entre los propietarios, hay que cargarlo también, aparte, en la planilla (marcá el casillero "¿En Gastos_Mensual?" de cada egreso para no olvidarte ni cargarlo dos veces).';
 
   function mountCajaResumenPropietario(mountId, movKey, arqueoKey){
     const mount = document.getElementById(mountId);
@@ -7884,8 +7938,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     mount.innerHTML = `<div class="empty">Cargando…</div>`;
 
-    Promise.all([loadData(movKey, []), loadData(arqueoKey, [])]).then(([movRows, arqueos])=>{
-      const saldo = movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0);
+    Promise.all([loadData(movKey, []), loadData(arqueoKey, []), loadData(movKey+'-saldo-inicial', 0)]).then(([movRows, arqueos, si])=>{
+      const saldo = num(si) + movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0);
       const archivados = arqueos.filter(a=>a.cerrado);
       const ultimo = archivados.length ? archivados[archivados.length-1] : null;
 
@@ -7934,20 +7988,32 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
     function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); }
     function uid(){ return 'k'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
-    function saldoActualCaja(){ return movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0); }
+    let saldoInicial = 0; // carga única, si el consorcio ya venía manejando efectivo antes de esta app
+    function saldoActualCaja(){ return saldoInicial + movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0); }
     function blankArqueo(){ return { id:uid(), numero:0, fecha:'', saldoLibroCaja:String(saldoActualCaja()), efectivoContado:'', observaciones:'', evidenciaUrl:'', evidenciaNombre:'', evidenciaMimeType:'', cerrado:false, fechaCierre:'' }; }
     function getCurrentArqueo(){ return arqueos.find(a=>a.id===currentArqueoId) || null; }
     function calcDiferenciaArqueo(a){ return num(a.efectivoContado) - num(a.saldoLibroCaja); }
+    function pendientesDeTraslado(){ return movRows.filter(r=>num(r.egreso)>0 && !r.volcadoExpensas).length; }
 
     mount.innerHTML = `
       <p class="panel-note" style="margin-top:0;background:var(--paper-deep,#f8f9fa);border:1px dashed var(--gray-200);border-radius:6px;padding:10px 12px;">${CAJA_NOTA_INTRO}</p>
+
+      ${isAdmin ? `
+      <div class="field-grid" style="grid-template-columns:1fr;margin-bottom:10px;">
+        <div>
+          <label>Saldo inicial de la caja (carga única)</label>
+          <input type="text" id="${mountId}-saldo-inicial" placeholder="0">
+        </div>
+      </div>
+      <p class="panel-note" style="margin-top:0;">Si ya venías manejando efectivo antes de usar esta app, cargá acá cuánto había al momento de empezar a registrarlo. Si es la primera vez, dejalo en 0.</p>
+      ` : ''}
 
       <div id="${mountId}-kpi-mov" class="kpi-row"></div>
 
       <div class="subhead">Libro de Caja — movimientos en efectivo</div>
       <table class="ledger">
         <thead><tr>
-          <th>Fecha</th><th>Concepto</th><th>Tipo</th><th>Ingreso ($)</th><th>Egreso ($)</th><th>Saldo acumulado</th>
+          <th>Fecha</th><th>Concepto</th><th>Tipo</th><th>Ingreso ($)</th><th>Egreso ($)</th><th>Saldo acumulado</th><th>Comprobante</th><th>¿En Gastos_Mensual?</th>
           ${isAdmin ? '<th class="row-del"></th>' : ''}
         </tr></thead>
         <tbody id="${mountId}-mov-body"></tbody>
@@ -7973,9 +8039,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     function renderMovKpi(){
       const kpi = document.getElementById(mountId+'-kpi-mov');
+      const pendientes = pendientesDeTraslado();
       kpi.innerHTML = `
+        <div class="kpi"><div class="label">Saldo inicial</div><div class="value" style="font-size:15px;">${fmt(saldoInicial)}</div></div>
         <div class="kpi highlight"><div class="label">Saldo actual en Caja</div><div class="value">${fmt(saldoActualCaja())}</div></div>
         <div class="kpi"><div class="label">Movimientos cargados</div><div class="value">${movRows.length}</div></div>
+        <div class="kpi ${pendientes>0?'highlight':''}"><div class="label">Sin trasladar a Gastos_Mensual</div><div class="value">${pendientes}</div></div>
       `;
     }
 
@@ -7999,6 +8068,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <td class="num"><input type="text" data-field="ingreso" value="${escapeHtml(row.ingreso)}" placeholder="0" ${disabled}></td>
           <td class="num"><input type="text" data-field="egreso" value="${escapeHtml(row.egreso)}" placeholder="0" ${disabled}></td>
           <td class="num"><input type="text" data-saldo value="${fmt(saldo)}" disabled></td>
+          <td>${row.comprobanteUrl ? `<a href="${escapeHtml(row.comprobanteUrl)}" target="_blank" rel="noopener" style="font-size:11.5px;">Ver ↗</a>` : ''}<input type="text" data-field="comprobanteUrl" value="${escapeHtml(row.comprobanteUrl||'')}" placeholder="Link del ticket/factura" ${disabled} style="font-size:11px;margin-top:2px;"></td>
+          <td style="text-align:center;">${num(row.egreso)>0 ? `<input type="checkbox" data-field="volcadoExpensas" ${row.volcadoExpensas?'checked':''} ${disabled} title="Marcá cuando ya cargaste este gasto en Gastos_Mensual de la planilla, para no olvidarte ni cargarlo dos veces.">` : ''}</td>
           ${isAdmin ? `<td class="row-del"><button data-action="mov-del" title="Eliminar">✕</button></td>` : ''}
         `;
         movBody.appendChild(tr);
@@ -8019,12 +8090,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     function readMovRows(){
       const out = [];
       movBody.querySelectorAll('tr[data-idx]').forEach(tr=>{
+        const volcadoField = tr.querySelector('[data-field="volcadoExpensas"]');
         out.push({
           fecha: tr.querySelector('[data-field="fecha"]').value,
           concepto: tr.querySelector('[data-field="concepto"]').value,
           tipo: tr.querySelector('[data-field="tipo"]').value,
           ingreso: tr.querySelector('[data-field="ingreso"]').value,
           egreso: tr.querySelector('[data-field="egreso"]').value,
+          comprobanteUrl: tr.querySelector('[data-field="comprobanteUrl"]').value,
+          volcadoExpensas: volcadoField ? volcadoField.checked : false,
         });
       });
       return out;
@@ -8047,7 +8121,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
       document.getElementById(mountId+'-mov-add').addEventListener('click', ()=>{
         movRows = readMovRows();
-        movRows.push({fecha:'',concepto:'',tipo:CAJA_TIPOS_MOVIMIENTO[0],ingreso:'',egreso:''});
+        movRows.push({fecha:'',concepto:'',tipo:CAJA_TIPOS_MOVIMIENTO[0],ingreso:'',egreso:'',comprobanteUrl:'',volcadoExpensas:false});
         renderMov();
         scheduleMovSave();
         const lastInput = movBody.querySelector('tr:last-child input');
@@ -8474,9 +8548,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
 
     /* ----- Carga inicial ----- */
-    Promise.all([loadData(movKey, []), loadData(arqueoKey, [])]).then(([mv, arq])=>{
+    Promise.all([loadData(movKey, []), loadData(arqueoKey, []), loadData(movKey+'-saldo-inicial', 0)]).then(([mv, arq, si])=>{
       movRows = mv;
       arqueos = arq;
+      saldoInicial = num(si);
+      const siInput = document.getElementById(mountId+'-saldo-inicial');
+      if(siInput) siInput.value = saldoInicial || '';
       let migrado = false;
       arqueos.forEach((a,i)=>{ if(!a.numero){ a.numero = i+1; migrado = true; } });
       if(migrado && isAdmin) saveData(arqueoKey, arqueos);
@@ -8485,6 +8562,18 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       renderArqWrap();
       renderHistorial();
     });
+    if(isAdmin){
+      const siInput = document.getElementById(mountId+'-saldo-inicial');
+      let siTimer;
+      siInput.addEventListener('input', ()=>{
+        clearTimeout(siTimer);
+        siTimer = setTimeout(()=>{
+          saldoInicial = num(siInput.value);
+          saveData(movKey+'-saldo-inicial', saldoInicial);
+          renderMovKpi();
+        }, 700);
+      });
+    }
   }
 
   /* ---------- Tablero de Novedades ----------
@@ -9924,6 +10013,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     ], {emptyText:'No hay juicios cargados.'}),
     reserva: () => mountLibroBancoConciliacion('reserva-mount', 'naken-reserva-movimientos', 'naken-reserva-conciliacion', {
       cuentaKey: 'naken-reserva-cuenta-bancaria',
+      mostrarSaldoInicial: true,
+      saldoInicialKey: 'naken-reserva-saldo-inicial',
       tituloCorto: 'el Fondo de Reserva',
       nombreCuenta: 'Fondo de Reserva',
       pdfPrefijo: 'ConciliacionFondoReserva',
@@ -9933,6 +10024,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }),
     conciliaciones: () => mountLibroBancoConciliacion('conciliaciones-mount', 'naken-movimientos', 'naken-conciliacion-bancaria', {
       cuentaKey: 'naken-cuenta-bancaria',
+      usarFormaPagoConsorcio: true,
       tituloCorto: 'la cuenta corriente',
       nombreCuenta: 'Cuenta Corriente',
       pdfPrefijo: 'Conciliacion',
