@@ -8998,11 +8998,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const enEdicion = new Set();
 
     function blank(){
-      return { legajo:'', nombreCompleto:'', cuil:'', funcion:FUNCIONES_CCT589[0].key, fechaIngreso:'', fechaIngresoReconocida:'',
+      return { legajo:'', nombreCompleto:'', cuil:'', funcion:FUNCIONES_CCT589[0].key, fechaIngreso:'', fechaIngresoReconocida:'', fechaBaja:'',
         jubiladoReincorporado:false, afiliadoSindical:true, presentismo:false, tituloIntegral:false, zonaDesfavorable:false,
         retiroResiduos:false, limpiezaCocheras:false, manejoCalderas:false, mantJardin:false, limpiezaPiletas:false, sumaFijaRemun:false,
         clasificacionResiduos:false, movimientoCoches:false, viaticos:false,
-        lugarPago:'', formaPagoAportes:'', _nuevo:true };
+        lugarPago:'', formaPagoAportes:'', cbu:'', banco:'', numeroCuenta:'', obraSocial:'OSPERYH',
+        fechaNacimiento:'', estadoCivil:'', domicilio:'', codigoPostal:'', localidad:'', telefono:'', email:'', observaciones:'',
+        _nuevo:true };
     }
 
     function checkboxRow(label, field, e, idx){
@@ -9013,10 +9015,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     function tarjetaResumen(e, i){
       return `
-        <div class="card">
+        <div class="card"${e.fechaBaja ? ' style="opacity:.65;"' : ''}>
           <div class="card-top">
             <div>
-              <b>${escapeHtml(e.nombreCompleto||'(sin nombre)')}</b>
+              <b>${escapeHtml(e.nombreCompleto||'(sin nombre)')}</b>${e.fechaBaja ? ' <span class="badge escalado" style="margin-left:6px;">Baja: '+escapeHtml(e.fechaBaja)+'</span>' : ''}
               <div class="card-meta">Legajo ${escapeHtml(e.legajo||'—')} · ${escapeHtml(funcionLabelCct589(e.funcion))} · Ingreso: ${escapeHtml(e.fechaIngreso||'—')}</div>
             </div>
             <div style="display:flex;gap:8px;">
@@ -9037,7 +9039,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               <div class="card-meta">${e._nuevo ? 'Completá los datos y confirmá el alta.' : 'Editando este legajo.'}</div>
             </div>
           </div>
-          <div class="field-grid" style="margin-top:10px;">
+          <div class="subhead" style="margin-top:10px;font-size:12px;">Datos laborales</div>
+          <div class="field-grid">
             <div><label>Legajo N°</label><input type="text" data-i="${i}" data-field="legajo" value="${escapeHtml(e.legajo)}"></div>
             <div><label>Nombre completo</label><input type="text" data-i="${i}" data-field="nombreCompleto" value="${escapeHtml(e.nombreCompleto)}"></div>
             <div><label>CUIL</label><input type="text" data-i="${i}" data-field="cuil" placeholder="20-XXXXXXXX-X" value="${escapeHtml(e.cuil)}"></div>
@@ -9047,10 +9050,39 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
                 ${FUNCIONES_CCT589.map(f=>`<option value="${f.key}" ${e.funcion===f.key?'selected':''}>${escapeHtml(f.label)}</option>`).join('')}
               </select>
             </div>
+            <div><label>Obra social</label><input type="text" data-i="${i}" data-field="obraSocial" placeholder="OSPERYH" value="${escapeHtml(e.obraSocial)}"></div>
             <div><label>Fecha de ingreso</label><input type="text" data-i="${i}" data-field="fechaIngreso" placeholder="DD/MM/AAAA" value="${escapeHtml(e.fechaIngreso)}"></div>
             <div><label>Antigüedad reconocida desde (si difiere)</label><input type="text" data-i="${i}" data-field="fechaIngresoReconocida" placeholder="DD/MM/AAAA" value="${escapeHtml(e.fechaIngresoReconocida)}"></div>
+            <div><label>Fecha de baja (si ya no trabaja acá)</label><input type="text" data-i="${i}" data-field="fechaBaja" placeholder="DD/MM/AAAA" value="${escapeHtml(e.fechaBaja)}"></div>
+          </div>
+
+          <div class="subhead" style="font-size:12px;">Forma de pago</div>
+          <div class="field-grid">
             <div><label>Lugar de pago</label><input type="text" data-i="${i}" data-field="lugarPago" value="${escapeHtml(e.lugarPago)}"></div>
             <div><label>Forma de pago aportes</label><input type="text" data-i="${i}" data-field="formaPagoAportes" placeholder="Transferencia bancaria" value="${escapeHtml(e.formaPagoAportes)}"></div>
+            <div><label>Banco (acreditación de haberes)</label><input type="text" data-i="${i}" data-field="banco" placeholder="Ej: Banco Nación" value="${escapeHtml(e.banco)}"></div>
+            <div><label>N° de cuenta</label><input type="text" data-i="${i}" data-field="numeroCuenta" value="${escapeHtml(e.numeroCuenta)}"></div>
+            <div><label>CBU</label><input type="text" data-i="${i}" data-field="cbu" placeholder="22 dígitos" value="${escapeHtml(e.cbu)}"></div>
+          </div>
+
+          <div class="subhead" style="font-size:12px;">Datos personales</div>
+          <div class="field-grid">
+            <div><label>Fecha de nacimiento</label><input type="text" data-i="${i}" data-field="fechaNacimiento" placeholder="DD/MM/AAAA" value="${escapeHtml(e.fechaNacimiento)}"></div>
+            <div>
+              <label>Estado civil</label>
+              <select data-i="${i}" data-field="estadoCivil">
+                <option value="" ${!e.estadoCivil?'selected':''}>—</option>
+                ${['Soltero/a','Casado/a','Divorciado/a','Viudo/a','Unión convivencial'].map(op=>`<option ${e.estadoCivil===op?'selected':''}>${op}</option>`).join('')}
+              </select>
+            </div>
+            <div><label>Teléfono</label><input type="text" data-i="${i}" data-field="telefono" value="${escapeHtml(e.telefono)}"></div>
+            <div><label>Email</label><input type="text" data-i="${i}" data-field="email" value="${escapeHtml(e.email)}"></div>
+            <div><label>Domicilio</label><input type="text" data-i="${i}" data-field="domicilio" value="${escapeHtml(e.domicilio)}"></div>
+            <div><label>Localidad</label><input type="text" data-i="${i}" data-field="localidad" value="${escapeHtml(e.localidad)}"></div>
+            <div><label>Código postal</label><input type="text" data-i="${i}" data-field="codigoPostal" value="${escapeHtml(e.codigoPostal)}"></div>
+          </div>
+          <div class="field-grid" style="grid-template-columns:1fr;">
+            <div><label>Observaciones</label><textarea data-i="${i}" data-field="observaciones" rows="2" style="width:100%;">${escapeHtml(e.observaciones)}</textarea></div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-top:8px;">
             ${checkboxRow('Jubilado reincorporado','jubiladoReincorporado',e,i)}
@@ -9269,6 +9301,19 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <label>Otros conceptos variables — monto ($)</label>
             <input type="text" id="${mountId}-otros-monto" placeholder="0">
           </div>
+          <div>
+            <label>Otros descuentos — descripción</label>
+            <input type="text" id="${mountId}-desc-desc" placeholder="Ej: adelanto/anticipo" title="Para restar del neto un adelanto ya entregado, o cualquier descuento puntual que no sea una carga social fija.">
+          </div>
+          <div>
+            <label>Otros descuentos — monto ($)</label>
+            <input type="text" id="${mountId}-desc-monto" placeholder="0">
+          </div>
+          <div style="display:flex;align-items:flex-end;padding-bottom:9px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--gray-800);margin:0;">
+              <input type="checkbox" id="${mountId}-redondeo"> Redondear el neto final al peso
+            </label>
+          </div>
         </div>
         <p class="panel-note" style="margin:0 0 10px;">El básico, los adicionales fijos y las cargas sociales se toman automáticamente del legajo del empleado y de la escala CCT 589/10 vigente. El recibo desglosa el costo laboral total a cargo del consorcio, conforme al art. 140 LCT (Ley 27.802 de Modernización Laboral, reglamentada por el Decreto 407/2026).</p>
         <div class="toolbar">
@@ -9347,7 +9392,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const retObraSocial = sueldoBrutoRemun * (numEscala(ap.aporteObraSocialPct)/100);
       const retSindical = emp.afiliadoSindical ? sueldoBrutoRemun * (numEscala(ap.aporteSindicalPct)/100) : 0;
       const totalRetenciones = retJubilacion+retPami+retObraSocial+retSindical;
-      const sueldoNeto = sueldoBrutoRemun - totalRetenciones;
+      // "Otros descuentos" (ej. un adelanto ya entregado) se resta DESPUÉS de las retenciones
+      // legales, directo del neto -- no es una carga social, no debe afectar la base de cálculo
+      // de nada más (ni las retenciones de arriba, ni las contribuciones patronales de abajo).
+      const descOtros = num(inputs.descMonto);
+      let sueldoNeto = sueldoBrutoRemun - totalRetenciones - descOtros;
+      if(inputs.redondeo) sueldoNeto = Math.round(sueldoNeto);
 
       const contribSipa = esJubilado ? 0 : sueldoBrutoRemun * (numEscala(ap.contribSipaPct)/100);
       const contribObraSocial = sueldoBrutoRemun * (numEscala(ap.contribObraSocialPct)/100);
@@ -9363,7 +9413,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return {
         id: uid(), empleadoIdx: inputs.empleadoIdx, empleadoNombre: emp.nombreCompleto, periodo: inputs.periodo,
         hs50: inputs.hs50, hs100: inputs.hs100, diasInasistencia: inputs.diasInasistencia, importeVacaciones: inputs.importeVacaciones,
-        categoriaEdificio: idxCategoria+1, presentismoPctManual: num(inputs.presentismoPctManual), otrosDesc: inputs.otrosDesc||'',
+        categoriaEdificio: idxCategoria+1, presentismoPctManual: num(inputs.presentismoPctManual), otrosDesc: inputs.otrosDesc||'', descDesc: inputs.descDesc||'', descOtros,
         basico, antiguedadAnios, adicAntiguedad, adicPresentismo, adicTitulo, adicZona,
         impResiduos, impClasifResiduos, impVivienda, impCocheras, impMovCoches, impCalderas, impJardin, impPiletas, impViaticos, impSumaFija, impAdicionalCct,
         valorHora, imp50, imp100, valorDia, descInasistencias, impVacaciones, impAguinaldo, impOtros,
@@ -9433,6 +9483,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         filaConcepto('Ley 19.032 — PAMI', pct(pctDe(liq.retPami, base)), base, -liq.retPami),
         filaConcepto('Obra Social', pct(pctDe(liq.retObraSocial, base)), base, -liq.retObraSocial),
         emp.afiliadoSindical ? filaConcepto('Cuota sindical SUTERH', pct(pctDe(liq.retSindical, base)), base, -liq.retSindical) : '',
+        liq.descOtros>0 ? filaConcepto(liq.descDesc || 'Otros descuentos', '', null, -liq.descOtros) : '',
       ].join('');
 
       return `
@@ -9478,6 +9529,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             </tr>
           </table>
           ${antigDiffiere ? `<p style="font-size:10px;color:var(--muted);padding:2px 14px;">* Antigüedad reconocida desde: ${escapeHtml(emp.fechaIngresoReconocida)}</p>` : ''}
+          ${(emp.banco || emp.cbu || emp.numeroCuenta || emp.obraSocial) ? `<p style="font-size:10.5px;color:var(--muted);padding:2px 14px;">${[emp.obraSocial ? 'Obra social: '+escapeHtml(emp.obraSocial) : '', emp.banco ? 'Banco: '+escapeHtml(emp.banco) : '', emp.numeroCuenta ? 'N° de cuenta: '+escapeHtml(emp.numeroCuenta) : '', emp.cbu ? 'CBU: '+escapeHtml(emp.cbu) : ''].filter(Boolean).join(' · ')}</p>` : ''}
 
           <div style="background:var(--primary);color:#fff;padding:8px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:700;">
             <span>COSTO TOTAL EMPLEADOR</span>
@@ -9499,7 +9551,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           </table>
 
           <div style="display:flex;justify-content:space-between;padding:8px 14px;background:var(--gray-100);border-top:1px solid var(--gray-800);font-size:12px;">
-            <span><b>Composición salarial:</b> Remunerativo: ${fmt(liq.remunerativo)} · No remunerativo: ${fmt(liq.noRemunerativo)} · Descuentos: ${fmt(liq.totalRetenciones)}</span>
+            <span><b>Composición salarial:</b> Remunerativo: ${fmt(liq.remunerativo)} · No remunerativo: ${fmt(liq.noRemunerativo)} · Descuentos: ${fmt(liq.totalRetenciones + (liq.descOtros||0))}</span>
           </div>
           <div style="background:var(--gray-100);padding:8px 14px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--gray-800);">
             <span style="font-weight:700;">SUELDO NETO $</span>
@@ -9608,6 +9660,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         doc.text('* Antigüedad reconocida desde: '+emp.fechaIngresoReconocida, M, y); y+=5;
         doc.setTextColor(...COLOR_TEXTO);
       }
+      const datosPago = [emp.obraSocial ? 'Obra social: '+emp.obraSocial : '', emp.banco ? 'Banco: '+emp.banco : '', emp.numeroCuenta ? 'N° de cuenta: '+emp.numeroCuenta : '', emp.cbu ? 'CBU: '+emp.cbu : ''].filter(Boolean).join('  ·  ');
+      if(datosPago){
+        doc.setFontSize(7.5); doc.setTextColor(120,120,120);
+        doc.text(datosPago, M, y); y+=5;
+        doc.setTextColor(...COLOR_TEXTO);
+      }
       y += 2;
 
       // ---------- Costo total empleador ----------
@@ -9664,6 +9722,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       filasBruto.push(['Ley 19.032 — PAMI', pctDe(liq.retPami, base), fmt(base), '-'+fmt(liq.retPami)]);
       filasBruto.push(['Obra Social', pctDe(liq.retObraSocial, base), fmt(base), '-'+fmt(liq.retObraSocial)]);
       if(emp.afiliadoSindical) filasBruto.push(['Cuota sindical SUTERH', pctDe(liq.retSindical, base), fmt(base), '-'+fmt(liq.retSindical)]);
+      if(liq.descOtros>0) filasBruto.push([liq.descDesc || 'Otros descuentos', '', '', '-'+fmt(liq.descOtros)]);
 
       doc.autoTable({
         ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
@@ -9673,7 +9732,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
       y = doc.lastAutoTable.finalY;
 
-      filaGris(`Remunerativo: ${fmt(liq.remunerativo)}   ·   No remunerativo: ${fmt(liq.noRemunerativo)}   ·   Descuentos: ${fmt(liq.totalRetenciones)}`, null);
+      filaGris(`Remunerativo: ${fmt(liq.remunerativo)}   ·   No remunerativo: ${fmt(liq.noRemunerativo)}   ·   Descuentos: ${fmt(liq.totalRetenciones + (liq.descOtros||0))}`, null);
       bannerAzul('SUELDO NETO $', liq.sueldoNeto);
       y += 3;
 
@@ -9878,9 +9937,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
 
     function refreshEmpleadoSelect(){
+      // Los que ya tienen fecha de baja cargada no aparecen para liquidar un mes nuevo -- se
+      // mantiene el índice ORIGINAL del array como value (no el de la lista filtrada), porque
+      // ese índice es el que queda guardado en cada liquidación para poder ver el recibo después.
+      const activos = empleados.map((e,i)=>({e,i})).filter(({e})=>!e.fechaBaja);
       empleadoSelect.innerHTML = empleados.length===0
         ? `<option value="">— Cargá legajos en "Legajos del personal" primero —</option>`
-        : empleados.map((e,i)=>`<option value="${i}">${escapeHtml(e.nombreCompleto||'(sin nombre)')} — ${escapeHtml(funcionLabelCct589(e.funcion))}</option>`).join('');
+        : activos.length===0
+        ? `<option value="">— Todos los legajos cargados tienen fecha de baja —</option>`
+        : activos.map(({e,i})=>`<option value="${i}">${escapeHtml(e.nombreCompleto||'(sin nombre)')} — ${escapeHtml(funcionLabelCct589(e.funcion))}</option>`).join('');
       updateAntiguedadPreview();
     }
     function updateAntiguedadPreview(){
@@ -9912,6 +9977,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           aguinaldo: document.getElementById(mountId+'-aguinaldo').value || '0',
           otrosDesc: document.getElementById(mountId+'-otros-desc').value || '',
           otrosMonto: document.getElementById(mountId+'-otros-monto').value || '0',
+          descDesc: document.getElementById(mountId+'-desc-desc').value || '',
+          descMonto: document.getElementById(mountId+'-desc-monto').value || '0',
+          redondeo: document.getElementById(mountId+'-redondeo').checked,
         };
         const record = computeLiquidacion(emp, inputs);
         liquidaciones.push(record);
