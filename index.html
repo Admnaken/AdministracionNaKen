@@ -4094,18 +4094,19 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       try{ await Promise.resolve(renderAll()); renderNovedadesFlotantes(); } finally { btn.textContent = original; btn.disabled = false; }
     });
 
-    const [datos, edificios, liq] = await Promise.all([
-      loadData('naken-consorcio-datos', {edificio:'', barrio:''}),
+    const [cfgConsorcio, edificios, liq] = await Promise.all([
+      currentUser.consorcioSpreadsheetId ? fetchConfigConsorcio(currentUser.consorcioSpreadsheetId) : Promise.resolve(null),
       getEdificios(),
       currentUser.consorcioSpreadsheetId ? fetchLiquidacion(currentUser.consorcioSpreadsheetId, currentUser.unidad) : Promise.resolve(null)
     ]);
     const edificioActivo = edificios.find(e=>e.id===currentUser.consorcioId);
-    const nombreEdificio = datos.edificio || (edificioActivo ? edificioActivo.nombre : '') || 'Edificio sin datos cargados';
+    const cCons = (cfgConsorcio && cfgConsorcio.consorcio) || {};
+    const nombreEdificio = cCons.nombreDireccion || (edificioActivo ? edificioActivo.nombre : '') || 'Edificio sin datos cargados';
     const pctEnVivo = liq && liq.unidad && liq.unidad.pctFondoA;
     const porcentual = pctEnVivo || currentUser.porcentual || '—';
     const metaEl = document.getElementById('profile-banner-meta');
     if(metaEl){
-      metaEl.textContent = `${nombreEdificio}${datos.barrio ? ' · '+datos.barrio : ''} · Porcentual: ${porcentual}%`;
+      metaEl.textContent = `${nombreEdificio} · Porcentual: ${porcentual}%`;
     }
   }
 
@@ -5685,8 +5686,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const guardados = await loadData(storageKey, null);
     if(guardados && typeof guardados==='object') datos = {...datos, ...guardados, temas: guardados.temas||[]};
     if(!datos.administrador){
-      const cfg = await loadData('naken-consorcio-datos', {});
-      datos.administrador = cfg.administradorNombre || '';
+      const spreadsheetId = await getSpreadsheetIdActivo();
+      const cfg = spreadsheetId ? await fetchConfigConsorcio(spreadsheetId) : null;
+      datos.administrador = (cfg && cfg.administracion && cfg.administracion.nombre) || '';
     }
 
     function render(){
@@ -6325,41 +6327,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   function mountUsuarios(mountId){
     const mount = document.getElementById(mountId);
     mount.innerHTML = `
-      <div class="subhead" style="margin-top:0;">Datos de la administración</div>
-      <p class="panel-note" style="margin-bottom:14px;">Esto es lo que exige mostrar el Modelo Único de Liquidación de Expensas — se muestra al propietario y en el recibo.</p>
-      <div class="config-row">
-        <div><label>Nombre del administrador</label><input type="text" id="cfg-adm-nombre" placeholder="Tu nombre completo"></div>
-        <div><label>CUIT</label><input type="text" id="cfg-adm-cuit" placeholder="20-XXXXXXXX-X"></div>
-        <div><label>Domicilio / Mail</label><input type="text" id="cfg-adm-domicilio" placeholder="Domicilio y/o mail de contacto"></div>
-        <div><label>Teléfono / WhatsApp</label><input type="text" id="cfg-adm-tel" placeholder="+54 9 11 ..."></div>
-        <div><label>Situación fiscal / Horario</label><input type="text" id="cfg-adm-fiscal" placeholder="Ej: Monotributo — Lun a Vie 9 a 17hs"></div>
-        <div><label>Redes / Web</label><input type="text" id="cfg-adm-redes" placeholder="Instagram, sitio web, etc."></div>
-      </div>
-
-      <div class="subhead">Datos del consorcio</div>
-      <div class="config-row">
-        <div><label>Nombre del edificio</label><input type="text" id="cfg-edificio" placeholder="Ej: Edificio Almirante"></div>
-        <div><label>Dirección / Barrio</label><input type="text" id="cfg-barrio" placeholder="Ej: Av. Libertador 1234, Núñez"></div>
-        <div><label>Ciudad / Provincia (para el recibo de sueldo)</label><input type="text" id="cfg-cons-jurisdiccion" placeholder="Ej: Ciudad Autónoma de Buenos Aires"></div>
-        <div><label>CUIT del consorcio</label><input type="text" id="cfg-cons-cuit" placeholder="30-XXXXXXXX-X"></div>
-        <div><label>Convenio de personal</label><input type="text" id="cfg-cons-convenio" placeholder="Ej: 589/10 FATERYH"></div>
-      </div>
-      <div class="toolbar" style="margin-bottom:10px;">
-        <span></span>
-        <div style="display:flex;align-items:center;gap:12px;">${statusEl(mountId+'-cfg-status')}<button class="btn primary" id="cfg-save">Guardar datos</button></div>
-      </div>
+      <div class="subhead" style="margin-top:0;">Datos de la administración y del consorcio</div>
+      <p class="panel-note" style="margin-bottom:14px;">De solo lectura acá — son los mismos datos que ya cargaste en Config_NAKEN de la planilla de este consorcio (fórmulas del Modelo Único de Liquidación de Expensas). Se editan ahí, no hace falta cargarlos de nuevo en la app.</p>
+      <div id="${mountId}-cfg-readonly"><div class="empty">Cargando…</div></div>
 
       <div class="subhead">Cierre del período de expensas — consorcio activo</div>
       <p class="panel-note" style="margin-bottom:10px;">Archiva la liquidación del mes actual (con sus valores fijos, para que no se mueva después) y pasa <code>Prorrateo_Mensual</code> al mes siguiente, con los saldos de cada propietario ya calculados a partir de lo archivado. Los pagos, intereses y cargos particulares del mes que cierra quedan en cero para empezar el mes nuevo limpio.</p>
       <div id="${mountId}-cerrar-mes"></div>
 
       <div class="subhead">Edificios que administrás</div>
-      <p class="panel-note" style="margin-bottom:10px;">Esta lista es la que ve un propietario nuevo al pedir acceso: le da confianza reconocer su edificio en el desplegable. Cargá acá los consorcios que ya administrás; los que se agregan solos porque alguien tocó "Mi edificio no está en la lista" quedan marcados como <b>nuevo</b> hasta que vos los confirmes.</p>
-      <div class="toolbar" style="margin-bottom:10px;">
-        <input type="text" id="${mountId}-edificio-nuevo" placeholder="Ej: Edificio Almirante, Av. Libertador 1234" style="flex:1;max-width:420px;padding:9px 10px;border:1px solid var(--line);border-radius:5px;">
-        <button class="btn primary" id="${mountId}-edificio-add">Agregar edificio</button>
-      </div>
-      <div id="${mountId}-edificios-list"></div>
+      <p class="panel-note" style="margin-bottom:10px;">Se gestionan desde "Todos los consorcios" (arriba de todo, con el botón "+ Nuevo consorcio") — ahí mismo cargás el nombre y el ID de la planilla de cada uno, y confirmás los que se agregaron solos porque alguien tocó "Mi edificio no está en la lista" al pedir acceso.</p>
 
       <div class="subhead">Deuda heredada de una gestión anterior</div>
       <p class="panel-note" style="margin-bottom:10px;">Para dar de alta un edificio nuevo y vincular su planilla, andá a "Todos los consorcios" (arriba de todo, con el botón "+ Nuevo consorcio"). Esto de acá es el último paso, solo si ese consorcio ya tenía deuda de antes de que lo administraras.</p>
@@ -6421,26 +6398,44 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       document.getElementById('admin-code-change-new2').value = '';
     });
 
-    const cfgFields = {
-      'cfg-adm-nombre':'administradorNombre', 'cfg-adm-cuit':'administradorCuit',
-      'cfg-adm-domicilio':'administradorDomicilio', 'cfg-adm-tel':'administradorTel',
-      'cfg-adm-fiscal':'administradorFiscal', 'cfg-adm-redes':'administradorRedes',
-      'cfg-edificio':'edificio', 'cfg-barrio':'barrio', 'cfg-cons-jurisdiccion':'jurisdiccion',
-      'cfg-cons-cuit':'consorcioCuit', 'cfg-cons-convenio':'consorcioConvenio'
-    };
-
-    loadData('naken-consorcio-datos', {}).then(cfg=>{
-      Object.entries(cfgFields).forEach(([id,key])=>{
-        document.getElementById(id).value = cfg[key] || (key==='jurisdiccion' ? 'Ciudad Autónoma de Buenos Aires' : '');
-      });
-    });
-    document.getElementById('cfg-save').addEventListener('click', ()=>{
-      const data = {};
-      Object.entries(cfgFields).forEach(([id,key])=>{
-        data[key] = document.getElementById(id).value.trim();
-      });
-      saveData('naken-consorcio-datos', data, mountId+'-cfg-status');
-    });
+    (async ()=>{
+      const cont = document.getElementById(mountId+'-cfg-readonly');
+      const spreadsheetId = await getSpreadsheetIdActivo();
+      if(!spreadsheetId){
+        cont.innerHTML = `<div class="empty">Este consorcio todavía no tiene la planilla de liquidación vinculada (Todos los consorcios → ID de planilla).</div>`;
+        return;
+      }
+      const cfg = await fetchConfigConsorcio(spreadsheetId);
+      if(!cfg){
+        cont.innerHTML = `<div class="empty">No se pudo leer Config_NAKEN de la planilla de este consorcio.</div>`;
+        return;
+      }
+      const a = cfg.administracion||{}, c = cfg.consorcio||{}, ad = cfg.adicional||{};
+      const campo = (label, valor) => `<div><label>${label}</label><input type="text" value="${escapeHtml(valor||'—')}" disabled></div>`;
+      cont.innerHTML = `
+        <div class="subhead" style="margin-top:0;font-size:13px;">Administración</div>
+        <div class="config-row">
+          ${campo('Nombre', a.nombre)}
+          ${campo('CUIT', a.cuit)}
+          ${campo('N° Inscripción RPA', a.rpa)}
+          ${campo('Domicilio', a.domicilio)}
+          ${campo('Email', a.email)}
+          ${campo('Teléfono', a.telefono)}
+          ${campo('Situación fiscal', a.situacionFiscal)}
+          ${campo('Horario de atención', a.horarioAtencion)}
+          ${campo('Teléfono de emergencias', a.telefonoEmergencia)}
+          ${campo('Redes / sitio web', ad.redes)}
+        </div>
+        <div class="subhead" style="font-size:13px;">Consorcio</div>
+        <div class="config-row">
+          ${campo('Nombre / Dirección', c.nombreDireccion)}
+          ${campo('CUIT', c.cuit)}
+          ${campo('Clave de SUTERH', c.claveSuterh)}
+          ${campo('Ciudad / Provincia (recibo de sueldo)', ad.jurisdiccion)}
+          ${campo('Categoría CCT 589/10', c.categoriaCct589)}
+        </div>
+      `;
+    })();
 
     async function renderCerrarMes(){
       const cont = document.getElementById(mountId+'-cerrar-mes');
@@ -6497,8 +6492,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     async function refreshLists(){
       const usuarios = await loadData('naken-usuarios', []);
-      const pending = usuarios.filter(u=>u.estado==='pendiente');
-      const enabled = usuarios.filter(u=>u.estado==='habilitado');
+      const activoId = getActiveConsorcioId();
+      // OJO: antes esto mostraba TODOS los propietarios/solicitudes de TODOS tus consorcios,
+      // sin importar cuál tenías activo -- por eso aparecía gente de otro edificio acá.
+      const pending = usuarios.filter(u=>u.estado==='pendiente' && u.consorcioId===activoId);
+      const enabled = usuarios.filter(u=>u.estado==='habilitado' && u.consorcioId===activoId);
       const edificios = await getEdificios();
 
       // Para cada solicitud, buscamos el nombre del titular real de esa unidad (de la hoja
@@ -6625,70 +6623,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         });
       });
     }
-
-    async function refreshEdificios(){
-      const edificios = await getEdificios();
-      const listEl = document.getElementById(mountId+'-edificios-list');
-      listEl.innerHTML = edificios.length===0
-        ? `<div class="empty">Todavía no cargaste ningún edificio. Los que agregues acá aparecen en el desplegable del alta de propietarios.</div>`
-        : `<table class="ledger"><thead><tr><th>Edificio</th><th>Estado</th><th>ID de planilla de liquidación (Google Sheets)</th><th class="row-del"></th></tr></thead><tbody>` +
-          edificios.map(e=>`
-            <tr>
-              <td><input type="text" value="${escapeHtml(e.nombre)}" data-id="${e.id}" data-f="nombre"></td>
-              <td>${e.estado==='pendiente' ? '<span class="badge pendiente">Nuevo — a confirmar</span>' : '<span class="badge resuelto">Confirmado</span>'}</td>
-              <td><input type="text" value="${escapeHtml(e.spreadsheetId||'')}" data-id="${e.id}" data-f="spreadsheetId" placeholder="Pegá acá el ID o el link de la planilla"></td>
-              <td class="row-del"><button data-action="del-edificio" data-id="${e.id}" title="Quitar de la lista">✕</button></td>
-            </tr>
-          `).join('') + `</tbody></table>
-          <p class="panel-note" style="margin-top:8px;">El ID es la parte de la URL de la planilla entre <code>/d/</code> y <code>/edit</code>. Si pegás la URL completa, la app se queda con esa parte sola.</p>`;
-
-      listEl.querySelectorAll('input[data-f="nombre"], input[data-f="spreadsheetId"]').forEach(inp=>{
-        let t;
-        inp.addEventListener('input', ()=>{
-          clearTimeout(t);
-          t = setTimeout(async ()=>{
-            const lista = await getEdificios();
-            const e = lista.find(x=>x.id===inp.dataset.id);
-            if(e){
-              if(inp.dataset.f==='nombre'){ e.nombre = inp.value.trim(); e.estado = 'activo'; }
-              if(inp.dataset.f==='spreadsheetId'){
-                const raw = inp.value.trim();
-                const match = raw.match(/\/d\/([a-zA-Z0-9-_]+)/);
-                e.spreadsheetId = match ? match[1] : raw;
-              }
-            }
-            await saveData('naken-edificios', lista);
-          }, 600);
-        });
-      });
-      listEl.querySelectorAll('[data-action="del-edificio"]').forEach(b=>{
-        b.addEventListener('click', async ()=>{
-          const usuarios = await loadData('naken-usuarios', []);
-          const afectados = usuarios.filter(u=>u.consorcioId===b.dataset.id && u.estado==='habilitado').length;
-          const aviso = afectados>0
-            ? `⚠ Este edificio tiene ${afectados} propietario(s) habilitado(s) — si lo sacás de la lista, van a dejar de poder entrar (su sesión queda sin consorcio vinculado). ¿Confirmás igual?`
-            : '¿Quitar este edificio de la lista?';
-          if(!confirm(aviso)) return;
-          const lista = (await getEdificios()).filter(x=>x.id!==b.dataset.id);
-          await saveData('naken-edificios', lista);
-          refreshEdificios();
-        });
-      });
-    }
-    document.getElementById(mountId+'-edificio-add').addEventListener('click', async ()=>{
-      const btn = document.getElementById(mountId+'-edificio-add');
-      const input = document.getElementById(mountId+'-edificio-nuevo');
-      const nombre = input.value.trim();
-      if(!nombre) return;
-      await withLoading(btn, 'Agregando…', async ()=>{
-        const lista = await getEdificios();
-        lista.push({id:uid(), nombre, estado:'activo', spreadsheetId:''});
-        await saveData('naken-edificios', lista);
-        input.value = '';
-        refreshEdificios();
-      });
-    });
-    refreshEdificios();
 
     /* ---------- Alta de consorcio nuevo — paso a paso ---------- */
     async function renderAltaWizard(){
@@ -9970,10 +9904,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     (async ()=>{
       const spreadsheetIdActivo = await getSpreadsheetIdActivo();
-      const [emp, escalaRes, cfgConsorcioDatos, cfgConsorcioLiq, liq] = await Promise.all([
+      const [emp, escalaRes, cfgConsorcioLiq, liq] = await Promise.all([
         loadData('naken-empleados', []),
         window.storage.getEscalaCct589(),
-        loadData('naken-consorcio-datos', {edificio:'', barrio:'', cuit:''}),
         spreadsheetIdActivo ? fetchConfigConsorcio(spreadsheetIdActivo) : Promise.resolve(null),
         loadData(storageKey, [])
       ]);
@@ -9986,7 +9919,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       }
       const catRaw = cfgConsorcioLiq && cfgConsorcioLiq.consorcio ? parseInt(cfgConsorcioLiq.consorcio.categoriaCct589, 10) : NaN;
       categoriaEdificio = (catRaw>=1 && catRaw<=4) ? catRaw : 1;
-      consorcioDatos = cfgConsorcioDatos || {edificio:'', barrio:'', cuit:''};
+      // Los datos del consorcio para el recibo salen directo de Config_NAKEN (misma fuente que
+      // el resto de la app) -- no hace falta cargarlos por separado en naken-consorcio-datos.
+      const cCons = (cfgConsorcioLiq && cfgConsorcioLiq.consorcio) || {};
+      const cAdic = (cfgConsorcioLiq && cfgConsorcioLiq.adicional) || {};
+      consorcioDatos = { edificio: cCons.nombreDireccion||'', barrio: cCons.nombreDireccion||'', jurisdiccion: cAdic.jurisdiccion||'', consorcioCuit: cCons.cuit||'' };
       liquidaciones = liq || [];
       refreshEmpleadoSelect();
       renderList();
