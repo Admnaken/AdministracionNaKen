@@ -1458,9 +1458,8 @@
         <div class="panel-head">
           <span class="eyebrow">Transparencia</span>
           <h2>Honorarios</h2>
-          <p class="panel-note">Honorarios del administrador y de profesionales contratados (abogado, contador, técnicos), por período.</p>
+          <p class="panel-note">Los honorarios del administrador y de otros profesionales (abogado, contador, técnicos) son un gasto más del consorcio — se cargan directo en <code>Gastos_Mensual</code> de la planilla, con proveedor, N° de factura y comprobante, y ya se ven en detalle en "Facturas del mes". Mantener un registro aparte acá corría el riesgo de mostrar un número distinto al que realmente usa la liquidación con AutoCrat, así que se sacó — la planilla es la única fuente real.</p>
         </div>
-        <div id="honorarios-mount"></div>
       </section>
 
       <!-- LIBRO BANCO Y CONCILIACIÓN BANCARIA -->
@@ -1810,6 +1809,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(Object.assign({ action:'informarPagoPropio', key, sessionToken: SESSION_TOKEN }, datos))
+      }));
+    },
+    async editarPagoPropio(key, id, datos){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'editarPagoPropio', key, id, sessionToken: SESSION_TOKEN }, datos))
+      }));
+    },
+    async eliminarPagoPropio(key, id){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'eliminarPagoPropio', key, id, sessionToken: SESSION_TOKEN })
       }));
     },
     async respaldarLiquidacionSueldo(payload){
@@ -3682,9 +3695,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           msg.innerHTML = `<div class="gate-msg error">Tu usuario no está vinculado a ningún consorcio activo. Avisale a la administración para que lo revise antes de seguir.</div>`;
           return;
         }
-        setActiveConsorcioId(ed.id);
+        // Ojo con el orden: setActiveConsorcioId() intenta (solo si role ya es 'admin') recordar
+        // el "último consorcio" -- role todavía vale 'admin' (el default) hasta que applyRole()
+        // lo cambie, así que hay que aplicar el rol ANTES, para que esa condición se evalúe bien.
         currentUser = { nombreCompleto: res.nombreCompleto, unidad: res.unidad, consorcio: ed.nombre, consorcioId: ed.id, consorcioSpreadsheetId: ed.spreadsheetId || '' };
         applyRole('propietario');
+        setActiveConsorcioId(ed.id);
       });
     });
 
@@ -4624,7 +4640,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     try{ if(id) localStorage.setItem('naken-admin-active-consorcio', id); }catch(e){}
     // Respaldo además en el storage compartido, por si localStorage está bloqueado (modo privado,
     // configuración del navegador, etc.) — así no se pierde el "último consorcio" al recargar.
-    if(id) saveData('naken-admin-ultimo-consorcio', id);
+    // Esto es SOLO para el admin (recordar en qué consorcio estaba trabajando) -- un propietario
+    // no lo necesita (su consorcio es fijo), y esa clave es admin-only: si se intenta igual, el
+    // servidor la rechaza con "No autorizado" y ese error terminaba mostrándose en pantalla.
+    if(id && role==='admin') saveData('naken-admin-ultimo-consorcio', id).catch(()=>{});
   }
   function nsKey(key){
     if (GLOBAL_KEYS.indexOf(key) !== -1) return key;
@@ -5449,10 +5468,54 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             </select>
             <div class="cp-confirm-wrap" data-id="${p.id}"></div>
             ${p.notaAdmin ? `<div class="card-meta" style="margin-top:6px;">${escapeHtml(p.notaAdmin)}</div>` : ''}
-          ` : (p.notaAdmin ? `<div class="card-meta" style="margin-top:6px;">Nota de la administración: ${escapeHtml(p.notaAdmin)}</div>` : '')}
+          ` : `
+            ${p.notaAdmin ? `<div class="card-meta" style="margin-top:6px;">Nota de la administración: ${escapeHtml(p.notaAdmin)}</div>` : ''}
+            ${p.estado==='Pendiente de verificar' ? `
+              <div class="toolbar" style="margin-top:8px;">
+                <input type="file" data-action="cp-reemplazar-file" data-id="${p.id}" accept="image/*,application/pdf" style="display:none;">
+                <button class="btn ghost" data-action="cp-reemplazar" data-id="${p.id}" style="font-size:11px;">Reemplazar comprobante</button>
+                <button class="btn ghost" data-action="cp-eliminar" data-id="${p.id}" style="font-size:11px;color:var(--danger,#C0392B);">Eliminar</button>
+              </div>
+              <span class="card-meta" data-status-id="${p.id}" style="display:block;margin-top:4px;"></span>
+            ` : ''}
+          `}
         `;
         listEl.appendChild(card);
       });
+
+      if(role==='propietario'){
+        listEl.querySelectorAll('[data-action="cp-eliminar"]').forEach(btn=>{
+          btn.addEventListener('click', async ()=>{
+            if(!confirm('¿Eliminar este pago informado? Esta acción no se puede deshacer.')) return;
+            await withLoading(btn, 'Eliminando…', async ()=>{
+              const res = await window.storage.eliminarPagoPropio(nsKey('naken-pagos-informados'), btn.dataset.id);
+              if(!res.ok){ alert(res.error || 'No se pudo eliminar.'); return; }
+              renderLista();
+            });
+          });
+        });
+        listEl.querySelectorAll('[data-action="cp-reemplazar"]').forEach(btn=>{
+          btn.addEventListener('click', ()=>{
+            listEl.querySelector(`[data-action="cp-reemplazar-file"][data-id="${btn.dataset.id}"]`).click();
+          });
+        });
+        listEl.querySelectorAll('[data-action="cp-reemplazar-file"]').forEach(fileInput=>{
+          fileInput.addEventListener('change', async (e)=>{
+            const file = e.target.files[0];
+            const statusEl2 = listEl.querySelector(`[data-status-id="${fileInput.dataset.id}"]`);
+            if(!file) return;
+            if(statusEl2){ statusEl2.textContent = 'Subiendo comprobante nuevo…'; }
+            try{
+              const url = await window.uploadFileToDrive(file, currentUser ? currentUser.consorcio : '');
+              const res = await window.storage.editarPagoPropio(nsKey('naken-pagos-informados'), fileInput.dataset.id, { comprobante: url });
+              if(!res.ok){ if(statusEl2) statusEl2.textContent = res.error || 'No se pudo actualizar.'; return; }
+              renderLista();
+            }catch(err){
+              if(statusEl2) statusEl2.textContent = 'No se pudo subir el comprobante nuevo: ' + (err && err.message ? err.message : '');
+            }
+          });
+        });
+      }
       if(role==='admin'){
         listEl.querySelectorAll('.cp-field').forEach(sel=>{
           sel.addEventListener('change', ()=>{
@@ -10001,12 +10064,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       mountObleasQR('obleas-qr-mount', 'naken-obleas-qr');
       mountProveedores('proveedores-mount', 'naken-proveedores');
     },
-    honorarios: () => mountLedger('honorarios-mount', 'naken-honorarios', [
-      {key:'profesional', label:'Profesional', placeholder:'Nombre'},
-      {key:'rol', label:'Rol', placeholder:'Administrador / Abogado / Contador / Técnico'},
-      {key:'periodo', label:'Período', placeholder:'Julio 2026'},
-      {key:'monto', label:'Monto ($)', numeric:true, placeholder:'0'},
-    ], {emptyText:'Sin honorarios cargados.'}),
     manual: () => {
       mountDocumentosVivo('documentos-vivo-mount');
       mountManual('manual-mount', 'naken-manual',
