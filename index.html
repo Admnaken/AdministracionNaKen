@@ -1566,13 +1566,14 @@
         <p class="panel-note">De referencia -- se actualiza una sola vez al mes en la hoja "Escala_CCT589_Nacional" de NAKEN-BaseDeDatos, y se aplica sola a todos tus consorcios. Acá solo se muestra la columna que le corresponde a este edificio según su categoría.</p>
         <div id="cct589-config-mount"></div>
 
-        <div class="subhead">Aportes en Línea — ARCA (ex AFIP)</div>
+        <div class="subhead">ARCA (ex AFIP) — trámites relacionados con el personal</div>
+        <p class="panel-note" style="margin-bottom:10px;">Son dos trámites distintos, con dos links distintos: uno para CONSULTAR si un empleado puntual está al día, y otro para PRESENTAR la declaración jurada mensual de todo el personal.</p>
         <div id="arca-link-mount"></div>
-        <p class="panel-note" style="margin-top:10px;margin-bottom:12px;">Para verificar los aportes de un empleado, entrá al link de ARCA y cargá su CUIL manualmente — no permite pasarlo por la dirección web.</p>
+        <p class="panel-note" style="margin-top:10px;margin-bottom:12px;">Consulta de aportes de UN empleado — entrá al link y cargá su CUIL manualmente, no se puede pasar por la dirección web.</p>
+        <div id="arca-f931-link-mount"></div>
+        <p class="panel-note" style="margin-top:10px;margin-bottom:12px;">Declaración jurada mensual (F.931) de TODO el personal — se presenta desde ahí, con tu Clave Fiscal. Este link te lleva al portal; después tenés que completarla vos, ARCA no permite pre-cargar los datos desde afuera. Para tener a mano los totales del período mientras la completás, revisá la hoja "F931_Resumen" en la planilla de este consorcio — se arma sola con lo que liquidás acá.</p>
 
-        <div class="subhead">Respaldo automático a Google Sheets</div>
-        <div id="backup-sheet-url-mount"></div>
-        <p class="panel-note" style="margin-top:10px;margin-bottom:12px;">Cada liquidación que calculás acá se manda sola, como respaldo, a la fila correspondiente de la hoja "Personal_CargasSociales" de la planilla de ESTE consorcio — de ahí sale la boleta con el formato legal completo, lista para archivar o entregar. La URL del puente es la misma para todos tus consorcios; el link de la planilla es propio de cada uno.</p>
+        <p class="panel-note" style="margin-top:6px;margin-bottom:0;">Cada liquidación que calculás en esta pantalla se guarda sola, como copia, en la hoja "Personal_CargasSociales" de la planilla de este consorcio — de ahí sale la boleta con el formato legal completo, lista para archivar o entregar.</p>
       </section>
 
       <!-- MANUAL / DOCUMENTOS -->
@@ -1802,6 +1803,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(Object.assign({ action:'informarPagoPropio', key, sessionToken: SESSION_TOKEN }, datos))
+      }));
+    },
+    async respaldarLiquidacionSueldo(payload){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'respaldarLiquidacionSueldo', sessionToken: SESSION_TOKEN }, payload))
       }));
     },
     async actualizarConflictoPropio(key, casoId, accion, extra){
@@ -9070,40 +9078,24 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       };
     }
 
-    function extractSheetId(input){
-      if(!input) return '';
-      const s = input.trim();
-      const m = s.match(/\/d\/([a-zA-Z0-9-_]+)/);
-      if(m) return m[1];
-      if(/^[a-zA-Z0-9-_]{20,}$/.test(s)) return s; // ya es un ID pelado
-      return '';
-    }
-
     async function enviarRespaldo(record, emp, statusNode){
-      const url = await loadData('naken-backup-sheet-url', '');
-      if(!url){ if(statusNode) statusNode.textContent = ''; return; }
-      const sheetId = await getSpreadsheetIdActivo();
-      if(!sheetId){
-        if(statusNode) statusNode.textContent = 'Este consorcio todavía no tiene la planilla vinculada (Config. general del consorcio → ID de la planilla).';
+      const spreadsheetId = await getSpreadsheetIdActivo();
+      if(!spreadsheetId){
+        if(statusNode) statusNode.textContent = 'Este consorcio todavía no tiene la planilla vinculada (Todos los consorcios → ID de la planilla).';
         return;
       }
-      if(statusNode) statusNode.textContent = 'Enviando respaldo a la planilla…';
+      if(statusNode) statusNode.textContent = 'Guardando la copia en la planilla…';
       try{
         const payload = buildBackupPayload(record, emp);
-        payload.sheetId = sheetId;
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: {'Content-Type': 'text/plain;charset=utf-8'},
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json().catch(()=>null);
-        if(data && data.ok){
-          if(statusNode) statusNode.textContent = `✓ Respaldo guardado en la planilla (${data.consorcio||'consorcio'})`;
+        payload.spreadsheetId = spreadsheetId;
+        const res = await window.storage.respaldarLiquidacionSueldo(payload);
+        if(res && res.ok){
+          if(statusNode) statusNode.textContent = `✓ Copia guardada en la planilla (${res.consorcio||'consorcio'})`;
         } else {
-          if(statusNode) statusNode.textContent = 'No se pudo guardar el respaldo: ' + ((data && data.error) || 'revisá la URL del puente configurada.');
+          if(statusNode) statusNode.textContent = 'No se pudo guardar la copia: ' + ((res && res.error) || 'revisá que la planilla tenga la hoja "Personal_CargasSociales".');
         }
       } catch(err){
-        if(statusNode) statusNode.textContent = 'No se pudo enviar el respaldo (sin conexión con la planilla).';
+        if(statusNode) statusNode.textContent = 'No se pudo guardar la copia en la planilla: ' + (err && err.message ? err.message : 'error de conexión.');
       }
     }
 
@@ -9366,6 +9358,128 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       `;
     }
 
+    async function generarPdfRecibo(liq, emp){
+      if(!window.jspdf){ alert('No se pudo cargar el generador de PDF. Revisá tu conexión e intentá de nuevo.'); return; }
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      const M = 14;
+      let y = 18;
+      const COLOR_PRINCIPAL = [11,42,74];
+      const COLOR_TEXTO = [44,62,80];
+      const AUTOTABLE_BASE = { styles:{fontSize:9,textColor:COLOR_TEXTO,cellPadding:2.2}, headStyles:{fillColor:COLOR_PRINCIPAL,textColor:255,fontStyle:'bold'} };
+
+      const firmaAdministrador = await getFirmaAdministrador();
+      const antigDiffiere = emp.fechaIngresoReconocida && emp.fechaIngresoReconocida !== emp.fechaIngreso;
+      const pctDe = (monto, base) => base>0 ? (monto/base*100).toFixed(2)+'%' : '—';
+
+      function heading(texto){
+        if(y>270){ doc.addPage(); y=18; }
+        doc.setFillColor(...COLOR_PRINCIPAL);
+        doc.rect(M, y, 182, 7, 'F');
+        doc.setTextColor(255,255,255);
+        doc.setFont('helvetica','bold');
+        doc.setFontSize(10);
+        doc.text(texto, M+3, y+5);
+        doc.setTextColor(...COLOR_TEXTO);
+        y += 12;
+      }
+
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(13);
+      doc.setTextColor(...COLOR_PRINCIPAL);
+      doc.text(consorcioDatos.edificio || 'Consorcio de Propietarios', M, y); y+=6;
+      doc.setFontSize(11);
+      doc.text('Recibo de haberes — CCT 589/10 (SUTERH/FATERYH)', M, y); y+=5;
+      doc.setFont('helvetica','normal');
+      doc.setFontSize(9);
+      doc.setTextColor(...COLOR_TEXTO);
+      doc.text(consorcioDatos.barrio || '', M, y); y+=4.5;
+      doc.text('CUIT: '+(consorcioDatos.cuit||'—')+'  ·  Período: '+liq.periodo, M, y); y+=4.5;
+      doc.text('Administrador: '+firmaAdministrador+'  ·  Art. 140 LCT — costo laboral total desglosado', M, y); y+=8;
+
+      heading('DATOS DEL EMPLEADO');
+      doc.autoTable({
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+        body: [
+          ['Nombre completo', emp.nombreCompleto||'—', 'Legajo N°', emp.legajo||'—'],
+          ['CUIL', emp.cuil||'—', 'Función', funcionLabelCct589(emp.funcion)],
+          ['Fecha de ingreso', emp.fechaIngreso||'—', 'Antigüedad', liq.antiguedadAnios+' año(s)'],
+          ['Lugar de pago', emp.lugarPago||'—', 'Forma de pago aportes', emp.formaPagoAportes||'—'],
+        ]
+      });
+      y = doc.lastAutoTable.finalY + 8;
+      if(antigDiffiere){
+        doc.setFontSize(8.5); doc.setTextColor(150,120,40);
+        doc.text('Antigüedad reconocida desde: '+emp.fechaIngresoReconocida, M, y); y+=6;
+        doc.setTextColor(...COLOR_TEXTO);
+      }
+
+      heading('COSTO TOTAL EMPLEADOR: '+fmt(liq.costoTotalEmpleador));
+
+      heading('CONTRIBUCIONES PATRONALES (a cargo del consorcio)');
+      const filasContrib = [
+        ['SIPA patronal ('+pctDe(liq.contribSipa, liq.sueldoBrutoRemun)+')', fmt(liq.contribSipa)],
+        ['Obra social patronal ('+pctDe(liq.contribObraSocial, liq.sueldoBrutoRemun)+')', fmt(liq.contribObraSocial)],
+        ['FATERYH ('+pctDe(liq.contribFateryh, liq.sueldoBrutoRemun)+')', fmt(liq.contribFateryh)],
+      ];
+      if(liq.contribSuterh>0) filasContrib.push(['SUTERH patronal ('+pctDe(liq.contribSuterh, liq.sueldoBrutoRemun)+')', fmt(liq.contribSuterh)]);
+      filasContrib.push(['SERACARH ('+pctDe(liq.contribSeracarh, liq.sueldoBrutoRemun)+')', fmt(liq.contribSeracarh)]);
+      if(liq.fmvdd>0) filasContrib.push(['FMVDD', fmt(liq.fmvdd)]);
+      filasContrib.push(['ART ('+pctDe(liq.art, liq.sueldoBrutoRemun)+')', fmt(liq.art)]);
+      filasContrib.push(['Seguro de vida obligatorio', fmt(liq.seguroVida)]);
+      filasContrib.push(['Sub total contribuciones', fmt(liq.totalContribPatronales)]);
+      doc.autoTable({ ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', body: filasContrib });
+      y = doc.lastAutoTable.finalY + 8;
+
+      heading('SUELDO BRUTO — HABERES');
+      const filasHaberes = [['Sueldo básico', fmt(liq.basico)], ['Antigüedad ('+liq.antiguedadAnios+' años)', fmt(liq.adicAntiguedad)]];
+      if(emp.presentismo) filasHaberes.push(['Presentismo', fmt(liq.adicPresentismo)]);
+      if(emp.tituloIntegral) filasHaberes.push(['Título Encargado Integral', fmt(liq.adicTitulo)]);
+      if(emp.zonaDesfavorable) filasHaberes.push(['Zona desfavorable', fmt(liq.adicZona)]);
+      if(emp.retiroResiduos) filasHaberes.push(['Retiro de residuos', fmt(liq.impResiduos)]);
+      if(emp.clasificacionResiduos) filasHaberes.push(['Clasificación de residuos', fmt(liq.impClasifResiduos)]);
+      if(liq.impVivienda>0) filasHaberes.push(['Valor vivienda', fmt(liq.impVivienda)]);
+      if(emp.limpiezaCocheras) filasHaberes.push(['Limpieza de cocheras', fmt(liq.impCocheras)]);
+      if(emp.movimientoCoches) filasHaberes.push(['Movimiento de coches', fmt(liq.impMovCoches)]);
+      if(emp.manejoCalderas) filasHaberes.push(['Manejo de calderas', fmt(liq.impCalderas)]);
+      if(emp.mantJardin) filasHaberes.push(['Mantenimiento de jardín', fmt(liq.impJardin)]);
+      if(emp.limpiezaPiletas) filasHaberes.push(['Limpieza de piletas', fmt(liq.impPiletas)]);
+      if(emp.viaticos) filasHaberes.push(['Viáticos', fmt(liq.impViaticos)]);
+      if(emp.sumaFijaRemun) filasHaberes.push(['Suma fija remunerativa', fmt(liq.impSumaFija)]);
+      filasHaberes.push(['Adicional remunerativo mensual CCT', fmt(liq.impAdicionalCct)]);
+      if(num(liq.hs50)>0) filasHaberes.push(['Horas extra 50% ('+liq.hs50+' hs)', fmt(liq.imp50)]);
+      if(num(liq.hs100)>0) filasHaberes.push(['Horas extra 100% ('+liq.hs100+' hs)', fmt(liq.imp100)]);
+      if(num(liq.importeVacaciones)>0) filasHaberes.push(['Vacaciones', fmt(liq.impVacaciones)]);
+      if(num(liq.diasInasistencia)>0) filasHaberes.push(['Descuento por inasistencias ('+liq.diasInasistencia+' días)', '−'+fmt(liq.descInasistencias)]);
+      filasHaberes.push(['Sueldo bruto remunerativo', fmt(liq.sueldoBrutoRemun)]);
+      doc.autoTable({ ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', body: filasHaberes });
+      y = doc.lastAutoTable.finalY + 8;
+
+      heading('RETENCIONES AL TRABAJADOR');
+      const filasRet = [];
+      if(!emp.jubiladoReincorporado) filasRet.push(['Jubilación — SIPA ('+pctDe(liq.retJubilacion, liq.sueldoBrutoRemun)+')', '−'+fmt(liq.retJubilacion)]);
+      else filasRet.push(['Jubilado reincorporado: exento de aporte SIPA (Ley 24.241 art. 34)', '']);
+      filasRet.push(['Ley 19.032 / INSSJP — PAMI ('+pctDe(liq.retPami, liq.sueldoBrutoRemun)+')', '−'+fmt(liq.retPami)]);
+      filasRet.push(['Obra social ('+pctDe(liq.retObraSocial, liq.sueldoBrutoRemun)+')', '−'+fmt(liq.retObraSocial)]);
+      if(emp.afiliadoSindical) filasRet.push(['Cuota sindical SUTERH ('+pctDe(liq.retSindical, liq.sueldoBrutoRemun)+')', '−'+fmt(liq.retSindical)]);
+      filasRet.push(['Total retenciones', '−'+fmt(liq.totalRetenciones)]);
+      doc.autoTable({ ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', body: filasRet });
+      y = doc.lastAutoTable.finalY + 10;
+
+      heading('SUELDO NETO A COBRAR: '+fmt(liq.sueldoNeto));
+
+      if(y>250){ doc.addPage(); y=18; }
+      y += 10;
+      doc.setFontSize(9);
+      doc.text('____________________________', M, y);
+      doc.text('____________________________', 120, y);
+      y += 5;
+      doc.text('Firma de la administración', M, y);
+      doc.text('Firma del empleado — recibí conforme', 120, y);
+
+      doc.save(`Recibo_${(emp.nombreCompleto||'empleado').replace(/[^a-zA-Z0-9]/g,'_')}_${(liq.periodo||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
+    }
+
     function drawCostoChart(canvasId, liq){
       const ctx = document.getElementById(canvasId);
       if(!ctx || !window.Chart) return;
@@ -9416,8 +9530,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               <div class="card-meta">${escapeHtml(r.periodo)} · Neto: ${fmt(r.sueldoNeto)} · Costo total empleador: ${fmt(r.costoTotalEmpleador)}</div>
             </div>
             <div style="display:flex;gap:8px;align-items:center;">
-              <button class="btn ghost" data-action="resend" data-id="${r.id}">↻ Reenviar respaldo</button>
+              <button class="btn ghost" data-action="resend" data-id="${r.id}" title="Manda de nuevo una copia de esta liquidación a la hoja Personal_CargasSociales de la planilla de este consorcio (por si la primera vez falló, o si corregiste algo).">↻ Reenviar copia a la planilla</button>
               <button class="btn ghost" data-action="toggle" data-id="${r.id}">Ver recibo</button>
+              <button class="btn ghost" data-action="delete" data-id="${r.id}" style="color:var(--danger,#C0392B);border-color:var(--danger,#C0392B);">Eliminar</button>
             </div>
           </div>
           <div id="recibo-${r.id}" style="display:none;margin-top:12px;"></div>
@@ -9436,6 +9551,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           btn.disabled = false;
         });
       });
+      listEl.querySelectorAll('[data-action="delete"]').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const r = liquidaciones.find(x=>x.id===btn.dataset.id);
+          if(!r) return;
+          if(!confirm(`¿Eliminar la liquidación de ${r.empleadoNombre} — ${r.periodo}? Esto no la borra de la planilla si ya se había mandado el respaldo, solo del historial acá en la app.`)) return;
+          liquidaciones = liquidaciones.filter(x=>x.id!==r.id);
+          await saveData(storageKey, liquidaciones, statusId);
+          renderList();
+        });
+      });
       listEl.querySelectorAll('[data-action="toggle"]').forEach(btn=>{
         btn.addEventListener('click', ()=>{
           const r = liquidaciones.find(x=>x.id===btn.dataset.id);
@@ -9443,10 +9568,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           const box = document.getElementById('recibo-'+btn.dataset.id);
           const canvasId = 'chart-recibo-'+r.id;
           if(box.style.display==='none'){
-            box.innerHTML = reciboHtml(r, emp, canvasId) + `<div style="margin-top:10px;"><button class="btn" data-print="${r.id}">Imprimir / Guardar PDF</button></div>`;
+            box.innerHTML = reciboHtml(r, emp, canvasId) + `<div style="margin-top:10px;"><button class="btn" data-download="${r.id}">↓ Descargar recibo (PDF)</button></div>`;
             box.style.display = 'block';
             btn.textContent = 'Ocultar recibo';
-            box.querySelector('[data-print]').addEventListener('click', ()=>window.print());
+            box.querySelector('[data-download]').addEventListener('click', ()=>generarPdfRecibo(r, emp));
             drawCostoChart(canvasId, r);
           } else {
             box.style.display = 'none';
@@ -9618,18 +9743,18 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       mountLiquidacionesCct589('liquidaciones-mount', 'naken-liquidaciones-sueldo');
       mountCct589Config('cct589-config-mount', 'naken-cct589-config');
       mountLinkField('arca-link-mount', 'naken-arca-link', {
-        title: 'Aportes en Línea — ARCA (ex AFIP)',
-        hint: 'Portal oficial para verificar si los aportes de un empleado están al día. Hay que ingresar el CUIL manualmente en la página, no se puede pasar por el link.',
+        title: 'Consultar aportes de un empleado',
+        hint: 'Portal oficial para verificar si los aportes de un empleado puntual están al día. Hay que ingresar el CUIL manualmente en la página, no se puede pasar por el link.',
         placeholder: 'https://www.arca.gob.ar/aportesenlinea/',
         buttonLabel: 'Ir a Aportes en Línea',
         defaultValue: 'https://www.arca.gob.ar/aportesenlinea/'
       });
-      mountLinkField('backup-sheet-url-mount', 'naken-backup-sheet-url', {
-        title: 'Respaldo automático a Google Sheets — URL del puente',
-        hint: 'La URL de tu Google Apps Script centralizado (se instala una sola vez y sirve para todos los consorcios — ver instrucciones). Es la misma en todos tus consorcios. La planilla de este consorcio puntual ya está vinculada desde el panel general (Config. del consorcio → ID de planilla) — no hace falta cargarla de nuevo acá.',
-        placeholder: 'https://script.google.com/macros/s/AKfycb.../exec',
-        buttonLabel: 'Probar el puente',
-        emptyText: 'Todavía no conectaste el puente de respaldo.',
+      mountLinkField('arca-f931-link-mount', 'naken-arca-f931-link', {
+        title: 'Presentar la declaración jurada mensual (F.931)',
+        hint: 'Entrá con tu CUIT y Clave Fiscal, y buscá el servicio "Declaración en Línea" entre los tuyos habilitados (si no lo tenés, se agrega desde "Administrador de Relaciones de Clave Fiscal"). Desde ahí se arma, se confirma y se presenta el F.931 de todo el personal del mes.',
+        placeholder: 'https://www.arca.gob.ar/',
+        buttonLabel: 'Ir al portal de ARCA',
+        defaultValue: 'https://www.arca.gob.ar/'
       });
     },
     remocion: () => {}, // contenido estático, sin datos que montar
