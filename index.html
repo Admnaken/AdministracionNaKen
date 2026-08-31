@@ -1299,7 +1299,6 @@
       <div class="group-label">Transparencia</div>
       <button class="navbtn" data-panel="juicios">Juicios</button>
       <button class="navbtn" data-panel="reserva">Fondo de reserva</button>
-      <button class="navbtn" data-panel="honorarios">Honorarios</button>
       <button class="navbtn" data-panel="conciliaciones">Libro Banco y Conciliación bancaria</button>
       <button class="navbtn" data-panel="caja">Libro de Caja</button>
       <button class="navbtn" data-panel="segurosdepositos">Seguros y depósitos</button>
@@ -1442,15 +1441,6 @@
           <p class="panel-note" style="max-width:none;">El Fondo de Reserva se administra en una subcuenta bancaria propia, separada de la cuenta corriente del consorcio, con su propio Libro Banco y su propia conciliación mensual — así queda completo el control de fondos exigido por la normativa vigente.</p>
         </div>
         <div id="reserva-mount"></div>
-      </section>
-
-      <!-- HONORARIOS -->
-      <section class="panel" id="panel-honorarios">
-        <div class="panel-head">
-          <span class="eyebrow">Transparencia</span>
-          <h2>Honorarios</h2>
-          <p class="panel-note">Los honorarios del administrador y de otros profesionales (abogado, contador, técnicos) son un gasto más del consorcio — se cargan directo en <code>Gastos_Mensual</code> de la planilla, con proveedor, N° de factura y comprobante, y ya se ven en detalle en "Facturas del mes". Mantener un registro aparte acá corría el riesgo de mostrar un número distinto al que realmente usa la liquidación con AutoCrat, así que se sacó — la planilla es la única fuente real.</p>
-        </div>
       </section>
 
       <!-- LIBRO BANCO Y CONCILIACIÓN BANCARIA -->
@@ -6729,6 +6719,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               <input type="text" id="${mountId}-alta-periodo" placeholder="Ej: si arrancás en 10/2026, poné 09/2026">
             </div>
           </div>
+          <p class="panel-note" style="margin-bottom:10px;color:var(--danger,#C0392B);">Importante: la columna "UF" tiene que coincidir EXACTO (mismo texto, carácter por carácter) con lo que ya está cargado en la columna "UF" de la hoja Propietarios de este consorcio — normalmente es un número simple (1, 2, 3…), no el piso/depto. Si no coincide, el sistema no va a poder emparejar la deuda con la unidad y va a quedar en $0 sin avisar.</p>
           <table class="ledger">
             <thead><tr><th>UF</th><th>Piso/Dpto.</th><th>Propietario</th><th>Deuda ($)</th><th class="row-del"></th></tr></thead>
             <tbody id="${mountId}-alta-deuda-body"></tbody>
@@ -6745,8 +6736,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         function addRow(){
           const tr = document.createElement('tr');
           tr.innerHTML = `
-            <td><input type="text" data-f="uf" placeholder="Ej: 4B"></td>
-            <td><input type="text" data-f="pisoDpto" placeholder="Ej: Piso 4 Dpto B"></td>
+            <td><input type="text" data-f="uf" placeholder="Ej: 1 (tal cual está en Propietarios, columna UF)"></td>
+            <td><input type="text" data-f="pisoDpto" placeholder="Ej: PB A"></td>
             <td><input type="text" data-f="propietario" placeholder="Nombre"></td>
             <td class="num"><input type="text" data-f="deuda" placeholder="0"></td>
             <td class="row-del"><button data-action="del">✕</button></td>
