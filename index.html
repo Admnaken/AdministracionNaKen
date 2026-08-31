@@ -1590,6 +1590,13 @@
           <a class="btn primary" style="display:inline-block;margin-top:6px;text-decoration:none;" href="https://drive.google.com/file/d/15YpObiV70cVJFEQouyaAnSkljJ5ZzVwq/view?usp=drive_link" target="_blank" rel="noopener">Ver manual (PDF) ↗</a>
         </div>
 
+        ${role==='admin' ? `
+        <div class="infoblock">
+          <h3>Archivado automático de facturas</h3>
+          <p>Cada vez que cerrás el mes, el sistema junta solo los comprobantes de <code>Gastos_Mensual</code> de ese período y los organiza en Google Drive, en la misma carpeta donde vive la planilla de este consorcio: <code>Facturas archivadas → [período]</code>. No hace falta hacer nada — pasa solo al confirmar el cierre en "Usuarios y accesos". El archivo original no se mueve de donde ya estaba (queda accesible en ambos lugares); si algún comprobante no se pudo archivar solo (link roto, sin permisos), te avisa en el mensaje de confirmación del cierre para que lo revises a mano.</p>
+        </div>
+        ` : ''}
+
         <div class="subhead">Documentación del consorcio</div>
         <div id="documentos-vivo-mount"></div>
 
@@ -6470,7 +6477,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             await withLoading(btnConfirmar, 'Cerrando el mes…', async ()=>{
               const res = await window.storage.cerrarMes(spreadsheetId, true);
               if(!res.ok){ msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error||'No se pudo cerrar el mes.')}</div>`; return; }
-              msg.innerHTML = `<div class="gate-msg ok">✓ ${escapeHtml(res.periodoCerrado)} quedó archivado en "${escapeHtml(res.hojaArchivada)}". El período activo ahora es ${escapeHtml(res.proximoPeriodo)}.</div>`;
+              const fa = res.facturasArchivadas;
+              let lineaFacturas = '';
+              if(fa && fa.ok && fa.movidos>0){
+                lineaFacturas = `<br>📎 Se archivaron ${fa.movidos} factura(s) de este período en Drive${fa.carpetaUrl ? ` — <a href="${escapeHtml(fa.carpetaUrl)}" target="_blank" rel="noopener">ver carpeta ↗</a>` : ''}.`;
+              } else if(fa && fa.errores && fa.errores.length>0){
+                lineaFacturas = `<br>⚠ Algunas facturas no se pudieron archivar solas (revisalas a mano): ${escapeHtml(fa.errores.join('; '))}`;
+              } else if(fa && !fa.ok){
+                lineaFacturas = `<br>⚠ No se pudieron archivar las facturas automáticamente: ${escapeHtml(fa.error||'')} — no afecta al cierre del mes, que sí se completó.`;
+              }
+              msg.innerHTML = `<div class="gate-msg ok">✓ ${escapeHtml(res.periodoCerrado)} quedó archivado en "${escapeHtml(res.hojaArchivada)}". El período activo ahora es ${escapeHtml(res.proximoPeriodo)}.${lineaFacturas}</div>`;
               _cache.resumen = {}; _cache.config = {}; // fuerza a releer los datos frescos en el resto de la app
             });
           });
