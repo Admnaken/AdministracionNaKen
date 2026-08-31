@@ -8996,7 +8996,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-top:8px;">
             ${checkboxRow('Jubilado reincorporado','jubiladoReincorporado',e,i)}
             ${checkboxRow('Afiliado al sindicato','afiliadoSindical',e,i)}
-            ${checkboxRow('Presentismo','presentismo',e,i)}
+            ${checkboxRow('Suele tener derecho a presentismo (informativo)','presentismo',e,i)}
             ${checkboxRow('Título Encargado Integral','tituloIntegral',e,i)}
             ${checkboxRow('Zona desfavorable','zonaDesfavorable',e,i)}
             ${checkboxRow('Retiro de residuos','retiroResiduos',e,i)}
@@ -9194,8 +9194,24 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <label>Importe vacaciones ($)</label>
             <input type="text" id="${mountId}-vacaciones" placeholder="0">
           </div>
+          <div>
+            <label>% Presentismo este mes</label>
+            <input type="text" id="${mountId}-presentismo-pct" placeholder="0" title="No es un valor fijo del CCT -- varía según lo que hayas pactado o según si hubo inasistencias que lo hacen perder. Dejalo en 0 si no corresponde este mes.">
+          </div>
+          <div>
+            <label>Aguinaldo (SAC) — si corresponde este mes ($)</label>
+            <input type="text" id="${mountId}-aguinaldo" placeholder="0" title="Se liquida en junio y diciembre: 50% del mejor sueldo del semestre. El cálculo del 'mejor sueldo' lo hacés vos y cargás acá el monto final.">
+          </div>
+          <div>
+            <label>Otros conceptos variables — descripción</label>
+            <input type="text" id="${mountId}-otros-desc" placeholder="Ej: bono, premio, comisión">
+          </div>
+          <div>
+            <label>Otros conceptos variables — monto ($)</label>
+            <input type="text" id="${mountId}-otros-monto" placeholder="0">
+          </div>
         </div>
-        <p class="panel-note" style="margin:0 0 10px;">El básico, los adicionales y las cargas sociales se toman automáticamente del legajo del empleado y de la configuración CCT 589/10. El recibo desglosa el costo laboral total a cargo del consorcio, conforme al art. 140 LCT.</p>
+        <p class="panel-note" style="margin:0 0 10px;">El básico, los adicionales fijos y las cargas sociales se toman automáticamente del legajo del empleado y de la escala CCT 589/10 vigente. El recibo desglosa el costo laboral total a cargo del consorcio, conforme al art. 140 LCT (Ley 27.802 de Modernización Laboral, reglamentada por el Decreto 407/2026).</p>
         <div class="toolbar">
           <span id="${mountId}-backup-status" style="font-size:11.5px;color:var(--muted);"></span>
           <div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}<button class="btn primary" id="${mountId}-calc">Calcular y guardar</button></div>
@@ -9232,7 +9248,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       // suman acá -- confirmá con tu asesor si tu convenio los aplica de otra forma.
       const pctAntiguedadTotal = (numEscala(adic.antiguedadPct106_09) + numEscala(adic.antiguedadPct)) / 100;
       const adicAntiguedad = basico * pctAntiguedadTotal * antiguedadAnios;
-      const adicPresentismo = emp.presentismo ? basico * (numEscala(adic.presentismoPct)/100) : 0;
+      // El % de presentismo NO es un valor fijo del CCT -- se carga mes a mes (puede variar
+      // según lo pactado, o perderse directamente si hubo inasistencias injustificadas).
+      const adicPresentismo = basico * (num(inputs.presentismoPctManual)/100);
       const adicTitulo = emp.tituloIntegral ? basico * (numEscala(adic.tituloPct)/100) : 0;
       const adicZona = emp.zonaDesfavorable ? basico * (numEscala(adic.zonaDesfPct)/100) : 0;
       const impResiduos = emp.retiroResiduos ? numEscala(adic.retiroResiduosMonto) : 0;
@@ -9257,10 +9275,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const valorDia = basico / divisorDia;
       const descInasistencias = num(inputs.diasInasistencia) * valorDia;
       const impVacaciones = num(inputs.importeVacaciones);
+      const impAguinaldo = num(inputs.aguinaldo);
+      const impOtros = num(inputs.otrosMonto);
 
       const sueldoBrutoRemun = basico+adicAntiguedad+adicPresentismo+adicTitulo+adicZona
         +impResiduos+impClasifResiduos+impVivienda+impCocheras+impMovCoches+impCalderas+impJardin+impPiletas+impViaticos+impSumaFija+impAdicionalCct
-        +imp50+imp100+impVacaciones - descInasistencias;
+        +imp50+imp100+impVacaciones+impAguinaldo+impOtros - descInasistencias;
 
       const esJubilado = !!emp.jubiladoReincorporado;
       const retJubilacion = esJubilado ? 0 : sueldoBrutoRemun * (numEscala(ap.aporteJubilacionPct)/100);
@@ -9284,10 +9304,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return {
         id: uid(), empleadoIdx: inputs.empleadoIdx, empleadoNombre: emp.nombreCompleto, periodo: inputs.periodo,
         hs50: inputs.hs50, hs100: inputs.hs100, diasInasistencia: inputs.diasInasistencia, importeVacaciones: inputs.importeVacaciones,
-        categoriaEdificio: idxCategoria+1,
+        categoriaEdificio: idxCategoria+1, presentismoPctManual: num(inputs.presentismoPctManual), otrosDesc: inputs.otrosDesc||'',
         basico, antiguedadAnios, adicAntiguedad, adicPresentismo, adicTitulo, adicZona,
         impResiduos, impClasifResiduos, impVivienda, impCocheras, impMovCoches, impCalderas, impJardin, impPiletas, impViaticos, impSumaFija, impAdicionalCct,
-        valorHora, imp50, imp100, valorDia, descInasistencias, impVacaciones,
+        valorHora, imp50, imp100, valorDia, descInasistencias, impVacaciones, impAguinaldo, impOtros,
         sueldoBrutoRemun, retJubilacion, retPami, retObraSocial, retSindical, totalRetenciones, sueldoNeto,
         contribSipa, contribObraSocial, contribFateryh, contribSuterh, contribSeracarh, fmvdd, art, seguroVida,
         totalContribPatronales, costoTotalEmpleador,
@@ -9327,7 +9347,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const filasHaberYRetenciones = [
         filaConcepto('Sueldo Básico', '', null, liq.basico),
         filaConcepto('Antigüedad', liq.antiguedadAnios+' año(s)', liq.basico, liq.adicAntiguedad),
-        emp.presentismo ? filaConcepto('Presentismo', '', null, liq.adicPresentismo) : '',
+        num(liq.presentismoPctManual)>0 ? filaConcepto('Presentismo', pct(liq.presentismoPctManual), liq.basico, liq.adicPresentismo) : '',
         emp.tituloIntegral ? filaConcepto('Título Encargado Integral', '', null, liq.adicTitulo) : '',
         emp.zonaDesfavorable ? filaConcepto('Zona desfavorable', '', null, liq.adicZona) : '',
         emp.retiroResiduos ? filaConcepto('Retiro de residuos', '', null, liq.impResiduos) : '',
@@ -9344,6 +9364,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         num(liq.hs50)>0 ? filaConcepto('Horas extra 50%', liq.hs50+' hs', null, liq.imp50) : '',
         num(liq.hs100)>0 ? filaConcepto('Horas extra 100%', liq.hs100+' hs', null, liq.imp100) : '',
         num(liq.importeVacaciones)>0 ? filaConcepto('Vacaciones', '', null, liq.impVacaciones) : '',
+        liq.impAguinaldo>0 ? filaConcepto('Aguinaldo (SAC)', '', null, liq.impAguinaldo) : '',
+        liq.impOtros>0 ? filaConcepto(liq.otrosDesc || 'Otros conceptos variables', '', null, liq.impOtros) : '',
         num(liq.diasInasistencia)>0 ? filaConcepto('Descuento por inasistencias', liq.diasInasistencia+' día(s)', null, -liq.descInasistencias) : '',
         `<tr class="recibo-total"><td colspan="3">Sueldo bruto remunerativo</td><td style="text-align:right;">${fmt(liq.sueldoBrutoRemun)}</td></tr>`,
         !emp.jubiladoReincorporado
@@ -9557,7 +9579,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       bannerAzul('SUELDO BRUTO', liq.sueldoBrutoRemun);
 
       const filasBruto = [['Sueldo Básico', '', '', fmt(liq.basico)], ['Antigüedad', liq.antiguedadAnios+' año(s)', fmt(liq.basico), fmt(liq.adicAntiguedad)]];
-      if(emp.presentismo) filasBruto.push(['Presentismo', '', '', fmt(liq.adicPresentismo)]);
+      if(num(liq.presentismoPctManual)>0) filasBruto.push(['Presentismo', pctDe(liq.adicPresentismo, liq.basico), fmt(liq.basico), fmt(liq.adicPresentismo)]);
       if(emp.tituloIntegral) filasBruto.push(['Título Encargado Integral', '', '', fmt(liq.adicTitulo)]);
       if(emp.zonaDesfavorable) filasBruto.push(['Zona desfavorable', '', '', fmt(liq.adicZona)]);
       if(emp.retiroResiduos) filasBruto.push(['Retiro de residuos', '', '', fmt(liq.impResiduos)]);
@@ -9574,13 +9596,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       if(num(liq.hs50)>0) filasBruto.push(['Horas extra 50%', liq.hs50+' hs', '', fmt(liq.imp50)]);
       if(num(liq.hs100)>0) filasBruto.push(['Horas extra 100%', liq.hs100+' hs', '', fmt(liq.imp100)]);
       if(num(liq.importeVacaciones)>0) filasBruto.push(['Vacaciones', '', '', fmt(liq.impVacaciones)]);
-      if(num(liq.diasInasistencia)>0) filasBruto.push(['Descuento por inasistencias', liq.diasInasistencia+' día(s)', '', '−'+fmt(liq.descInasistencias)]);
+      if(liq.impAguinaldo>0) filasBruto.push(['Aguinaldo (SAC)', '', '', fmt(liq.impAguinaldo)]);
+      if(liq.impOtros>0) filasBruto.push([liq.otrosDesc || 'Otros conceptos variables', '', '', fmt(liq.impOtros)]);
+      if(num(liq.diasInasistencia)>0) filasBruto.push(['Descuento por inasistencias', liq.diasInasistencia+' día(s)', '', '-'+fmt(liq.descInasistencias)]);
       filasBruto.push([{content:'Sueldo bruto remunerativo', colSpan:3, styles:{fontStyle:'bold'}}, {content:fmt(liq.sueldoBrutoRemun), styles:{fontStyle:'bold'}}]);
-      if(!emp.jubiladoReincorporado) filasBruto.push(['Aporte Jubilación', pctDe(liq.retJubilacion, base), fmt(base), '−'+fmt(liq.retJubilacion)]);
+      if(!emp.jubiladoReincorporado) filasBruto.push(['Aporte Jubilación', pctDe(liq.retJubilacion, base), fmt(base), '-'+fmt(liq.retJubilacion)]);
       else filasBruto.push([{content:'Jubilado reincorporado: exento de aporte SIPA (Ley 24.241 art. 34)', colSpan:4, styles:{textColor:[130,130,130]}}]);
-      filasBruto.push(['Ley 19.032 — PAMI', pctDe(liq.retPami, base), fmt(base), '−'+fmt(liq.retPami)]);
-      filasBruto.push(['Obra Social', pctDe(liq.retObraSocial, base), fmt(base), '−'+fmt(liq.retObraSocial)]);
-      if(emp.afiliadoSindical) filasBruto.push(['Cuota sindical SUTERH', pctDe(liq.retSindical, base), fmt(base), '−'+fmt(liq.retSindical)]);
+      filasBruto.push(['Ley 19.032 — PAMI', pctDe(liq.retPami, base), fmt(base), '-'+fmt(liq.retPami)]);
+      filasBruto.push(['Obra Social', pctDe(liq.retObraSocial, base), fmt(base), '-'+fmt(liq.retObraSocial)]);
+      if(emp.afiliadoSindical) filasBruto.push(['Cuota sindical SUTERH', pctDe(liq.retSindical, base), fmt(base), '-'+fmt(liq.retSindical)]);
 
       doc.autoTable({
         ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
@@ -9825,6 +9849,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           hs100: document.getElementById(mountId+'-hs100').value || '0',
           diasInasistencia: document.getElementById(mountId+'-inasistencias').value || '0',
           importeVacaciones: document.getElementById(mountId+'-vacaciones').value || '0',
+          presentismoPctManual: document.getElementById(mountId+'-presentismo-pct').value || '0',
+          aguinaldo: document.getElementById(mountId+'-aguinaldo').value || '0',
+          otrosDesc: document.getElementById(mountId+'-otros-desc').value || '',
+          otrosMonto: document.getElementById(mountId+'-otros-monto').value || '0',
         };
         const record = computeLiquidacion(emp, inputs);
         liquidaciones.push(record);
