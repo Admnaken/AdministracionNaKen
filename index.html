@@ -6333,6 +6333,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       <div class="config-row">
         <div><label>Nombre del edificio</label><input type="text" id="cfg-edificio" placeholder="Ej: Edificio Almirante"></div>
         <div><label>Dirección / Barrio</label><input type="text" id="cfg-barrio" placeholder="Ej: Av. Libertador 1234, Núñez"></div>
+        <div><label>Ciudad / Provincia (para el recibo de sueldo)</label><input type="text" id="cfg-cons-jurisdiccion" placeholder="Ej: Ciudad Autónoma de Buenos Aires"></div>
         <div><label>CUIT del consorcio</label><input type="text" id="cfg-cons-cuit" placeholder="30-XXXXXXXX-X"></div>
         <div><label>Convenio de personal</label><input type="text" id="cfg-cons-convenio" placeholder="Ej: 589/10 FATERYH"></div>
       </div>
@@ -6417,13 +6418,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       'cfg-adm-nombre':'administradorNombre', 'cfg-adm-cuit':'administradorCuit',
       'cfg-adm-domicilio':'administradorDomicilio', 'cfg-adm-tel':'administradorTel',
       'cfg-adm-fiscal':'administradorFiscal', 'cfg-adm-redes':'administradorRedes',
-      'cfg-edificio':'edificio', 'cfg-barrio':'barrio',
+      'cfg-edificio':'edificio', 'cfg-barrio':'barrio', 'cfg-cons-jurisdiccion':'jurisdiccion',
       'cfg-cons-cuit':'consorcioCuit', 'cfg-cons-convenio':'consorcioConvenio'
     };
 
     loadData('naken-consorcio-datos', {}).then(cfg=>{
       Object.entries(cfgFields).forEach(([id,key])=>{
-        document.getElementById(id).value = cfg[key] || '';
+        document.getElementById(id).value = cfg[key] || (key==='jurisdiccion' ? 'Ciudad Autónoma de Buenos Aires' : '');
       });
     });
     document.getElementById('cfg-save').addEventListener('click', ()=>{
@@ -8933,19 +8934,90 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const mount = document.getElementById(mountId);
     const statusId = mountId+'-status';
     let empleados = [];
+    // Índices que están en modo edición ahora mismo (los demás se ven como resumen, solo lectura,
+    // hasta que se apriete "Editar"). Un legajo recién agregado arranca directo en edición.
+    const enEdicion = new Set();
 
     function blank(){
       return { legajo:'', nombreCompleto:'', cuil:'', funcion:FUNCIONES_CCT589[0].key, fechaIngreso:'', fechaIngresoReconocida:'',
         jubiladoReincorporado:false, afiliadoSindical:true, presentismo:false, tituloIntegral:false, zonaDesfavorable:false,
         retiroResiduos:false, limpiezaCocheras:false, manejoCalderas:false, mantJardin:false, limpiezaPiletas:false, sumaFijaRemun:false,
         clasificacionResiduos:false, movimientoCoches:false, viaticos:false,
-        lugarPago:'', formaPagoAportes:'' };
+        lugarPago:'', formaPagoAportes:'', _nuevo:true };
     }
 
     function checkboxRow(label, field, e, idx){
       return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--gray-800);margin:4px 0;">
-        <input type="checkbox" data-i="${idx}" data-field="${field}" ${e[field]?'checked':''} ${role==='admin'?'':'disabled'}> ${label}
+        <input type="checkbox" data-i="${idx}" data-field="${field}" ${e[field]?'checked':''}> ${label}
       </label>`;
+    }
+
+    function tarjetaResumen(e, i){
+      return `
+        <div class="card">
+          <div class="card-top">
+            <div>
+              <b>${escapeHtml(e.nombreCompleto||'(sin nombre)')}</b>
+              <div class="card-meta">Legajo ${escapeHtml(e.legajo||'—')} · ${escapeHtml(funcionLabelCct589(e.funcion))} · Ingreso: ${escapeHtml(e.fechaIngreso||'—')}</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn ghost" data-action="editar" data-i="${i}">Editar</button>
+              <button class="btn ghost" data-action="delete" data-i="${i}">Eliminar</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function tarjetaFormulario(e, i){
+      return `
+        <div class="card" style="border-color:var(--brass);">
+          <div class="card-top">
+            <div>
+              <b>${e._nuevo ? 'Legajo nuevo' : escapeHtml(e.nombreCompleto||'(sin nombre)')}</b>
+              <div class="card-meta">${e._nuevo ? 'Completá los datos y confirmá el alta.' : 'Editando este legajo.'}</div>
+            </div>
+          </div>
+          <div class="field-grid" style="margin-top:10px;">
+            <div><label>Legajo N°</label><input type="text" data-i="${i}" data-field="legajo" value="${escapeHtml(e.legajo)}"></div>
+            <div><label>Nombre completo</label><input type="text" data-i="${i}" data-field="nombreCompleto" value="${escapeHtml(e.nombreCompleto)}"></div>
+            <div><label>CUIL</label><input type="text" data-i="${i}" data-field="cuil" placeholder="20-XXXXXXXX-X" value="${escapeHtml(e.cuil)}"></div>
+            <div>
+              <label>Función / Categoría</label>
+              <select data-i="${i}" data-field="funcion">
+                ${FUNCIONES_CCT589.map(f=>`<option value="${f.key}" ${e.funcion===f.key?'selected':''}>${escapeHtml(f.label)}</option>`).join('')}
+              </select>
+            </div>
+            <div><label>Fecha de ingreso</label><input type="text" data-i="${i}" data-field="fechaIngreso" placeholder="DD/MM/AAAA" value="${escapeHtml(e.fechaIngreso)}"></div>
+            <div><label>Antigüedad reconocida desde (si difiere)</label><input type="text" data-i="${i}" data-field="fechaIngresoReconocida" placeholder="DD/MM/AAAA" value="${escapeHtml(e.fechaIngresoReconocida)}"></div>
+            <div><label>Lugar de pago</label><input type="text" data-i="${i}" data-field="lugarPago" value="${escapeHtml(e.lugarPago)}"></div>
+            <div><label>Forma de pago aportes</label><input type="text" data-i="${i}" data-field="formaPagoAportes" placeholder="Transferencia bancaria" value="${escapeHtml(e.formaPagoAportes)}"></div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-top:8px;">
+            ${checkboxRow('Jubilado reincorporado','jubiladoReincorporado',e,i)}
+            ${checkboxRow('Afiliado al sindicato','afiliadoSindical',e,i)}
+            ${checkboxRow('Presentismo','presentismo',e,i)}
+            ${checkboxRow('Título Encargado Integral','tituloIntegral',e,i)}
+            ${checkboxRow('Zona desfavorable','zonaDesfavorable',e,i)}
+            ${checkboxRow('Retiro de residuos','retiroResiduos',e,i)}
+            ${checkboxRow('Limpieza de cocheras','limpiezaCocheras',e,i)}
+            ${checkboxRow('Manejo de calderas','manejoCalderas',e,i)}
+            ${checkboxRow('Mantenimiento de jardín','mantJardin',e,i)}
+            ${checkboxRow('Limpieza de piletas','limpiezaPiletas',e,i)}
+            ${checkboxRow('Clasificación de residuos','clasificacionResiduos',e,i)}
+            ${checkboxRow('Movimiento de coches (cochera)','movimientoCoches',e,i)}
+            ${checkboxRow('Viáticos','viaticos',e,i)}
+            ${checkboxRow('Suma fija remunerativa','sumaFijaRemun',e,i)}
+          </div>
+          <div class="toolbar" style="margin-top:10px;">
+            ${e._nuevo ? '<span></span>' : `<button class="btn ghost" data-action="cancelar" data-i="${i}">Cancelar</button>`}
+            <div style="display:flex;align-items:center;gap:12px;">
+              <span id="${mountId}-msg-${i}" style="font-size:12px;color:var(--danger,#C0392B);"></span>
+              <button class="btn primary" data-action="confirmar" data-i="${i}">${e._nuevo ? 'Dar de alta' : 'Guardar cambios'}</button>
+            </div>
+          </div>
+        </div>
+      `;
     }
 
     function render(){
@@ -8960,59 +9032,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       if(empleados.length===0){
         listEl.innerHTML = `<div class="empty">Sin empleados cargados.</div>`;
       } else {
-        listEl.innerHTML = empleados.map((e,i)=>`
-          <div class="card">
-            <div class="card-top">
-              <div>
-                <b>${escapeHtml(e.nombreCompleto||'(sin nombre)')}</b>
-                <div class="card-meta">Legajo ${escapeHtml(e.legajo||'—')} · ${escapeHtml(funcionLabelCct589(e.funcion))}</div>
-              </div>
-              ${role==='admin' ? `<button class="btn ghost" data-action="delete" data-i="${i}">Eliminar</button>` : ''}
-            </div>
-            <div class="field-grid" style="margin-top:10px;">
-              <div><label>Legajo N°</label><input type="text" data-i="${i}" data-field="legajo" value="${escapeHtml(e.legajo)}" ${role==='admin'?'':'disabled'}></div>
-              <div><label>Nombre completo</label><input type="text" data-i="${i}" data-field="nombreCompleto" value="${escapeHtml(e.nombreCompleto)}" ${role==='admin'?'':'disabled'}></div>
-              <div><label>CUIL</label><input type="text" data-i="${i}" data-field="cuil" placeholder="20-XXXXXXXX-X" value="${escapeHtml(e.cuil)}" ${role==='admin'?'':'disabled'}></div>
-              <div>
-                <label>Función / Categoría</label>
-                <select data-i="${i}" data-field="funcion" ${role==='admin'?'':'disabled'}>
-                  ${FUNCIONES_CCT589.map(f=>`<option value="${f.key}" ${e.funcion===f.key?'selected':''}>${escapeHtml(f.label)}</option>`).join('')}
-                </select>
-              </div>
-              <div><label>Fecha de ingreso</label><input type="text" data-i="${i}" data-field="fechaIngreso" placeholder="DD/MM/AAAA" value="${escapeHtml(e.fechaIngreso)}" ${role==='admin'?'':'disabled'}></div>
-              <div><label>Antigüedad reconocida desde (si difiere)</label><input type="text" data-i="${i}" data-field="fechaIngresoReconocida" placeholder="DD/MM/AAAA" value="${escapeHtml(e.fechaIngresoReconocida)}" ${role==='admin'?'':'disabled'}></div>
-              <div><label>Lugar de pago</label><input type="text" data-i="${i}" data-field="lugarPago" value="${escapeHtml(e.lugarPago)}" ${role==='admin'?'':'disabled'}></div>
-              <div><label>Forma de pago aportes</label><input type="text" data-i="${i}" data-field="formaPagoAportes" placeholder="Transferencia bancaria" value="${escapeHtml(e.formaPagoAportes)}" ${role==='admin'?'':'disabled'}></div>
-            </div>
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:2px;margin-top:8px;">
-              ${checkboxRow('Jubilado reincorporado','jubiladoReincorporado',e,i)}
-              ${checkboxRow('Afiliado al sindicato','afiliadoSindical',e,i)}
-              ${checkboxRow('Presentismo','presentismo',e,i)}
-              ${checkboxRow('Título Encargado Integral','tituloIntegral',e,i)}
-              ${checkboxRow('Zona desfavorable','zonaDesfavorable',e,i)}
-              ${checkboxRow('Retiro de residuos','retiroResiduos',e,i)}
-              ${checkboxRow('Limpieza de cocheras','limpiezaCocheras',e,i)}
-              ${checkboxRow('Manejo de calderas','manejoCalderas',e,i)}
-              ${checkboxRow('Mantenimiento de jardín','mantJardin',e,i)}
-              ${checkboxRow('Limpieza de piletas','limpiezaPiletas',e,i)}
-              ${checkboxRow('Clasificación de residuos','clasificacionResiduos',e,i)}
-              ${checkboxRow('Movimiento de coches (cochera)','movimientoCoches',e,i)}
-              ${checkboxRow('Viáticos','viaticos',e,i)}
-              ${checkboxRow('Suma fija remunerativa','sumaFijaRemun',e,i)}
-            </div>
-          </div>
-        `).join('');
+        listEl.innerHTML = empleados.map((e,i)=>
+          (role==='admin' && enEdicion.has(i)) ? tarjetaFormulario(e,i) : tarjetaResumen(e,i)
+        ).join('');
       }
 
       if(role!=='admin') return;
 
-      let saveTimer;
-      function scheduleSave(){
-        setStatus(statusId,'saving');
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(()=>saveData(storageKey, empleados, statusId), 700);
-      }
-
+      // Los campos se guardan en memoria a medida que se tipean, pero NO se mandan al servidor
+      // hasta que se aprieta "Dar de alta" / "Guardar cambios" -- así el registro solo queda
+      // confirmado cuando el admin está seguro de los datos, no en cada tecla.
       listEl.addEventListener('input', e=>{
         const t = e.target;
         const i = t.dataset.i;
@@ -9020,22 +9049,56 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const field = t.dataset.field;
         if(t.type==='checkbox') empleados[i][field] = t.checked;
         else empleados[i][field] = t.value;
-        if(field==='nombreCompleto' || field==='legajo' || field==='funcion'){
-          const meta = listEl.children[i].querySelector('.card-meta');
-          if(meta) meta.textContent = `Legajo ${empleados[i].legajo||'—'} · ${funcionLabelCct589(empleados[i].funcion)}`;
-          const nameEl = listEl.children[i].querySelector('.card-top b');
-          if(nameEl && field==='nombreCompleto') nameEl.textContent = empleados[i].nombreCompleto || '(sin nombre)';
+      });
+
+      listEl.addEventListener('click', async e=>{
+        const bEditar = e.target.closest('[data-action="editar"]');
+        if(bEditar){ enEdicion.add(+bEditar.dataset.i); render(); return; }
+
+        const bCancelar = e.target.closest('[data-action="cancelar"]');
+        if(bCancelar){
+          const i = +bCancelar.dataset.i;
+          const guardados = await loadData(storageKey, []);
+          empleados[i] = guardados[i] || empleados[i]; // descarta cambios sin guardar
+          enEdicion.delete(i);
+          render();
+          return;
         }
-        scheduleSave();
+
+        const bDelete = e.target.closest('[data-action="delete"]');
+        if(bDelete){
+          const i = +bDelete.dataset.i;
+          if(!confirm(`¿Eliminar el legajo de ${empleados[i].nombreCompleto||'este empleado'}? Las liquidaciones ya calculadas no se borran, solo el legajo.`)) return;
+          empleados.splice(i, 1);
+          enEdicion.delete(i);
+          setStatus(statusId,'saving');
+          await saveData(storageKey, empleados, statusId);
+          render();
+          return;
+        }
+
+        const bConfirmar = e.target.closest('[data-action="confirmar"]');
+        if(bConfirmar){
+          const i = +bConfirmar.dataset.i;
+          const msgEl = document.getElementById(`${mountId}-msg-${i}`);
+          if(!empleados[i].nombreCompleto || !empleados[i].nombreCompleto.trim()){
+            if(msgEl) msgEl.textContent = 'Falta el nombre completo.';
+            return;
+          }
+          delete empleados[i]._nuevo;
+          await withLoading(bConfirmar, 'Guardando…', async ()=>{
+            setStatus(statusId,'saving');
+            await saveData(storageKey, empleados, statusId);
+          });
+          enEdicion.delete(i);
+          render();
+        }
       });
-      listEl.addEventListener('click', e=>{
-        const b = e.target.closest('[data-action="delete"]');
-        if(b){ empleados.splice(+b.dataset.i, 1); render(); scheduleSave(); }
-      });
+
       document.getElementById(mountId+'-add').addEventListener('click', ()=>{
         empleados.push(blank());
+        enEdicion.add(empleados.length-1);
         render();
-        scheduleSave();
       });
     }
 
@@ -9233,124 +9296,165 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
 
     function reciboHtml(liq, emp, canvasId){
-      const antigDiffiere = emp.fechaIngresoReconocida && emp.fechaIngresoReconocida !== emp.fechaIngreso;
       // El % que se muestra junto a cada concepto se deriva del monto ya calculado (no depende
       // de una config aparte) -- así siempre coincide exactamente con lo que se usó de verdad.
       const pctDe = (monto, base) => base>0 ? (monto/base*100) : 0;
-      const pctSipaPatr = pctDe(liq.contribSipa, liq.sueldoBrutoRemun);
-      const pctObraSocialPatr = pctDe(liq.contribObraSocial, liq.sueldoBrutoRemun);
-      const pctFateryh = pctDe(liq.contribFateryh, liq.sueldoBrutoRemun);
-      const pctSuterhPatr = pctDe(liq.contribSuterh, liq.sueldoBrutoRemun);
-      const pctSeracarh = pctDe(liq.contribSeracarh, liq.sueldoBrutoRemun);
-      const pctArt = pctDe(liq.art, liq.sueldoBrutoRemun);
-      const pctAntig = liq.antiguedadAnios>0 && liq.basico>0 ? (liq.adicAntiguedad/(liq.basico*liq.antiguedadAnios)*100) : 0;
-      const pctJubilacion = pctDe(liq.retJubilacion, liq.sueldoBrutoRemun);
-      const pctPami = pctDe(liq.retPami, liq.sueldoBrutoRemun);
-      const pctObraSocialTrab = pctDe(liq.retObraSocial, liq.sueldoBrutoRemun);
-      const pctSindical = pctDe(liq.retSindical, liq.sueldoBrutoRemun);
+      const base = liq.sueldoBrutoRemun;
+      const antigDiffiere = emp.fechaIngresoReconocida && emp.fechaIngresoReconocida !== emp.fechaIngreso;
+      const jurisdiccion = consorcioDatos.jurisdiccion || 'Ciudad Autónoma de Buenos Aires';
+      const direccion = consorcioDatos.barrio || '';
+
+      const filaConcepto = (concepto, unidad, montoBase, monto) => `
+        <tr>
+          <td>${escapeHtml(concepto)}</td>
+          <td style="text-align:center;">${escapeHtml(unidad||'')}</td>
+          <td style="text-align:right;color:var(--muted);">${montoBase!=null ? fmt(montoBase) : ''}</td>
+          <td style="text-align:right;">${monto!=null ? fmt(monto) : ''}</td>
+        </tr>`;
+
+      const filasContrib = [
+        filaConcepto('ART', pct(pctDe(liq.art, base)), base, liq.art),
+        filaConcepto('Contribución Jubilación (SIPA)', pct(pctDe(liq.contribSipa, base)), base, liq.contribSipa),
+        filaConcepto('Contribución OO.SS.', pct(pctDe(liq.contribObraSocial, base)), base, liq.contribObraSocial),
+        filaConcepto('Seguro de vida obligatorio', '', null, liq.seguroVida),
+        `<tr><td colspan="4" style="padding-top:8px;font-weight:600;color:var(--muted);">Costo derivado del CCT:</td></tr>`,
+        filaConcepto('FATERYH', pct(pctDe(liq.contribFateryh, base)), base, liq.contribFateryh),
+        liq.contribSeracarh>0 ? filaConcepto('SERACARH', pct(pctDe(liq.contribSeracarh, base)), base, liq.contribSeracarh) : '',
+        liq.contribSuterh>0 ? filaConcepto('SUTERH patronal', pct(pctDe(liq.contribSuterh, base)), base, liq.contribSuterh) : '',
+        liq.fmvdd>0 ? filaConcepto('FMVDD', '', null, liq.fmvdd) : '',
+      ].join('');
+
+      const filasHaberYRetenciones = [
+        filaConcepto('Sueldo Básico', '', null, liq.basico),
+        filaConcepto('Antigüedad', liq.antiguedadAnios+' año(s)', liq.basico, liq.adicAntiguedad),
+        emp.presentismo ? filaConcepto('Presentismo', '', null, liq.adicPresentismo) : '',
+        emp.tituloIntegral ? filaConcepto('Título Encargado Integral', '', null, liq.adicTitulo) : '',
+        emp.zonaDesfavorable ? filaConcepto('Zona desfavorable', '', null, liq.adicZona) : '',
+        emp.retiroResiduos ? filaConcepto('Retiro de residuos', '', null, liq.impResiduos) : '',
+        emp.clasificacionResiduos ? filaConcepto('Clasificación de residuos', '', null, liq.impClasifResiduos) : '',
+        liq.impVivienda>0 ? filaConcepto('Valor vivienda', '', null, liq.impVivienda) : '',
+        emp.limpiezaCocheras ? filaConcepto('Limpieza de cocheras', '', null, liq.impCocheras) : '',
+        emp.movimientoCoches ? filaConcepto('Movimiento de coches', '', null, liq.impMovCoches) : '',
+        emp.manejoCalderas ? filaConcepto('Manejo de calderas', '', null, liq.impCalderas) : '',
+        emp.mantJardin ? filaConcepto('Mantenimiento de jardín', '', null, liq.impJardin) : '',
+        emp.limpiezaPiletas ? filaConcepto('Limpieza de piletas', '', null, liq.impPiletas) : '',
+        emp.viaticos ? filaConcepto('Viáticos', '', null, liq.impViaticos) : '',
+        emp.sumaFijaRemun ? filaConcepto('Suma fija remunerativa', '', null, liq.impSumaFija) : '',
+        filaConcepto('Adicional remunerativo CCT', '', null, liq.impAdicionalCct),
+        num(liq.hs50)>0 ? filaConcepto('Horas extra 50%', liq.hs50+' hs', null, liq.imp50) : '',
+        num(liq.hs100)>0 ? filaConcepto('Horas extra 100%', liq.hs100+' hs', null, liq.imp100) : '',
+        num(liq.importeVacaciones)>0 ? filaConcepto('Vacaciones', '', null, liq.impVacaciones) : '',
+        num(liq.diasInasistencia)>0 ? filaConcepto('Descuento por inasistencias', liq.diasInasistencia+' día(s)', null, -liq.descInasistencias) : '',
+        `<tr class="recibo-total"><td colspan="3">Sueldo bruto remunerativo</td><td style="text-align:right;">${fmt(liq.sueldoBrutoRemun)}</td></tr>`,
+        !emp.jubiladoReincorporado
+          ? filaConcepto('Aporte Jubilación', pct(pctDe(liq.retJubilacion, base)), base, -liq.retJubilacion)
+          : `<tr><td colspan="4" style="color:var(--muted);">Jubilado reincorporado: exento de aporte SIPA (Ley 24.241 art. 34)</td></tr>`,
+        filaConcepto('Ley 19.032 — PAMI', pct(pctDe(liq.retPami, base)), base, -liq.retPami),
+        filaConcepto('Obra Social', pct(pctDe(liq.retObraSocial, base)), base, -liq.retObraSocial),
+        emp.afiliadoSindical ? filaConcepto('Cuota sindical SUTERH', pct(pctDe(liq.retSindical, base)), base, -liq.retSindical) : '',
+      ].join('');
+
       return `
-        <div class="recibo" style="max-width:820px;">
-          <div class="recibo-head">
-            <div>
-              <b>${escapeHtml(consorcioDatos.edificio || 'Consorcio de Propietarios')}</b><br>
-              ${escapeHtml(consorcioDatos.barrio || '')}<br>
-              <span style="font-size:11px;color:var(--muted);">CUIT: ${escapeHtml(consorcioDatos.cuit||'—')}</span>
-            </div>
-            <div style="text-align:right;">
-              Recibo de haberes — CCT 589/10 (SUTERH/FATERYH)<br>
-              Período: <b>${escapeHtml(liq.periodo)}</b><br>
-              <span style="font-size:11px;color:var(--muted);">Art. 140 LCT — costo laboral total desglosado</span>
-            </div>
+        <div class="recibo" style="max-width:820px;border:1px solid var(--gray-800);">
+          <div style="padding:10px 14px;border-bottom:2px solid var(--primary);">
+            <b>Consorcio de Propietarios ${escapeHtml(consorcioDatos.edificio || '')}</b><br>
+            <span style="font-size:12px;">${escapeHtml(direccion)}${direccion?' - ':''}${escapeHtml(jurisdiccion)}</span><br>
+            <span style="font-size:12px;">C.U.I.T.: ${escapeHtml(consorcioDatos.consorcioCuit||'—')}</span>
           </div>
 
-          <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px;margin:10px 0;font-size:13px;">
-            <div>
-              <b>${escapeHtml(emp.nombreCompleto)}</b> — Legajo N° ${escapeHtml(emp.legajo||'—')} — CUIL ${escapeHtml(emp.cuil||'—')}<br>
-              <span style="color:var(--muted);">${escapeHtml(funcionLabelCct589(emp.funcion))}</span><br>
-              <span style="color:var(--muted);">Fecha de ingreso: ${escapeHtml(emp.fechaIngreso||'—')}${antigDiffiere ? ` · Antigüedad reconocida desde: ${escapeHtml(emp.fechaIngresoReconocida)}` : ''} · Antigüedad: ${liq.antiguedadAnios} año(s)</span>
-            </div>
-            <div style="text-align:right;color:var(--muted);font-size:12px;">
-              Lugar de pago: ${escapeHtml(emp.lugarPago||'—')}<br>
-              Forma de pago aportes: ${escapeHtml(emp.formaPagoAportes||'—')}
-            </div>
+          <table style="width:100%;font-size:11px;border-collapse:collapse;text-align:center;">
+            <tr style="background:var(--gray-100);">
+              <th style="border:1px solid var(--gray-800);padding:4px;">Q.</th>
+              <th style="border:1px solid var(--gray-800);padding:4px;">MES</th>
+              <th style="border:1px solid var(--gray-800);padding:4px;">AÑO</th>
+              <th style="border:1px solid var(--gray-800);padding:4px;">APELLIDO Y NOMBRE</th>
+              <th style="border:1px solid var(--gray-800);padding:4px;">N° LEGAJO</th>
+              <th style="border:1px solid var(--gray-800);padding:4px;">SUELDO BRUTO</th>
+              <th style="border:1px solid var(--gray-800);padding:4px;">ANTIGÜEDAD</th>
+            </tr>
+            <tr>
+              <td style="border:1px solid var(--gray-800);padding:4px;">1</td>
+              <td style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml((liq.periodo||'').split(' ')[0]||'')}</td>
+              <td style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml((liq.periodo||'').split(' ')[1]||'')}</td>
+              <td style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml(emp.nombreCompleto)}</td>
+              <td style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml(emp.legajo||'—')}</td>
+              <td style="border:1px solid var(--gray-800);padding:4px;">${fmt(liq.sueldoBrutoRemun)}</td>
+              <td style="border:1px solid var(--gray-800);padding:4px;">${liq.antiguedadAnios} año(s)</td>
+            </tr>
+            <tr style="background:var(--gray-100);">
+              <th colspan="2" style="border:1px solid var(--gray-800);padding:4px;">FECHA INGRESO</th>
+              <th style="border:1px solid var(--gray-800);padding:4px;">CATEGORÍA LABORAL</th>
+              <th style="border:1px solid var(--gray-800);padding:4px;">C.U.I.L</th>
+              <th colspan="2" style="border:1px solid var(--gray-800);padding:4px;">LUGAR DE PAGO</th>
+              <th style="border:1px solid var(--gray-800);padding:4px;">F. PAGO APORTES</th>
+            </tr>
+            <tr>
+              <td colspan="2" style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml(emp.fechaIngreso||'—')}${antigDiffiere ? ' *' : ''}</td>
+              <td style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml(funcionLabelCct589(emp.funcion))}</td>
+              <td style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml(emp.cuil||'—')}</td>
+              <td colspan="2" style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml(emp.lugarPago||'—')}</td>
+              <td style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml(emp.formaPagoAportes||'—')}</td>
+            </tr>
+          </table>
+          ${antigDiffiere ? `<p style="font-size:10px;color:var(--muted);padding:2px 14px;">* Antigüedad reconocida desde: ${escapeHtml(emp.fechaIngresoReconocida)}</p>` : ''}
+
+          <div style="background:var(--primary);color:#fff;padding:8px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:700;">
+            <span>COSTO TOTAL EMPLEADOR</span>
+            <span style="font-size:16px;">${fmt(liq.costoTotalEmpleador)}</span>
           </div>
 
-          <div style="background:var(--primary);color:#fff;border-radius:8px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin:14px 0;">
-            <span style="font-family:'Inter',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--gold-light);">Costo total empleador</span>
-            <span style="font-family:'Playfair Display',serif;font-size:24px;font-weight:700;">${fmt(liq.costoTotalEmpleador)}</span>
+          <table style="width:100%;font-size:11.5px;border-collapse:collapse;">
+            <tr style="background:var(--gray-100);"><th style="text-align:left;padding:4px 8px;">CONCEPTO</th><th style="width:70px;">UNIDAD</th><th style="width:90px;">BASE</th><th style="width:100px;">MONTO</th></tr>
+            ${filasContrib}
+          </table>
+          <div style="background:var(--gray-100);padding:6px 14px;display:flex;justify-content:space-between;font-weight:700;border-top:1px solid var(--gray-800);">
+            <span>SUB TOTAL CONTRIBUCIONES EMPLEADOR</span><span>${fmt(liq.totalContribPatronales)}</span>
           </div>
 
-          <h4>Contribuciones patronales (a cargo del consorcio)</h4>
-          <table style="width:100%;font-size:12.5px;border-collapse:collapse;">
-            <tr><td>SIPA patronal (${pct(pctSipaPatr)})</td><td style="text-align:right;">${fmt(liq.contribSipa)}</td></tr>
-            <tr><td>Obra social patronal (${pct(pctObraSocialPatr)})</td><td style="text-align:right;">${fmt(liq.contribObraSocial)}</td></tr>
-            <tr><td>FATERYH (${pct(pctFateryh)})</td><td style="text-align:right;">${fmt(liq.contribFateryh)}</td></tr>
-            ${liq.contribSuterh>0 ? `<tr><td>SUTERH patronal (${pct(pctSuterhPatr)})</td><td style="text-align:right;">${fmt(liq.contribSuterh)}</td></tr>` : ''}
-            <tr><td>SERACARH (${pct(pctSeracarh)})</td><td style="text-align:right;">${fmt(liq.contribSeracarh)}</td></tr>
-            ${liq.fmvdd>0 ? `<tr><td>FMVDD</td><td style="text-align:right;">${fmt(liq.fmvdd)}</td></tr>` : ''}
-            <tr><td>ART (${pct(pctArt)})</td><td style="text-align:right;">${fmt(liq.art)}</td></tr>
-            <tr><td>Seguro de vida obligatorio</td><td style="text-align:right;">${fmt(liq.seguroVida)}</td></tr>
-            <tr class="recibo-total"><td>Sub total contribuciones empleador</td><td style="text-align:right;">${fmt(liq.totalContribPatronales)}</td></tr>
+          <div style="background:var(--primary);color:#fff;padding:8px 14px;font-weight:700;">SUELDO BRUTO — ${fmt(liq.sueldoBrutoRemun)}</div>
+          <table style="width:100%;font-size:11.5px;border-collapse:collapse;">
+            <tr style="background:var(--gray-100);"><th style="text-align:left;padding:4px 8px;">CONCEPTO</th><th style="width:70px;">UNIDAD</th><th style="width:90px;">BASE</th><th style="width:100px;">MONTO</th></tr>
+            ${filasHaberYRetenciones}
           </table>
 
-          <h4 style="margin-top:16px;">Sueldo bruto — Haberes</h4>
-          <table style="width:100%;font-size:12.5px;border-collapse:collapse;">
-            <tr><td>Sueldo básico</td><td style="text-align:right;">${fmt(liq.basico)}</td></tr>
-            <tr><td>Antigüedad (${liq.antiguedadAnios} años × ${pct(pctAntig)})</td><td style="text-align:right;">${fmt(liq.adicAntiguedad)}</td></tr>
-            ${emp.presentismo?`<tr><td>Presentismo</td><td style="text-align:right;">${fmt(liq.adicPresentismo)}</td></tr>`:''}
-            ${emp.tituloIntegral?`<tr><td>Título Encargado Integral</td><td style="text-align:right;">${fmt(liq.adicTitulo)}</td></tr>`:''}
-            ${emp.zonaDesfavorable?`<tr><td>Zona desfavorable</td><td style="text-align:right;">${fmt(liq.adicZona)}</td></tr>`:''}
-            ${emp.retiroResiduos?`<tr><td>Retiro y clasificación de residuos</td><td style="text-align:right;">${fmt(liq.impResiduos)}</td></tr>`:''}
-            ${emp.limpiezaCocheras?`<tr><td>Limpieza de cocheras</td><td style="text-align:right;">${fmt(liq.impCocheras)}</td></tr>`:''}
-            ${emp.manejoCalderas?`<tr><td>Manejo de calderas</td><td style="text-align:right;">${fmt(liq.impCalderas)}</td></tr>`:''}
-            ${emp.mantJardin?`<tr><td>Mantenimiento de jardín</td><td style="text-align:right;">${fmt(liq.impJardin)}</td></tr>`:''}
-            ${emp.limpiezaPiletas?`<tr><td>Limpieza de piletas</td><td style="text-align:right;">${fmt(liq.impPiletas)}</td></tr>`:''}
-            ${emp.sumaFijaRemun?`<tr><td>Suma fija remunerativa</td><td style="text-align:right;">${fmt(liq.impSumaFija)}</td></tr>`:''}
-            ${num(liq.hs50)>0?`<tr><td>Horas extra 50% (${escapeHtml(liq.hs50)} hs)</td><td style="text-align:right;">${fmt(liq.imp50)}</td></tr>`:''}
-            ${num(liq.hs100)>0?`<tr><td>Horas extra 100% (${escapeHtml(liq.hs100)} hs)</td><td style="text-align:right;">${fmt(liq.imp100)}</td></tr>`:''}
-            ${num(liq.importeVacaciones)>0?`<tr><td>Vacaciones</td><td style="text-align:right;">${fmt(liq.impVacaciones)}</td></tr>`:''}
-            ${num(liq.diasInasistencia)>0?`<tr><td>Descuento por inasistencias (${escapeHtml(liq.diasInasistencia)} días)</td><td style="text-align:right;">−${fmt(liq.descInasistencias)}</td></tr>`:''}
-            <tr class="recibo-total"><td>Sueldo bruto remunerativo</td><td style="text-align:right;">${fmt(liq.sueldoBrutoRemun)}</td></tr>
-          </table>
-
-          <h4 style="margin-top:16px;">Retenciones al trabajador</h4>
-          <table style="width:100%;font-size:12.5px;border-collapse:collapse;">
-            ${!emp.jubiladoReincorporado?`<tr><td>Jubilación — SIPA (${pct(pctJubilacion)})</td><td style="text-align:right;">−${fmt(liq.retJubilacion)}</td></tr>`:'<tr><td colspan="2" style="color:var(--muted);">Jubilado reincorporado: exento de aporte SIPA (Ley 24.241 art. 34)</td></tr>'}
-            <tr><td>Ley 19.032 / INSSJP — PAMI (${pct(pctPami)})</td><td style="text-align:right;">−${fmt(liq.retPami)}</td></tr>
-            <tr><td>Obra social (${pct(pctObraSocialTrab)})</td><td style="text-align:right;">−${fmt(liq.retObraSocial)}</td></tr>
-            ${emp.afiliadoSindical?`<tr><td>Cuota sindical SUTERH (${pct(pctSindical)})</td><td style="text-align:right;">−${fmt(liq.retSindical)}</td></tr>`:''}
-            <tr class="recibo-total"><td>Total retenciones</td><td style="text-align:right;">−${fmt(liq.totalRetenciones)}</td></tr>
-          </table>
-
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0;font-size:12px;">
-            <div class="kpi"><div class="label">Remunerativo</div><div class="value" style="font-size:15px;">${fmt(liq.remunerativo)}</div></div>
-            <div class="kpi"><div class="label">No remunerativo</div><div class="value" style="font-size:15px;">${fmt(liq.noRemunerativo)}</div></div>
-            <div class="kpi"><div class="label">Descuentos</div><div class="value" style="font-size:15px;">${fmt(liq.totalRetenciones)}</div></div>
+          <div style="display:flex;justify-content:space-between;padding:8px 14px;background:var(--gray-100);border-top:1px solid var(--gray-800);font-size:12px;">
+            <span><b>Composición salarial:</b> Remunerativo: ${fmt(liq.remunerativo)} · No remunerativo: ${fmt(liq.noRemunerativo)} · Descuentos: ${fmt(liq.totalRetenciones)}</span>
+          </div>
+          <div style="background:var(--gray-100);padding:8px 14px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--gray-800);">
+            <span style="font-weight:700;">SUELDO NETO $</span>
+            <span style="font-size:18px;font-weight:700;color:var(--primary);">${fmt(liq.sueldoNeto)}</span>
           </div>
 
-          <div style="background:var(--gray-100);border:1px solid var(--gray-800);border-radius:8px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin:10px 0 18px;">
-            <span style="font-family:'Inter',monospace;font-size:12px;letter-spacing:.04em;text-transform:uppercase;">Sueldo neto a cobrar</span>
-            <span style="font-family:'Playfair Display',serif;font-size:22px;font-weight:700;color:var(--primary);">${fmt(liq.sueldoNeto)}</span>
-          </div>
-
-          <div class="dash-grid" style="grid-template-columns:1.3fr 1fr;">
+          <div class="dash-grid" style="grid-template-columns:1.3fr 1fr;margin-top:10px;">
             <div>
-              <h4>Detalle de la composición del costo</h4>
-              <table style="width:100%;font-size:12px;border-collapse:collapse;">
-                <tr><td>Costo sindical (empleador${emp.afiliadoSindical?' + trabajador':''})</td><td style="text-align:right;">${fmt(liq.contribSuterh + liq.retSindical)}</td></tr>
-                <tr><td>Total INSSJP / PAMI</td><td style="text-align:right;">${fmt(liq.retPami)}</td></tr>
-                <tr><td>Total Seguridad Social — SIPA</td><td style="text-align:right;">${fmt(liq.contribSipa + liq.retJubilacion)}</td></tr>
-                <tr><td>Total ART y seguro de vida</td><td style="text-align:right;">${fmt(liq.art + liq.seguroVida)}</td></tr>
-                <tr><td>Total Obra Social</td><td style="text-align:right;">${fmt(liq.contribObraSocial + liq.retObraSocial)}</td></tr>
-                <tr><td>FATERYH / SERACARH / FMVDD (empleador)</td><td style="text-align:right;">${fmt(liq.contribFateryh + liq.contribSeracarh + liq.fmvdd)}</td></tr>
+              <h4>Detalle de la composición salarial</h4>
+              <table style="width:100%;font-size:11.5px;border-collapse:collapse;">
+                <tr><td><b>Total Costo Sindical</b></td><td></td></tr>
+                <tr><td style="padding-left:10px;">Empleador</td><td style="text-align:right;">${fmt(liq.contribSuterh)}</td></tr>
+                <tr><td style="padding-left:10px;">Trabajador</td><td style="text-align:right;">${fmt(liq.retSindical)}</td></tr>
+                <tr><td style="padding-top:6px;"><b>Total costo INSSJP</b></td><td></td></tr>
+                <tr><td style="padding-left:10px;">Trabajador</td><td style="text-align:right;">${fmt(liq.retPami)}</td></tr>
+                <tr><td style="padding-top:6px;"><b>Total Seguridad Social</b></td><td></td></tr>
+                <tr><td style="padding-left:10px;">Empleador</td><td style="text-align:right;">${fmt(liq.contribSipa)}</td></tr>
+                <tr><td style="padding-left:10px;">Trabajador</td><td style="text-align:right;">${fmt(liq.retJubilacion)}</td></tr>
+                <tr><td style="padding-top:6px;"><b>Total costo ART</b></td><td></td></tr>
+                <tr><td style="padding-left:10px;">Empleador</td><td style="text-align:right;">${fmt(liq.art)}</td></tr>
+                <tr><td style="padding-top:6px;"><b>Total Obra Social</b></td><td></td></tr>
+                <tr><td style="padding-left:10px;">Empleador</td><td style="text-align:right;">${fmt(liq.contribObraSocial)}</td></tr>
+                <tr><td style="padding-left:10px;">Trabajador</td><td style="text-align:right;">${fmt(liq.retObraSocial)}</td></tr>
+                <tr><td style="padding-top:6px;"><b>Total Costo SCVO</b></td><td></td></tr>
+                <tr><td style="padding-left:10px;">Empleador</td><td style="text-align:right;">${fmt(liq.seguroVida)}</td></tr>
               </table>
             </div>
-            <div><canvas id="${canvasId}" height="190"></canvas></div>
+            <div>
+              <h4 style="text-align:center;">Costo total empleador</h4>
+              <canvas id="${canvasId}" height="190"></canvas>
+            </div>
           </div>
 
-          <p style="font-size:10.5px;color:var(--muted);margin-top:16px;">La seguridad social a cargo del empleador incluye SIPA, obra social, FATERYH, SERACARH y FMVDD. Recibo generado conforme al art. 140 LCT (reforma de modernización laboral, Decreto 407/2026), con desglose obligatorio del costo laboral total.</p>
+          <p style="font-size:10px;color:var(--muted);padding:10px 14px;">Nota: la seguridad social del empleador incluye SIPA, Fondo Nacional de Empleo y Asignaciones Familiares. Recibo generado conforme al art. 140 LCT (reforma de modernización laboral, Decreto 407/2026).</p>
 
-          <div style="display:flex;justify-content:space-between;margin-top:26px;font-size:12px;">
+          <div style="display:flex;justify-content:space-between;padding:14px;font-size:12px;">
             <div>____________________________<br>Firma del empleador</div>
             <div style="text-align:right;">____________________________<br>Firma del empleado — recibí conforme</div>
           </div>
@@ -9363,128 +9467,187 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF();
       const M = 14;
-      let y = 18;
+      let y = 16;
       const COLOR_PRINCIPAL = [11,42,74];
       const COLOR_TEXTO = [44,62,80];
-      const AUTOTABLE_BASE = { styles:{fontSize:9,textColor:COLOR_TEXTO,cellPadding:2.2}, headStyles:{fillColor:COLOR_PRINCIPAL,textColor:255,fontStyle:'bold'} };
+      const AUTOTABLE_BASE = { styles:{fontSize:8.5,textColor:COLOR_TEXTO,cellPadding:2}, headStyles:{fillColor:[235,235,235],textColor:COLOR_TEXTO,fontStyle:'bold',fontSize:8} };
 
-      const firmaAdministrador = await getFirmaAdministrador();
+      const [imagenGrafico] = await Promise.all([imagenGraficoCosto(liq)]);
+      const base = liq.sueldoBrutoRemun;
+      const pctDe = (monto, b) => b>0 ? (monto/b*100).toFixed(2)+'%' : '';
       const antigDiffiere = emp.fechaIngresoReconocida && emp.fechaIngresoReconocida !== emp.fechaIngreso;
-      const pctDe = (monto, base) => base>0 ? (monto/base*100).toFixed(2)+'%' : '—';
+      const jurisdiccion = consorcioDatos.jurisdiccion || 'Ciudad Autónoma de Buenos Aires';
+      const direccion = consorcioDatos.barrio || '';
+      const [mesPeriodo, anioPeriodo] = (liq.periodo||'').split(' ');
 
-      function heading(texto){
-        if(y>270){ doc.addPage(); y=18; }
+      function bannerAzul(texto, monto){
         doc.setFillColor(...COLOR_PRINCIPAL);
         doc.rect(M, y, 182, 7, 'F');
         doc.setTextColor(255,255,255);
         doc.setFont('helvetica','bold');
-        doc.setFontSize(10);
+        doc.setFontSize(9.5);
         doc.text(texto, M+3, y+5);
+        if(monto!=null){ doc.text(fmt(monto), M+179, y+5, {align:'right'}); }
         doc.setTextColor(...COLOR_TEXTO);
-        y += 12;
+        y += 10;
+      }
+      function filaGris(texto, monto){
+        doc.setFillColor(240,240,240);
+        doc.rect(M, y, 182, 6.5, 'F');
+        doc.setFont('helvetica','bold');
+        doc.setFontSize(8.5);
+        doc.text(texto, M+3, y+4.5);
+        if(monto!=null) doc.text(fmt(monto), M+179, y+4.5, {align:'right'});
+        doc.setFont('helvetica','normal');
+        y += 9;
       }
 
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(13);
-      doc.setTextColor(...COLOR_PRINCIPAL);
-      doc.text(consorcioDatos.edificio || 'Consorcio de Propietarios', M, y); y+=6;
-      doc.setFontSize(11);
-      doc.text('Recibo de haberes — CCT 589/10 (SUTERH/FATERYH)', M, y); y+=5;
-      doc.setFont('helvetica','normal');
-      doc.setFontSize(9);
-      doc.setTextColor(...COLOR_TEXTO);
-      doc.text(consorcioDatos.barrio || '', M, y); y+=4.5;
-      doc.text('CUIT: '+(consorcioDatos.cuit||'—')+'  ·  Período: '+liq.periodo, M, y); y+=4.5;
-      doc.text('Administrador: '+firmaAdministrador+'  ·  Art. 140 LCT — costo laboral total desglosado', M, y); y+=8;
+      // ---------- Encabezado: Consorcio de Propietarios ----------
+      doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...COLOR_PRINCIPAL);
+      doc.text('Consorcio de Propietarios '+(consorcioDatos.edificio||''), M, y); y+=5;
+      doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...COLOR_TEXTO);
+      doc.text(direccion + (direccion?' - ':'') + jurisdiccion, M, y); y+=4;
+      doc.text('C.U.I.T.: '+(consorcioDatos.consorcioCuit||'—'), M, y); y+=6;
 
-      heading('DATOS DEL EMPLEADO');
+      // ---------- Datos del empleado (dos filas, como pide el formato) ----------
       doc.autoTable({
         ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-        body: [
-          ['Nombre completo', emp.nombreCompleto||'—', 'Legajo N°', emp.legajo||'—'],
-          ['CUIL', emp.cuil||'—', 'Función', funcionLabelCct589(emp.funcion)],
-          ['Fecha de ingreso', emp.fechaIngreso||'—', 'Antigüedad', liq.antiguedadAnios+' año(s)'],
-          ['Lugar de pago', emp.lugarPago||'—', 'Forma de pago aportes', emp.formaPagoAportes||'—'],
-        ]
+        head: [['Q.','MES','AÑO','APELLIDO Y NOMBRE','N° LEGAJO','SUELDO BRUTO','ANTIGÜEDAD']],
+        body: [['1', mesPeriodo||'', anioPeriodo||'', emp.nombreCompleto||'—', emp.legajo||'—', fmt(liq.sueldoBrutoRemun), liq.antiguedadAnios+' año(s)']],
       });
-      y = doc.lastAutoTable.finalY + 8;
+      y = doc.lastAutoTable.finalY;
+      doc.autoTable({
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+        head: [['FECHA INGRESO','CATEGORÍA LABORAL','C.U.I.L','LUGAR DE PAGO','F. PAGO APORTES']],
+        body: [[emp.fechaIngreso||'—'+(antigDiffiere?' *':''), funcionLabelCct589(emp.funcion), emp.cuil||'—', emp.lugarPago||'—', emp.formaPagoAportes||'—']],
+      });
+      y = doc.lastAutoTable.finalY + 3;
       if(antigDiffiere){
-        doc.setFontSize(8.5); doc.setTextColor(150,120,40);
-        doc.text('Antigüedad reconocida desde: '+emp.fechaIngresoReconocida, M, y); y+=6;
+        doc.setFontSize(7.5); doc.setTextColor(150,120,40);
+        doc.text('* Antigüedad reconocida desde: '+emp.fechaIngresoReconocida, M, y); y+=5;
         doc.setTextColor(...COLOR_TEXTO);
       }
+      y += 2;
 
-      heading('COSTO TOTAL EMPLEADOR: '+fmt(liq.costoTotalEmpleador));
+      // ---------- Costo total empleador ----------
+      bannerAzul('COSTO TOTAL EMPLEADOR', liq.costoTotalEmpleador);
 
-      heading('CONTRIBUCIONES PATRONALES (a cargo del consorcio)');
+      // ---------- Contribuciones patronales ----------
       const filasContrib = [
-        ['SIPA patronal ('+pctDe(liq.contribSipa, liq.sueldoBrutoRemun)+')', fmt(liq.contribSipa)],
-        ['Obra social patronal ('+pctDe(liq.contribObraSocial, liq.sueldoBrutoRemun)+')', fmt(liq.contribObraSocial)],
-        ['FATERYH ('+pctDe(liq.contribFateryh, liq.sueldoBrutoRemun)+')', fmt(liq.contribFateryh)],
+        ['ART', pctDe(liq.art, base), fmt(base), fmt(liq.art)],
+        ['Contribución Jubilación (SIPA)', pctDe(liq.contribSipa, base), fmt(base), fmt(liq.contribSipa)],
+        ['Contribución OO.SS.', pctDe(liq.contribObraSocial, base), fmt(base), fmt(liq.contribObraSocial)],
+        ['Seguro de vida obligatorio', '', '', fmt(liq.seguroVida)],
+        [{content:'Costo derivado del CCT:', colSpan:4, styles:{fontStyle:'bold', fillColor:[250,250,250]}}],
+        ['FATERYH', pctDe(liq.contribFateryh, base), fmt(base), fmt(liq.contribFateryh)],
       ];
-      if(liq.contribSuterh>0) filasContrib.push(['SUTERH patronal ('+pctDe(liq.contribSuterh, liq.sueldoBrutoRemun)+')', fmt(liq.contribSuterh)]);
-      filasContrib.push(['SERACARH ('+pctDe(liq.contribSeracarh, liq.sueldoBrutoRemun)+')', fmt(liq.contribSeracarh)]);
-      if(liq.fmvdd>0) filasContrib.push(['FMVDD', fmt(liq.fmvdd)]);
-      filasContrib.push(['ART ('+pctDe(liq.art, liq.sueldoBrutoRemun)+')', fmt(liq.art)]);
-      filasContrib.push(['Seguro de vida obligatorio', fmt(liq.seguroVida)]);
-      filasContrib.push(['Sub total contribuciones', fmt(liq.totalContribPatronales)]);
-      doc.autoTable({ ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', body: filasContrib });
-      y = doc.lastAutoTable.finalY + 8;
+      if(liq.contribSeracarh>0) filasContrib.push(['SERACARH', pctDe(liq.contribSeracarh, base), fmt(base), fmt(liq.contribSeracarh)]);
+      if(liq.contribSuterh>0) filasContrib.push(['SUTERH patronal', pctDe(liq.contribSuterh, base), fmt(base), fmt(liq.contribSuterh)]);
+      if(liq.fmvdd>0) filasContrib.push(['FMVDD', '', '', fmt(liq.fmvdd)]);
+      doc.autoTable({
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+        head: [['CONCEPTO','UNIDAD','BASE','MONTO']],
+        columnStyles: {0:{cellWidth:90}, 1:{cellWidth:24,halign:'center'}, 2:{cellWidth:32,halign:'right'}, 3:{cellWidth:36,halign:'right'}},
+        body: filasContrib,
+      });
+      y = doc.lastAutoTable.finalY;
+      filaGris('SUB TOTAL CONTRIBUCIONES EMPLEADOR', liq.totalContribPatronales);
 
-      heading('SUELDO BRUTO — HABERES');
-      const filasHaberes = [['Sueldo básico', fmt(liq.basico)], ['Antigüedad ('+liq.antiguedadAnios+' años)', fmt(liq.adicAntiguedad)]];
-      if(emp.presentismo) filasHaberes.push(['Presentismo', fmt(liq.adicPresentismo)]);
-      if(emp.tituloIntegral) filasHaberes.push(['Título Encargado Integral', fmt(liq.adicTitulo)]);
-      if(emp.zonaDesfavorable) filasHaberes.push(['Zona desfavorable', fmt(liq.adicZona)]);
-      if(emp.retiroResiduos) filasHaberes.push(['Retiro de residuos', fmt(liq.impResiduos)]);
-      if(emp.clasificacionResiduos) filasHaberes.push(['Clasificación de residuos', fmt(liq.impClasifResiduos)]);
-      if(liq.impVivienda>0) filasHaberes.push(['Valor vivienda', fmt(liq.impVivienda)]);
-      if(emp.limpiezaCocheras) filasHaberes.push(['Limpieza de cocheras', fmt(liq.impCocheras)]);
-      if(emp.movimientoCoches) filasHaberes.push(['Movimiento de coches', fmt(liq.impMovCoches)]);
-      if(emp.manejoCalderas) filasHaberes.push(['Manejo de calderas', fmt(liq.impCalderas)]);
-      if(emp.mantJardin) filasHaberes.push(['Mantenimiento de jardín', fmt(liq.impJardin)]);
-      if(emp.limpiezaPiletas) filasHaberes.push(['Limpieza de piletas', fmt(liq.impPiletas)]);
-      if(emp.viaticos) filasHaberes.push(['Viáticos', fmt(liq.impViaticos)]);
-      if(emp.sumaFijaRemun) filasHaberes.push(['Suma fija remunerativa', fmt(liq.impSumaFija)]);
-      filasHaberes.push(['Adicional remunerativo mensual CCT', fmt(liq.impAdicionalCct)]);
-      if(num(liq.hs50)>0) filasHaberes.push(['Horas extra 50% ('+liq.hs50+' hs)', fmt(liq.imp50)]);
-      if(num(liq.hs100)>0) filasHaberes.push(['Horas extra 100% ('+liq.hs100+' hs)', fmt(liq.imp100)]);
-      if(num(liq.importeVacaciones)>0) filasHaberes.push(['Vacaciones', fmt(liq.impVacaciones)]);
-      if(num(liq.diasInasistencia)>0) filasHaberes.push(['Descuento por inasistencias ('+liq.diasInasistencia+' días)', '−'+fmt(liq.descInasistencias)]);
-      filasHaberes.push(['Sueldo bruto remunerativo', fmt(liq.sueldoBrutoRemun)]);
-      doc.autoTable({ ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', body: filasHaberes });
-      y = doc.lastAutoTable.finalY + 8;
+      // ---------- Sueldo bruto (haberes + retenciones, en una sola tabla como pide el formato) ----------
+      bannerAzul('SUELDO BRUTO', liq.sueldoBrutoRemun);
 
-      heading('RETENCIONES AL TRABAJADOR');
-      const filasRet = [];
-      if(!emp.jubiladoReincorporado) filasRet.push(['Jubilación — SIPA ('+pctDe(liq.retJubilacion, liq.sueldoBrutoRemun)+')', '−'+fmt(liq.retJubilacion)]);
-      else filasRet.push(['Jubilado reincorporado: exento de aporte SIPA (Ley 24.241 art. 34)', '']);
-      filasRet.push(['Ley 19.032 / INSSJP — PAMI ('+pctDe(liq.retPami, liq.sueldoBrutoRemun)+')', '−'+fmt(liq.retPami)]);
-      filasRet.push(['Obra social ('+pctDe(liq.retObraSocial, liq.sueldoBrutoRemun)+')', '−'+fmt(liq.retObraSocial)]);
-      if(emp.afiliadoSindical) filasRet.push(['Cuota sindical SUTERH ('+pctDe(liq.retSindical, liq.sueldoBrutoRemun)+')', '−'+fmt(liq.retSindical)]);
-      filasRet.push(['Total retenciones', '−'+fmt(liq.totalRetenciones)]);
-      doc.autoTable({ ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', body: filasRet });
-      y = doc.lastAutoTable.finalY + 10;
+      const filasBruto = [['Sueldo Básico', '', '', fmt(liq.basico)], ['Antigüedad', liq.antiguedadAnios+' año(s)', fmt(liq.basico), fmt(liq.adicAntiguedad)]];
+      if(emp.presentismo) filasBruto.push(['Presentismo', '', '', fmt(liq.adicPresentismo)]);
+      if(emp.tituloIntegral) filasBruto.push(['Título Encargado Integral', '', '', fmt(liq.adicTitulo)]);
+      if(emp.zonaDesfavorable) filasBruto.push(['Zona desfavorable', '', '', fmt(liq.adicZona)]);
+      if(emp.retiroResiduos) filasBruto.push(['Retiro de residuos', '', '', fmt(liq.impResiduos)]);
+      if(emp.clasificacionResiduos) filasBruto.push(['Clasificación de residuos', '', '', fmt(liq.impClasifResiduos)]);
+      if(liq.impVivienda>0) filasBruto.push(['Valor vivienda', '', '', fmt(liq.impVivienda)]);
+      if(emp.limpiezaCocheras) filasBruto.push(['Limpieza de cocheras', '', '', fmt(liq.impCocheras)]);
+      if(emp.movimientoCoches) filasBruto.push(['Movimiento de coches', '', '', fmt(liq.impMovCoches)]);
+      if(emp.manejoCalderas) filasBruto.push(['Manejo de calderas', '', '', fmt(liq.impCalderas)]);
+      if(emp.mantJardin) filasBruto.push(['Mantenimiento de jardín', '', '', fmt(liq.impJardin)]);
+      if(emp.limpiezaPiletas) filasBruto.push(['Limpieza de piletas', '', '', fmt(liq.impPiletas)]);
+      if(emp.viaticos) filasBruto.push(['Viáticos', '', '', fmt(liq.impViaticos)]);
+      if(emp.sumaFijaRemun) filasBruto.push(['Suma fija remunerativa', '', '', fmt(liq.impSumaFija)]);
+      filasBruto.push(['Adicional remunerativo CCT', '', '', fmt(liq.impAdicionalCct)]);
+      if(num(liq.hs50)>0) filasBruto.push(['Horas extra 50%', liq.hs50+' hs', '', fmt(liq.imp50)]);
+      if(num(liq.hs100)>0) filasBruto.push(['Horas extra 100%', liq.hs100+' hs', '', fmt(liq.imp100)]);
+      if(num(liq.importeVacaciones)>0) filasBruto.push(['Vacaciones', '', '', fmt(liq.impVacaciones)]);
+      if(num(liq.diasInasistencia)>0) filasBruto.push(['Descuento por inasistencias', liq.diasInasistencia+' día(s)', '', '−'+fmt(liq.descInasistencias)]);
+      filasBruto.push([{content:'Sueldo bruto remunerativo', colSpan:3, styles:{fontStyle:'bold'}}, {content:fmt(liq.sueldoBrutoRemun), styles:{fontStyle:'bold'}}]);
+      if(!emp.jubiladoReincorporado) filasBruto.push(['Aporte Jubilación', pctDe(liq.retJubilacion, base), fmt(base), '−'+fmt(liq.retJubilacion)]);
+      else filasBruto.push([{content:'Jubilado reincorporado: exento de aporte SIPA (Ley 24.241 art. 34)', colSpan:4, styles:{textColor:[130,130,130]}}]);
+      filasBruto.push(['Ley 19.032 — PAMI', pctDe(liq.retPami, base), fmt(base), '−'+fmt(liq.retPami)]);
+      filasBruto.push(['Obra Social', pctDe(liq.retObraSocial, base), fmt(base), '−'+fmt(liq.retObraSocial)]);
+      if(emp.afiliadoSindical) filasBruto.push(['Cuota sindical SUTERH', pctDe(liq.retSindical, base), fmt(base), '−'+fmt(liq.retSindical)]);
 
-      heading('SUELDO NETO A COBRAR: '+fmt(liq.sueldoNeto));
+      doc.autoTable({
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+        head: [['CONCEPTO','UNIDAD','BASE','MONTO']],
+        columnStyles: {0:{cellWidth:90}, 1:{cellWidth:24,halign:'center'}, 2:{cellWidth:32,halign:'right'}, 3:{cellWidth:36,halign:'right'}},
+        body: filasBruto,
+      });
+      y = doc.lastAutoTable.finalY;
 
-      if(y>250){ doc.addPage(); y=18; }
-      y += 10;
+      filaGris(`Remunerativo: ${fmt(liq.remunerativo)}   ·   No remunerativo: ${fmt(liq.noRemunerativo)}   ·   Descuentos: ${fmt(liq.totalRetenciones)}`, null);
+      bannerAzul('SUELDO NETO $', liq.sueldoNeto);
+      y += 3;
+
+      // ---------- Detalle de la composición salarial + gráfico ----------
+      if(y > 190){ doc.addPage(); y = 16; }
+      const yDetalle = y;
+      doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...COLOR_PRINCIPAL);
+      doc.text('Detalle de la composición salarial', M, y); y += 6;
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...COLOR_TEXTO);
+
+      const detalle = [
+        ['Total Costo Sindical', null],
+        ['  Empleador', liq.contribSuterh], ['  Trabajador', liq.retSindical],
+        ['Total costo INSSJP', null],
+        ['  Trabajador', liq.retPami],
+        ['Total Seguridad Social', null],
+        ['  Empleador', liq.contribSipa], ['  Trabajador', liq.retJubilacion],
+        ['Total costo ART', null],
+        ['  Empleador', liq.art],
+        ['Total Obra Social', null],
+        ['  Empleador', liq.contribObraSocial], ['  Trabajador', liq.retObraSocial],
+        ['Total Costo SCVO', null],
+        ['  Empleador', liq.seguroVida],
+      ];
+      detalle.forEach(([label, val])=>{
+        if(val===null){ doc.setFont('helvetica','bold'); doc.text(label, M, y); doc.setFont('helvetica','normal'); }
+        else { doc.text(label, M+2, y); doc.text(fmt(val), M+85, y, {align:'right'}); }
+        y += 4.3;
+      });
+
+      if(imagenGrafico){
+        try{ doc.addImage(imagenGrafico, 'PNG', M+95, yDetalle, 87, 70); }catch(e){ /* si falla, el PDF sigue sin el gráfico */ }
+      }
+      y = Math.max(y, yDetalle+72);
+
+      y += 4;
+      doc.setFontSize(7); doc.setTextColor(150,150,150);
+      const notaLineas = doc.splitTextToSize('Nota: la seguridad social del empleador incluye SIPA, Fondo Nacional de Empleo y Asignaciones Familiares. Recibo generado conforme al art. 140 LCT (reforma de modernización laboral, Decreto 407/2026).', 182);
+      doc.text(notaLineas, M, y); y += notaLineas.length*3.3 + 8;
+      doc.setTextColor(...COLOR_TEXTO);
+
+      if(y>270){ doc.addPage(); y=18; }
       doc.setFontSize(9);
       doc.text('____________________________', M, y);
       doc.text('____________________________', 120, y);
       y += 5;
-      doc.text('Firma de la administración', M, y);
+      doc.text('Firma del empleador', M, y);
       doc.text('Firma del empleado — recibí conforme', 120, y);
 
       doc.save(`Recibo_${(emp.nombreCompleto||'empleado').replace(/[^a-zA-Z0-9]/g,'_')}_${(liq.periodo||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
     }
 
-    function drawCostoChart(canvasId, liq){
-      const ctx = document.getElementById(canvasId);
-      if(!ctx || !window.Chart) return;
-      if(chartsByCanvas[canvasId]) chartsByCanvas[canvasId].destroy();
-      const buckets = [
+    // Compartida entre el gráfico en pantalla y el que se incrusta en el PDF -- así siempre
+    // muestran exactamente lo mismo, y se adapta solo a cada empleado (los valores salen de
+    // "liq", que es específico de esa liquidación puntual).
+    function costoChartBuckets(liq){
+      return [
         {label:'Sueldo Neto', value: liq.sueldoNeto, color:'#2EB7E5'},
         {label:'Seguridad Social (SIPA)', value: liq.contribSipa + liq.retJubilacion, color:'#B8615B'},
         {label:'Costo Sindical', value: liq.contribSuterh + liq.retSindical, color:'#8D5BB8'},
@@ -9492,6 +9655,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         {label:'PAMI y otras cargas', value: liq.retPami + liq.contribFateryh + liq.contribSeracarh + liq.fmvdd, color:'#E8952C'},
         {label:'ART y seguro de vida', value: liq.art + liq.seguroVida, color:'#C9A84C'},
       ].filter(b=>b.value>0);
+    }
+
+    function drawCostoChart(canvasId, liq){
+      const ctx = document.getElementById(canvasId);
+      if(!ctx || !window.Chart) return;
+      if(chartsByCanvas[canvasId]) chartsByCanvas[canvasId].destroy();
+      const buckets = costoChartBuckets(liq);
       const total = buckets.reduce((s,b)=>s+b.value,0) || 1;
       chartsByCanvas[canvasId] = new Chart(ctx, {
         type: 'pie',
@@ -9511,6 +9681,49 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             tooltip: { callbacks: { label: (c)=> `${c.label}: ${fmt(c.parsed)} (${Math.round(c.parsed/total*100)}%)` } }
           }
         }
+      });
+    }
+
+    // Dibuja el mismo gráfico en un canvas oculto (sin animación, para que quede listo de
+    // inmediato) y devuelve la imagen ya lista para pegar en el PDF descargable.
+    function imagenGraficoCosto(liq){
+      return new Promise(resolve=>{
+        if(!window.Chart){ resolve(null); return; }
+        const buckets = costoChartBuckets(liq);
+        if(buckets.length===0){ resolve(null); return; }
+        const total = buckets.reduce((s,b)=>s+b.value,0) || 1;
+        const canvas = document.createElement('canvas');
+        canvas.width = 520; canvas.height = 420;
+        canvas.style.position = 'fixed'; canvas.style.left = '-9999px'; canvas.style.top='0';
+        document.body.appendChild(canvas);
+        const chart = new Chart(canvas, {
+          type: 'pie',
+          data: { labels: buckets.map(b=>b.label), datasets: [{ data: buckets.map(b=>b.value), backgroundColor: buckets.map(b=>b.color), borderWidth: 2, borderColor: '#fff' }] },
+          options: {
+            responsive: false,
+            animation: { duration: 0 },
+            plugins: {
+              legend: {
+                position: 'bottom',
+                labels: { font: { size: 13, weight: '600' }, padding: 12,
+                  generateLabels: (c)=> c.data.labels.map((label,i)=>{
+                    const p = Math.round(c.data.datasets[0].data[i]/total*100);
+                    return { text: `${label} — ${p}%`, fillStyle: c.data.datasets[0].backgroundColor[i], strokeStyle:'#fff', lineWidth:1, index:i };
+                  })
+                }
+              }
+            }
+          },
+          plugins: [{
+            id: 'capturar-al-terminar',
+            afterRender: (c)=>{
+              const dataUrl = canvas.toDataURL('image/png', 1.0);
+              document.body.removeChild(canvas);
+              c.destroy();
+              resolve(dataUrl);
+            }
+          }]
+        });
       });
     }
 
