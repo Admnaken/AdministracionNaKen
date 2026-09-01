@@ -1245,6 +1245,11 @@
   .home-grid-wrap { display: none; }
   @media (max-width: 860px) {
     .home-grid-wrap { display: block; margin-bottom: 22px; }
+    /* Mientras estemos en "modo inicio" (recién entrando, sin haber tocado ningún botón todavía),
+       el propietario ve SOLO la grilla -- ni el menú de arriba ni el contenido de Resumen. En
+       cuanto toca cualquier botón de navegación, esta clase se saca y todo vuelve a la normalidad. */
+    body.home-mode .sidebar { display: none !important; }
+    body.home-mode #panel-resumen > *:not(#home-grid-mount) { display: none !important; }
   }
   .home-grid-header {
     display: flex;
@@ -3905,6 +3910,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       globalLogoutBtn.style.display = 'none';
       globalRefreshBtn.style.display = 'none';
       document.getElementById('consorcio-switcher').style.display = 'none';
+      document.body.classList.add('home-mode'); // en mobile, arranca mostrando solo la grilla de accesos
       renderProfileBanner();
       renderAll();
       renderNovedadesFlotantes();
@@ -4131,6 +4137,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
   navButtons.forEach(btn=>{
     btn.addEventListener('click', ()=>{
+      document.body.classList.remove('home-mode'); // apenas se toca cualquier botón, se sale del "modo inicio"
       navButtons.forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       panels.forEach(p=>p.classList.remove('active'));
@@ -4241,11 +4248,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <div class="home-grid-header">
           ${logoSrc ? `<img src="${logoSrc}" alt="Logo">` : ''}
           <div class="brand-text">
-            <b>Administración ${escapeHtml(nombreAdmin || 'NAKEN')}</b>
+            <b>${escapeHtml(nombreAdmin || 'Administración NAKEN')}</b>
           </div>
         </div>
         <div class="home-profile-card">
-          <h3>Perfil de Usuario</h3>
+          <h3>Mi perfil</h3>
           <div class="row"><span class="k">Nombre</span><span class="v">${escapeHtml(currentUser.nombreCompleto||'—')}</span></div>
           <div class="row"><span class="k">Unidad Funcional</span><span class="v">${escapeHtml(currentUser.unidad||'—')}</span></div>
           <div class="row"><span class="k">Coeficiente (Porcentaje)</span><span class="v">${escapeHtml(String(porcentual))}%</span></div>
