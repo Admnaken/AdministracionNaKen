@@ -4524,11 +4524,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const fmtF = (v)=> v ? new Date(v).toLocaleDateString('es-AR') : '—';
     const unidades = data.unidades || [];
 
-    const filas = unidades.length===0 ? `<tr><td colspan="8" style="text-align:center;color:var(--muted);">Sin propietarios cargados para este período.</td></tr>` : unidades.map(u=>{
+    const filas = unidades.length===0 ? `<tr><td colspan="9" style="text-align:center;color:var(--muted);">Sin propietarios cargados para este período.</td></tr>` : unidades.map(u=>{
       const esMiUnidad = role==='propietario' && currentUser && String(u.uf).trim()===String(currentUser.unidad).trim();
       return `
         <tr${esMiUnidad ? ' style="background:rgba(201,168,76,.12);font-weight:600;"' : ''}>
-          <td class="nowrap">${escapeHtml(String(u.uf||''))} ${escapeHtml(u.pisoDpto||'')}</td>
+          <td class="nowrap">${escapeHtml(String(u.uf||''))}</td>
+          <td class="nowrap">${escapeHtml(u.pisoDpto||'')}</td>
           <td>${escapeHtml(u.propietario||'')}</td>
           <td class="nowrap">${fmtN(u.deuda)}</td>
           <td class="nowrap">${fmtN(u.importeFondoA)}</td>
@@ -4549,7 +4550,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       </div>
       <table class="ledger">
         <thead><tr>
-          <th>UF</th><th>Propietario</th><th>Deuda</th><th>Fondo A</th><th>Fondo B</th><th>Fondo de Reserva</th><th>Total 1er vto.</th><th>Total 2do vto.</th>
+          <th style="width:55px;">UF</th>
+          <th style="width:90px;">Piso/Dpto.</th>
+          <th style="min-width:190px;">Propietario</th>
+          <th style="width:100px;">Deuda</th>
+          <th style="width:100px;">Fondo A</th>
+          <th style="width:100px;">Fondo B</th>
+          <th style="width:110px;">Fondo de Reserva</th>
+          <th style="width:120px;">Total 1er vto.</th>
+          <th style="width:120px;">Total 2do vto.</th>
         </tr></thead>
         <tbody>${filas}</tbody>
       </table>
