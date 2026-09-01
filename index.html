@@ -1241,6 +1241,61 @@
     .kpi .value { font-size: 18px; }
   }
 
+  /* ---------- HOME GRID (accesos rápidos, solo mobile) ---------- */
+  .home-grid-wrap { display: none; }
+  @media (max-width: 860px) {
+    .home-grid-wrap { display: block; margin-bottom: 22px; }
+  }
+  .home-grid-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--primary);
+    border-radius: var(--radius);
+    margin-bottom: 16px;
+  }
+  .home-grid-header img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+  .home-grid-header .brand-text { color: #fff; }
+  .home-grid-header .brand-text b { font-family: 'Playfair Display', serif; font-size: 17px; }
+  .home-grid-header .brand-text span { display: block; font-size: 11px; color: var(--gold-light); margin-top: 2px; }
+  .home-profile-card {
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    margin-bottom: 18px;
+    box-shadow: var(--shadow);
+  }
+  .home-profile-card h3 { font-family: 'Playfair Display', serif; font-size: 16px; margin-bottom: 10px; color: var(--primary); }
+  .home-profile-card .row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--gray-100); }
+  .home-profile-card .row:last-child { border-bottom: none; }
+  .home-profile-card .row .k { color: var(--gray-600); }
+  .home-profile-card .row .v { font-weight: 600; text-align: right; }
+  .home-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  .home-grid button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: var(--radius);
+    padding: 14px 6px;
+    box-shadow: var(--shadow);
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    transition: var(--transition);
+  }
+  .home-grid button:active { transform: scale(.96); }
+  .home-grid button .icon { font-size: 26px; line-height: 1; }
+  .home-grid button .label { font-size: 11px; color: var(--gray-800); text-align: center; line-height: 1.25; }
+
   /* ---------- SCROLLBAR ---------- */
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -1343,6 +1398,7 @@
 
       <!-- RESUMEN (dashboard) -->
       <section class="panel active" id="panel-resumen">
+        <div id="home-grid-mount"></div>
         <div class="panel-head">
           <span class="eyebrow">Consorcistas</span>
           <h2>Resumen del consorcio</h2>
@@ -4144,6 +4200,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     ]);
     const edificioActivo = edificios.find(e=>e.id===currentUser.consorcioId);
     const cCons = (cfgConsorcio && cfgConsorcio.consorcio) || {};
+    const cAdmin = (cfgConsorcio && cfgConsorcio.administracion) || {};
     const nombreEdificio = cCons.nombreDireccion || (edificioActivo ? edificioActivo.nombre : '') || 'Edificio sin datos cargados';
     // liq.unidad.pctFondoA viene crudo de la celda de Sheets (formato "Porcentaje" = fracción,
     // ej. 0.039), hay que multiplicarlo por 100 para mostrarlo como "3.9" y no como "0.039".
@@ -4154,6 +4211,62 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     if(metaEl){
       metaEl.textContent = `${nombreEdificio} · Porcentual: ${porcentual}%`;
     }
+    renderHomeGrid(cAdmin.nombre, nombreEdificio, porcentual);
+  }
+
+  // Accesos rápidos tipo grilla de íconos, visibles solo en mobile (arriba de "Resumen") --
+  // reutiliza los mismos data-panel y el mismo permiso admin-only que ya tiene el menú lateral,
+  // así nunca puede mostrar algo a lo que el propietario no tenga acceso.
+  const HOME_GRID_ICONS = {
+    resumen:'📊', expensas:'🧮', formapago:'💳', reclamos:'📣', facturas:'🧾',
+    asamblea:'👥', asistencia:'✅', conflictos:'🤝', juicios:'⚖️', reserva:'🏦',
+    conciliaciones:'📒', caja:'🗄️', segurosdepositos:'🛡️', proveedores:'🚚',
+    manual:'📄', remocion:'🔨', personal:'🧑‍💼', usuarios:'🔑', novedades:'📢', calchonorarios:'🧮',
+  };
+  function renderHomeGrid(nombreAdmin, nombreEdificio, porcentual){
+    const mount = document.getElementById('home-grid-mount');
+    if(!mount) return;
+    const logoImg = document.querySelector('.sidebar .brand img');
+    const logoSrc = logoImg ? logoImg.src : '';
+    const tiles = Array.from(document.querySelectorAll('.navbtn'))
+      .filter(b => b.style.display !== 'none')
+      .map(b => {
+        const clone = b.cloneNode(true);
+        clone.querySelectorAll('svg').forEach(svg=>svg.remove()); // el ícono SVG no debe colarse en el label
+        return { key: b.dataset.panel, label: clone.textContent.trim() };
+      });
+
+    mount.innerHTML = `
+      <div class="home-grid-wrap">
+        <div class="home-grid-header">
+          ${logoSrc ? `<img src="${logoSrc}" alt="Logo">` : ''}
+          <div class="brand-text">
+            <b>Administración ${escapeHtml(nombreAdmin || 'NAKEN')}</b>
+          </div>
+        </div>
+        <div class="home-profile-card">
+          <h3>Perfil de Usuario</h3>
+          <div class="row"><span class="k">Nombre</span><span class="v">${escapeHtml(currentUser.nombreCompleto||'—')}</span></div>
+          <div class="row"><span class="k">Unidad Funcional</span><span class="v">${escapeHtml(currentUser.unidad||'—')}</span></div>
+          <div class="row"><span class="k">Coeficiente (Porcentaje)</span><span class="v">${escapeHtml(String(porcentual))}%</span></div>
+          <div class="row"><span class="k">Consorcio</span><span class="v">${escapeHtml(nombreEdificio||'—')}</span></div>
+        </div>
+        <div class="home-grid">
+          ${tiles.map(t=>`
+            <button type="button" data-goto="${t.key}">
+              <span class="icon">${HOME_GRID_ICONS[t.key]||'▫️'}</span>
+              <span class="label">${escapeHtml(t.label)}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    mount.querySelectorAll('[data-goto]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const target = document.querySelector(`.navbtn[data-panel="${btn.dataset.goto}"]`);
+        if(target) target.click();
+      });
+    });
   }
 
   /* ---------- Helpers ---------- */
