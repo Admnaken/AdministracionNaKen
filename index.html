@@ -1575,12 +1575,7 @@
           <a class="btn primary" style="display:inline-block;margin-top:6px;text-decoration:none;" href="https://drive.google.com/file/d/15YpObiV70cVJFEQouyaAnSkljJ5ZzVwq/view?usp=drive_link" target="_blank" rel="noopener">Ver manual (PDF) ↗</a>
         </div>
 
-        ${role==='admin' ? `
-        <div class="infoblock">
-          <h3>Archivado automático de facturas</h3>
-          <p>Cada vez que cerrás el mes, el sistema junta solo los comprobantes de <code>Gastos_Mensual</code> de ese período y los organiza en Google Drive, en la misma carpeta donde vive la planilla de este consorcio: <code>Facturas archivadas → [período]</code>. No hace falta hacer nada — pasa solo al confirmar el cierre en "Usuarios y accesos". El archivo original no se mueve de donde ya estaba (queda accesible en ambos lugares); si algún comprobante no se pudo archivar solo (link roto, sin permisos), te avisa en el mensaje de confirmación del cierre para que lo revises a mano.</p>
-        </div>
-        ` : ''}
+        <div id="doc-archivado-mount"></div>
 
         <div class="subhead">Documentación del consorcio</div>
         <div id="documentos-vivo-mount"></div>
@@ -2229,23 +2224,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             const u = liq.unidad;
             const fmtN = (v)=> '$ ' + (Number(v)||0).toLocaleString('es-AR',{maximumFractionDigits:0});
             const fmtF = (v)=> v ? new Date(v).toLocaleDateString('es-AR') : '—';
-            const gastos = liq.gastos || [];
-            const filasGastos = gastos.length===0 ? '' : `
-              <table class="ledger" style="margin-top:4px;">
-                <thead><tr><th>Rubro</th><th>Proveedor</th><th>Detalle</th><th>Importe</th><th>Comprobante</th></tr></thead>
-                <tbody>
-                  ${gastos.map(g=>`
-                    <tr>
-                      <td>${escapeHtml(g.rubro||'')}</td>
-                      <td>${escapeHtml(g.proveedor||'')}</td>
-                      <td>${escapeHtml(g.detalle||'')}</td>
-                      <td class="nowrap">${fmtN(g.importe)}</td>
-                      <td>${g.linkFactura ? `<a href="${escapeHtml(g.linkFactura)}" target="_blank" rel="noopener" class="btn ghost" style="display:inline-block;padding:5px 9px;font-size:11px;text-decoration:none;">Ver ↗</a>` : `<span style="color:var(--muted);font-size:12px;">Sin comprobante</span>`}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-              </table>
-            `;
             miLiqMount.innerHTML = `
               <div class="dash-card" style="margin-bottom:22px;">
                 <h3 style="margin-top:0;">Tu liquidación — período ${escapeHtml(formatPeriodo(liq.periodo))}</h3>
@@ -2259,9 +2237,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
                   <div class="kpi highlight"><div class="label">Total al 1er vencimiento (${fmtF(u.fechaPrimerVto)})</div><div class="value">${fmtN(u.totalPrimerVto)}</div></div>
                   <div class="kpi"><div class="label">Total al 2do vencimiento (${fmtF(u.fechaSegundoVto)})</div><div class="value">${fmtN(u.totalSegundoVto)}</div></div>
                 </div>
-                <div class="subhead" style="margin-top:18px;">Gastos que componen este período</div>
-                ${filasGastos || `<p class="panel-note" style="margin:6px 0 0;">Todavía no hay facturas cargadas para este período.</p>`}
-                <p class="panel-note" style="margin-top:10px;font-size:12px;">¿Buscás un mes anterior? Andá a la pestaña "Facturas y comprobantes" y elegí el período.</p>
+                <p class="panel-note" style="margin-top:10px;font-size:12px;">¿Querés ver en qué se gastó este mes, factura por factura? Andá a "Facturas del mes" en el menú.</p>
               </div>
             `;
           }
@@ -4169,7 +4145,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const edificioActivo = edificios.find(e=>e.id===currentUser.consorcioId);
     const cCons = (cfgConsorcio && cfgConsorcio.consorcio) || {};
     const nombreEdificio = cCons.nombreDireccion || (edificioActivo ? edificioActivo.nombre : '') || 'Edificio sin datos cargados';
-    const pctEnVivo = liq && liq.unidad && liq.unidad.pctFondoA;
+    // liq.unidad.pctFondoA viene crudo de la celda de Sheets (formato "Porcentaje" = fracción,
+    // ej. 0.039), hay que multiplicarlo por 100 para mostrarlo como "3.9" y no como "0.039".
+    const pctEnVivoRaw = liq && liq.unidad && liq.unidad.pctFondoA;
+    const pctEnVivo = pctEnVivoRaw ? Math.round(Number(pctEnVivoRaw)*10000)/100 : null;
     const porcentual = pctEnVivo || currentUser.porcentual || '—';
     const metaEl = document.getElementById('profile-banner-meta');
     if(metaEl){
@@ -4621,8 +4600,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           </div>
           <div class="kpi" style="min-width:180px;"><div class="label">Total facturado en ${escapeHtml(formatPeriodo(data.periodo))}</div><div class="value" style="font-size:16px;">${fmtN(data.totalGastosPeriodoSeleccionado)}</div></div>
         </div>
-        <table class="ledger">
-          <thead><tr><th>Rubro</th><th>Proveedor</th><th>Fecha</th><th>Detalle</th><th>Importe</th><th>Fondo</th><th>Comprobante</th></tr></thead>
+        <table class="ledger" style="table-layout:auto;">
+          <thead><tr>
+            <th style="width:110px;">Rubro</th>
+            <th style="width:170px;">Proveedor</th>
+            <th style="width:95px;">Fecha</th>
+            <th style="min-width:220px;">Detalle</th>
+            <th style="width:110px;">Importe</th>
+            <th style="width:70px;">Fondo</th>
+            <th style="width:110px;">Comprobante</th>
+          </tr></thead>
           <tbody>${filas}</tbody>
         </table>
       `;
@@ -4735,10 +4722,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const mount = document.getElementById(mountId);
     const statusId = mountId+'-status';
     let rows = [];
+    const vistaTarjetas = !!opts.vistaTarjetas;
 
     const editableCols = columns.filter(c=>!c.computed);
 
     mount.innerHTML = `
+      ${vistaTarjetas ? `<div id="${mountId}-body" class="cards"></div>` : `
       <table class="ledger">
         <thead><tr>
           ${columns.map(c=>`<th>${c.label}</th>`).join('')}
@@ -4746,14 +4735,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         </tr></thead>
         <tbody id="${mountId}-body"></tbody>
       </table>
+      `}
       <div class="toolbar">
-        ${role==='admin' ? `<div style="display:flex;gap:8px;"><button class="btn" id="${mountId}-add">+ Agregar</button><button class="btn ghost" id="${mountId}-bulk-toggle">Importar varias filas</button></div>` : '<span></span>'}
+        ${role==='admin' ? `<div style="display:flex;gap:8px;"><button class="btn" id="${mountId}-add">+ Agregar</button>${vistaTarjetas ? '' : `<button class="btn ghost" id="${mountId}-bulk-toggle">Importar varias filas</button>`}</div>` : '<span></span>'}
         <div style="display:flex;align-items:center;gap:12px;">
           ${statusEl(statusId)}
           ${role==='admin' ? `<button class="btn primary" id="${mountId}-save">Guardar cambios</button>` : ''}
         </div>
       </div>
-      ${role==='admin' ? `
+      ${role==='admin' && !vistaTarjetas ? `
       <div id="${mountId}-bulk-box" style="display:none;margin-top:12px;padding:14px 16px;border:1px dashed var(--line);border-radius:6px;background:var(--paper-deep);">
         <p class="panel-note" style="margin:0 0 8px;">Pegá varias filas a la vez — una por línea, con los valores separados por <b>tabulación</b> (como al copiar celdas de Excel/Sheets) o por coma, en este orden: <b>${editableCols.map(c=>c.label).join(' · ')}</b></p>
         <textarea id="${mountId}-bulk-textarea" rows="5" style="width:100%;border:1px solid var(--line);border-radius:5px;padding:9px 10px;font-family:'IBM Plex Mono',monospace;font-size:12px;"></textarea>
@@ -4766,13 +4756,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     const body = document.getElementById(mountId+'-body');
 
+    // "[data-row-item]" identifica una fila sin importar el modo: es un <tr> en la vista de
+    // tabla, o una <div class="card"> en la vista de tarjetas -- así el resto del código
+    // (guardar, borrar) funciona igual en los dos casos.
     function readRows(){
       const out = [];
-      body.querySelectorAll('tr').forEach(tr=>{
+      body.querySelectorAll('[data-row-item]').forEach(item=>{
         const row = {};
         columns.forEach(c=>{
           if(c.computed) return;
-          const input = tr.querySelector(`[data-field="${c.key}"]`);
+          const input = item.querySelector(`[data-field="${c.key}"]`);
           row[c.key] = input ? input.value : '';
         });
         out.push(row);
@@ -4780,31 +4773,59 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return out;
     }
 
+    function campoHtml(c, row){
+      if(c.computed){
+        if(c.isLink){
+          const url = c.computed(row);
+          return url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="btn ghost" style="display:inline-block;padding:6px 10px;font-size:11px;text-decoration:none;">Ver ↗</a>` : `<span style="color:var(--muted);font-size:12px;">Sin comprobante</span>`;
+        }
+        return `<input type="text" value="${escapeHtml(c.computed(row))}" disabled>`;
+      }
+      const val = escapeHtml(row[c.key]);
+      const disabled = role==='admin' ? '' : 'disabled';
+      if(c.type==='textarea'){
+        return `<textarea data-field="${c.key}" rows="3" ${disabled} placeholder="${c.placeholder||''}" style="width:100%;">${val}</textarea>`;
+      }
+      return `<input type="text" data-field="${c.key}" value="${val}" ${disabled} placeholder="${c.placeholder||''}" style="width:100%;">`;
+    }
+
     function render(){
       body.innerHTML = '';
       if(rows.length===0){
-        body.innerHTML = `<tr><td colspan="${columns.length+1}"><div class="empty">${opts.emptyText||'Todavía no hay datos cargados.'}</div></td></tr>`;
+        body.innerHTML = vistaTarjetas
+          ? `<div class="empty">${opts.emptyText||'Todavía no hay datos cargados.'}</div>`
+          : `<tr><td colspan="${columns.length+1}"><div class="empty">${opts.emptyText||'Todavía no hay datos cargados.'}</div></td></tr>`;
         return;
       }
-      rows.forEach(row=>{
-        const tr = document.createElement('tr');
-        tr.innerHTML = columns.map(c=>{
-          if(c.computed){
-            if(c.isLink){
-              const url = c.computed(row);
-              return `<td>${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="btn ghost" style="display:inline-block;padding:6px 10px;font-size:11px;text-decoration:none;">Ver ↗</a>` : `<span style="color:var(--muted);font-size:12px;">Sin comprobante</span>`}</td>`;
-            }
-            const val = escapeHtml(c.computed(row));
-            return `<td class="num"><input type="text" value="${val}" disabled></td>`;
-          }
-          const val = escapeHtml(row[c.key]);
-          const disabled = role==='admin' ? '' : 'disabled';
-          if(c.type==='textarea'){
-            return `<td><textarea data-field="${c.key}" rows="3" ${disabled} placeholder="${c.placeholder||''}">${val}</textarea></td>`;
-          }
-          return `<td class="${c.numeric?'num':''}"><input type="text" data-field="${c.key}" value="${val}" ${disabled} placeholder="${c.placeholder||''}"></td>`;
-        }).join('') + (role==='admin' ? `<td class="row-del"><button data-action="delete" title="Eliminar">✕</button></td>` : '');
-        body.appendChild(tr);
+      rows.forEach((row,i)=>{
+        if(vistaTarjetas){
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.setAttribute('data-row-item','');
+          card.innerHTML = `
+            <div class="card-top">
+              <b>${escapeHtml(row[columns[0].key]) || 'Sin '+columns[0].label.toLowerCase()}</b>
+              ${role==='admin' ? `<button data-action="delete" title="Eliminar">✕</button>` : ''}
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;margin-top:6px;">
+              ${columns.map(c=>`
+                <div>
+                  <label style="font-size:10px;color:var(--gray-600);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:3px;">${c.label}</label>
+                  ${campoHtml(c, row)}
+                </div>
+              `).join('')}
+            </div>
+          `;
+          body.appendChild(card);
+        } else {
+          const tr = document.createElement('tr');
+          tr.setAttribute('data-row-item','');
+          tr.innerHTML = columns.map(c=>{
+            if(c.computed) return `<td${c.isLink?'':' class="num"'}>${campoHtml(c,row)}</td>`;
+            return `<td class="${c.numeric?'num':''}">${campoHtml(c,row)}</td>`;
+          }).join('') + (role==='admin' ? `<td class="row-del"><button data-action="delete" title="Eliminar">✕</button></td>` : '');
+          body.appendChild(tr);
+        }
       });
     }
 
@@ -4820,7 +4841,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       body.addEventListener('input', scheduleSave);
       body.addEventListener('click', e=>{
         const b = e.target.closest('[data-action="delete"]');
-        if(b){ rows = readRows(); rows.splice([...body.children].indexOf(b.closest('tr')),1); render(); scheduleSave(); }
+        if(b){ rows = readRows(); rows.splice([...body.children].indexOf(b.closest('[data-row-item]')),1); render(); scheduleSave(); }
       });
       document.getElementById(mountId+'-add').addEventListener('click', ()=>{
         rows = readRows();
@@ -4834,6 +4855,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         rows = readRows(); saveData(storageKey, rows, statusId);
       });
 
+      if(!vistaTarjetas){
       const bulkToggle = document.getElementById(mountId+'-bulk-toggle');
       const bulkBox = document.getElementById(mountId+'-bulk-box');
       const bulkTextarea = document.getElementById(mountId+'-bulk-textarea');
@@ -4869,6 +4891,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         bulkPreview.textContent = '';
         bulkBox.style.display = 'none';
       });
+      }
     }
 
     loadData(storageKey, opts.defaultRows || []).then(d=>{ rows = d; render(); });
@@ -6847,10 +6870,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     mount.innerHTML = `<div class="empty">Cargando…</div>`;
 
+    const timeoutId = setTimeout(()=>{
+      mount.innerHTML = `<div class="empty">Está tardando más de lo normal en cargar. <button class="btn ghost" id="${mountId}-retry" style="margin-left:8px;">Reintentar</button></div>`;
+      const retryBtn = document.getElementById(mountId+'-retry');
+      if(retryBtn) retryBtn.addEventListener('click', ()=>mountCuentaResumenPropietario(mountId, movKey, concKey, opts));
+    }, 15000);
+
     Promise.all([
       loadData(movKey, []), loadData(concKey, []), loadData(cuentaKey, {}),
       opts.mostrarSaldoInicial ? loadData(opts.saldoInicialKey || (movKey+'-saldo-inicial'), 0) : Promise.resolve(0),
     ]).then(([movRows, periodos, cuenta, si])=>{
+      clearTimeout(timeoutId);
       const saldo = num(si) + movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0);
       const archivadas = periodos.filter(p=>p.cerrado);
       const ultima = archivadas.length ? archivadas[archivadas.length-1] : null;
@@ -6881,6 +6911,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         ${cartelUltima}
         <p class="panel-note" style="margin-top:14px;">La administración controla y concilia esta cuenta contra el extracto bancario todos los meses. Si el Consejo de Propietarios necesita el detalle completo (movimientos, partidas y extracto), la administración lo provee bajo pedido.</p>
       `;
+    }).catch((err)=>{
+      clearTimeout(timeoutId);
+      mount.innerHTML = `<div class="empty">No se pudo cargar esta sección: ${escapeHtml(err && err.message ? err.message : 'error de conexión')}. <button class="btn ghost" id="${mountId}-retry" style="margin-left:8px;">Reintentar</button></div>`;
+      const retryBtn = document.getElementById(mountId+'-retry');
+      if(retryBtn) retryBtn.addEventListener('click', ()=>mountCuentaResumenPropietario(mountId, movKey, concKey, opts));
     });
   }
 
@@ -10055,7 +10090,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       {key:'juzgado', label:'Juzgado', placeholder:''},
       {key:'objeto', label:'Objeto', type:'textarea', placeholder:'Qué se reclama'},
       {key:'estado', label:'Estado', placeholder:'En trámite / Sentencia / Archivado'},
-    ], {emptyText:'No hay juicios cargados.'}),
+    ], {emptyText:'No hay juicios cargados.', vistaTarjetas:true}),
     reserva: () => mountLibroBancoConciliacion('reserva-mount', 'naken-reserva-movimientos', 'naken-reserva-conciliacion', {
       cuentaKey: 'naken-reserva-cuenta-bancaria',
       mostrarSaldoInicial: true,
@@ -10094,6 +10129,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       mountProveedores('proveedores-mount', 'naken-proveedores');
     },
     manual: () => {
+      const docArchivadoMount = document.getElementById('doc-archivado-mount');
+      if(docArchivadoMount){
+        docArchivadoMount.innerHTML = role==='admin' ? `
+          <div class="infoblock">
+            <h3>Archivado automático de facturas</h3>
+            <p>Cada vez que cerrás el mes, el sistema junta solo los comprobantes de <code>Gastos_Mensual</code> de ese período y los organiza en Google Drive, en la misma carpeta donde vive la planilla de este consorcio: <code>Facturas archivadas → [período]</code>. No hace falta hacer nada — pasa solo al confirmar el cierre en "Usuarios y accesos". El archivo original no se mueve de donde ya estaba (queda accesible en ambos lugares); si algún comprobante no se pudo archivar solo (link roto, sin permisos), te avisa en el mensaje de confirmación del cierre para que lo revises a mano.</p>
+          </div>
+        ` : '';
+      }
       mountDocumentosVivo('documentos-vivo-mount');
       mountManual('manual-mount', 'naken-manual',
 `Esta administración se compromete a:
