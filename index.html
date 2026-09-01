@@ -45,6 +45,7 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+    overflow-wrap: break-word; /* nada de texto largo desborda su caja sin partirse -- sobre todo en celular */
   }
 
   body {
@@ -53,7 +54,9 @@
     color: var(--gray-800);
     line-height: 1.7;
     -webkit-font-smoothing: antialiased;
+    overflow-x: hidden; /* red de seguridad: nada puede correr la página entera de costado */
   }
+  html { overflow-x: hidden; }
 
   a {
     text-decoration: none;
@@ -630,6 +633,8 @@
     font-size: 22px;
     margin-top: 4px;
     color: var(--primary);
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
   .kpi.highlight { border-color: var(--gold); }
   .kpi.highlight .value { color: var(--primary); }
@@ -1202,7 +1207,7 @@
   /* ---------- RESPONSIVE ---------- */
   @media (max-width: 860px) {
     .app { flex-direction: column; }
-    table.ledger { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .content table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .sidebar {
       width: 100%;
       flex-direction: row;
