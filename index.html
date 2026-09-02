@@ -1031,26 +1031,28 @@
   .recibo {
     background: #fff;
     border: 1px solid var(--gray-800);
-    padding: 22px 24px;
-    font-size: 12.5px;
+    padding: 16px 18px;
+    font-size: 11px;
+    line-height: 1.35; /* el body hereda line-height:1.7 -- acá va más compacto, sin que se pise ningún renglón */
     max-width: 640px;
   }
   .recibo .recibo-head {
     display: flex;
     justify-content: space-between;
     border-bottom: 1px solid var(--gray-200);
-    padding-bottom: 10px;
-    margin-bottom: 10px;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
   }
-  .recibo .recibo-head b { font-family: 'Playfair Display', serif; font-size: 15px; }
+  .recibo .recibo-head b { font-family: 'Playfair Display', serif; font-size: 14px; }
   .recibo table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 8px;
+    margin-top: 6px;
   }
   .recibo table td {
-    padding: 4px 6px;
+    padding: 2.5px 6px;
     border-bottom: 1px solid var(--gray-200);
+    line-height: 1.3;
   }
   .recibo table td:last-child {
     text-align: right;
@@ -9505,6 +9507,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <label>Otros descuentos — monto ($)</label>
             <input type="text" id="${mountId}-desc-monto" placeholder="0">
           </div>
+          <div>
+            <label>Seguro de vida obligatorio ($)</label>
+            <input type="text" id="${mountId}-seguro-vida" placeholder="Dejar vacío para usar el de la escala" title="Solo si esta liquidación puntual necesita un valor distinto al que ya está cargado en la Escala CCT 589/10 (por ejemplo, si cambió de aseguradora este mes). Vacío = usa el de la escala.">
+          </div>
           <div style="display:flex;align-items:flex-end;padding-bottom:9px;">
             <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--gray-800);margin:0;">
               <input type="checkbox" id="${mountId}-redondeo"> Redondear el neto final al peso
@@ -9602,7 +9608,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const contribSeracarh = sueldoBrutoRemun * (numEscala(ap.contribSeracarhPct)/100);
       const fmvdd = numEscala(ap.fmvddMonto);
       const art = sueldoBrutoRemun * (numEscala(ap.artPct)/100);
-      const seguroVida = numEscala(ap.seguroVidaMonto);
+      // "Seguro de vida" puede ajustarse puntual por liquidación (ej. cambio de aseguradora ese
+      // mes) -- si no se carga nada, usa el valor de la Escala CCT589 nacional, como siempre.
+      const seguroVida = (inputs.seguroVidaOverride && num(inputs.seguroVidaOverride)>0) ? num(inputs.seguroVidaOverride) : numEscala(ap.seguroVidaMonto);
       const totalContribPatronales = contribSipa+contribObraSocial+contribFateryh+contribSuterh+contribSeracarh+fmvdd+art+seguroVida;
       const costoTotalEmpleador = sueldoBrutoRemun + totalContribPatronales;
 
@@ -9690,38 +9698,38 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <span style="font-size:12px;">C.U.I.T.: ${escapeHtml(consorcioDatos.consorcioCuit||'—')}</span>
           </div>
 
-          <table style="width:100%;font-size:11px;border-collapse:collapse;text-align:center;">
+          <table style="width:100%;font-size:10px;border-collapse:collapse;text-align:center;">
             <tr style="background:var(--gray-100);">
-              <th style="border:1px solid var(--gray-800);padding:4px;">Q.</th>
-              <th style="border:1px solid var(--gray-800);padding:4px;">MES</th>
-              <th style="border:1px solid var(--gray-800);padding:4px;">AÑO</th>
-              <th style="border:1px solid var(--gray-800);padding:4px;">APELLIDO Y NOMBRE</th>
-              <th style="border:1px solid var(--gray-800);padding:4px;">N° LEGAJO</th>
-              <th style="border:1px solid var(--gray-800);padding:4px;">SUELDO BRUTO</th>
-              <th style="border:1px solid var(--gray-800);padding:4px;">ANTIGÜEDAD</th>
+              <th style="border:1px solid var(--gray-800);padding:3px;">Q.</th>
+              <th style="border:1px solid var(--gray-800);padding:3px;">MES</th>
+              <th style="border:1px solid var(--gray-800);padding:3px;">AÑO</th>
+              <th style="border:1px solid var(--gray-800);padding:3px;">APELLIDO Y NOMBRE</th>
+              <th style="border:1px solid var(--gray-800);padding:3px;">N° LEGAJO</th>
+              <th style="border:1px solid var(--gray-800);padding:3px;">SUELDO BRUTO</th>
+              <th style="border:1px solid var(--gray-800);padding:3px;">ANTIGÜEDAD</th>
             </tr>
             <tr>
-              <td style="border:1px solid var(--gray-800);padding:4px;">1</td>
-              <td style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml((liq.periodo||'').split(' ')[0]||'')}</td>
-              <td style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml((liq.periodo||'').split(' ')[1]||'')}</td>
-              <td style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml(emp.nombreCompleto)}</td>
-              <td style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml(emp.legajo||'—')}</td>
-              <td style="border:1px solid var(--gray-800);padding:4px;">${fmt(liq.sueldoBrutoRemun)}</td>
-              <td style="border:1px solid var(--gray-800);padding:4px;">${liq.antiguedadAnios} año(s)</td>
+              <td style="border:1px solid var(--gray-800);padding:3px;">1</td>
+              <td style="border:1px solid var(--gray-800);padding:3px;">${escapeHtml((liq.periodo||'').split(' ')[0]||'')}</td>
+              <td style="border:1px solid var(--gray-800);padding:3px;">${escapeHtml((liq.periodo||'').split(' ')[1]||'')}</td>
+              <td style="border:1px solid var(--gray-800);padding:3px;">${escapeHtml(emp.nombreCompleto)}</td>
+              <td style="border:1px solid var(--gray-800);padding:3px;">${escapeHtml(emp.legajo||'—')}</td>
+              <td style="border:1px solid var(--gray-800);padding:3px;">${fmt(liq.sueldoBrutoRemun)}</td>
+              <td style="border:1px solid var(--gray-800);padding:3px;">${liq.antiguedadAnios} año(s)</td>
             </tr>
             <tr style="background:var(--gray-100);">
-              <th colspan="2" style="border:1px solid var(--gray-800);padding:4px;">FECHA INGRESO</th>
-              <th style="border:1px solid var(--gray-800);padding:4px;">CATEGORÍA LABORAL</th>
-              <th style="border:1px solid var(--gray-800);padding:4px;">C.U.I.L</th>
-              <th colspan="2" style="border:1px solid var(--gray-800);padding:4px;">LUGAR DE PAGO</th>
-              <th style="border:1px solid var(--gray-800);padding:4px;">F. PAGO APORTES</th>
+              <th colspan="2" style="border:1px solid var(--gray-800);padding:3px;">FECHA INGRESO</th>
+              <th style="border:1px solid var(--gray-800);padding:3px;">CATEGORÍA LABORAL</th>
+              <th style="border:1px solid var(--gray-800);padding:3px;">C.U.I.L</th>
+              <th colspan="2" style="border:1px solid var(--gray-800);padding:3px;">LUGAR DE PAGO</th>
+              <th style="border:1px solid var(--gray-800);padding:3px;">F. PAGO APORTES</th>
             </tr>
             <tr>
-              <td colspan="2" style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml(emp.fechaIngreso||'—')}${antigDiffiere ? ' *' : ''}</td>
-              <td style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml(funcionLabelCct589(emp.funcion))}</td>
-              <td style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml(emp.cuil||'—')}</td>
-              <td colspan="2" style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml(emp.lugarPago||'—')}</td>
-              <td style="border:1px solid var(--gray-800);padding:4px;">${escapeHtml(emp.formaPagoAportes||'—')}</td>
+              <td colspan="2" style="border:1px solid var(--gray-800);padding:3px;">${escapeHtml(emp.fechaIngreso||'—')}${antigDiffiere ? ' *' : ''}</td>
+              <td style="border:1px solid var(--gray-800);padding:3px;">${escapeHtml(funcionLabelCct589(emp.funcion))}</td>
+              <td style="border:1px solid var(--gray-800);padding:3px;">${escapeHtml(emp.cuil||'—')}</td>
+              <td colspan="2" style="border:1px solid var(--gray-800);padding:3px;">${escapeHtml(emp.lugarPago||'—')}</td>
+              <td style="border:1px solid var(--gray-800);padding:3px;">${escapeHtml(emp.formaPagoAportes||'—')}</td>
             </tr>
           </table>
           ${antigDiffiere ? `<p style="font-size:10px;color:var(--muted);padding:2px 14px;">* Antigüedad reconocida desde: ${escapeHtml(emp.fechaIngresoReconocida)}</p>` : ''}
@@ -9732,7 +9740,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <span style="font-size:16px;">${fmt(liq.costoTotalEmpleador)}</span>
           </div>
 
-          <table style="width:100%;font-size:11.5px;border-collapse:collapse;">
+          <table style="width:100%;font-size:10.5px;border-collapse:collapse;">
             <tr style="background:var(--gray-100);"><th style="text-align:left;padding:4px 8px;">CONCEPTO</th><th style="width:70px;">UNIDAD</th><th style="width:90px;">BASE</th><th style="width:100px;">MONTO</th></tr>
             ${filasContrib}
           </table>
@@ -9741,7 +9749,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           </div>
 
           <div style="background:var(--primary);color:#fff;padding:8px 14px;font-weight:700;">SUELDO BRUTO — ${fmt(liq.sueldoBrutoRemun)}</div>
-          <table style="width:100%;font-size:11.5px;border-collapse:collapse;">
+          <table style="width:100%;font-size:10.5px;border-collapse:collapse;">
             <tr style="background:var(--gray-100);"><th style="text-align:left;padding:4px 8px;">CONCEPTO</th><th style="width:70px;">UNIDAD</th><th style="width:90px;">BASE</th><th style="width:100px;">MONTO</th></tr>
             ${filasHaberYRetenciones}
           </table>
@@ -9754,10 +9762,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <span style="font-size:18px;font-weight:700;color:var(--primary);">${fmt(liq.sueldoNeto)}</span>
           </div>
 
-          <div class="dash-grid" style="grid-template-columns:1.3fr 1fr;margin-top:10px;">
+          <p style="font-size:9.5px;color:var(--muted);padding:8px 14px 0;text-align:justify;line-height:1.3;">Nota: la seguridad social del empleador incluye SIPA, Fondo Nacional de Empleo y Asignaciones Familiares. Recibo generado conforme al art. 140 LCT (reforma de modernización laboral, Decreto 407/2026).</p>
+
+          <div class="dash-grid" style="grid-template-columns:1.6fr 1fr;margin-top:6px;">
             <div>
               <h4>Detalle de la composición salarial</h4>
-              <table style="width:100%;font-size:11.5px;border-collapse:collapse;">
+              <table style="width:100%;font-size:10.5px;border-collapse:collapse;">
                 <tr><td><b>Total Costo Sindical</b></td><td></td></tr>
                 <tr><td style="padding-left:10px;">Empleador</td><td style="text-align:right;">${fmt(liq.contribSuterh)}</td></tr>
                 <tr><td style="padding-left:10px;">Trabajador</td><td style="text-align:right;">${fmt(liq.retSindical)}</td></tr>
@@ -9775,13 +9785,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
                 <tr><td style="padding-left:10px;">Empleador</td><td style="text-align:right;">${fmt(liq.seguroVida)}</td></tr>
               </table>
             </div>
-            <div>
-              <h4 style="text-align:center;">Costo total empleador</h4>
-              <canvas id="${canvasId}" height="190"></canvas>
+            <div style="max-width:170px;">
+              <h4 style="text-align:center;font-size:11px;">Costo total empleador</h4>
+              <canvas id="${canvasId}" height="130"></canvas>
             </div>
           </div>
-
-          <p style="font-size:10px;color:var(--muted);padding:10px 14px;">Nota: la seguridad social del empleador incluye SIPA, Fondo Nacional de Empleo y Asignaciones Familiares. Recibo generado conforme al art. 140 LCT (reforma de modernización laboral, Decreto 407/2026).</p>
 
           <div style="display:flex;justify-content:space-between;padding:14px;font-size:12px;">
             <div>____________________________<br>Firma del empleador</div>
@@ -9932,12 +9940,18 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       bannerAzul('SUELDO NETO $', liq.sueldoNeto);
       y += 3;
 
-      // ---------- Detalle de la composición salarial + gráfico ----------
-      if(y > 190){ doc.addPage(); y = 16; }
+      // La nota va ARRIBA del bloque de detalle+gráfico, justificada al ancho completo.
+      doc.setFontSize(7); doc.setTextColor(150,150,150);
+      const notaLineas = doc.splitTextToSize('Nota: la seguridad social del empleador incluye SIPA, Fondo Nacional de Empleo y Asignaciones Familiares. Recibo generado conforme al art. 140 LCT (reforma de modernización laboral, Decreto 407/2026).', 182);
+      doc.text(notaLineas, M, y, { align: 'justify', maxWidth: 182 }); y += notaLineas.length*3.3 + 5;
+      doc.setTextColor(...COLOR_TEXTO);
+
+      // ---------- Detalle de la composición salarial + gráfico (más chico) ----------
+      if(y > 220){ doc.addPage(); y = 16; }
       const yDetalle = y;
-      doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...COLOR_PRINCIPAL);
-      doc.text('Detalle de la composición salarial', M, y); y += 6;
-      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...COLOR_TEXTO);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...COLOR_PRINCIPAL);
+      doc.text('Detalle de la composición salarial', M, y); y += 5.5;
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...COLOR_TEXTO);
 
       const detalle = [
         ['Total Costo Sindical', null],
@@ -9956,19 +9970,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       detalle.forEach(([label, val])=>{
         if(val===null){ doc.setFont('helvetica','bold'); doc.text(label, M, y); doc.setFont('helvetica','normal'); }
         else { doc.text(label, M+2, y); doc.text(fmt(val), M+85, y, {align:'right'}); }
-        y += 4.3;
+        y += 3.8;
       });
 
       if(imagenGrafico){
-        try{ doc.addImage(imagenGrafico, 'PNG', M+95, yDetalle, 87, 70); }catch(e){ /* si falla, el PDF sigue sin el gráfico */ }
+        try{ doc.addImage(imagenGrafico, 'PNG', M+100, yDetalle, 55, 44); }catch(e){ /* si falla, el PDF sigue sin el gráfico */ }
       }
-      y = Math.max(y, yDetalle+72);
-
+      y = Math.max(y, yDetalle+46);
       y += 4;
-      doc.setFontSize(7); doc.setTextColor(150,150,150);
-      const notaLineas = doc.splitTextToSize('Nota: la seguridad social del empleador incluye SIPA, Fondo Nacional de Empleo y Asignaciones Familiares. Recibo generado conforme al art. 140 LCT (reforma de modernización laboral, Decreto 407/2026).', 182);
-      doc.text(notaLineas, M, y); y += notaLineas.length*3.3 + 8;
-      doc.setTextColor(...COLOR_TEXTO);
 
       if(y>270){ doc.addPage(); y=18; }
       doc.setFontSize(9);
@@ -10009,7 +10018,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             legend: {
               position: 'bottom',
               labels: {
-                font: { size: 11, weight: '600' }, padding: 10,
+                font: { size: 8.5, weight: '600' }, padding: 4, boxWidth: 10,
                 generateLabels: (chart)=> chart.data.labels.map((label,i)=>{
                   const p = Math.round(chart.data.datasets[0].data[i]/total*100);
                   return { text: `${label} — ${p}%`, fillStyle: chart.data.datasets[0].backgroundColor[i], strokeStyle:'#fff', lineWidth:1, index:i };
@@ -10176,6 +10185,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           descDesc: document.getElementById(mountId+'-desc-desc').value || '',
           descMonto: document.getElementById(mountId+'-desc-monto').value || '0',
           redondeo: document.getElementById(mountId+'-redondeo').checked,
+          seguroVidaOverride: document.getElementById(mountId+'-seguro-vida').value || '',
         };
         const record = computeLiquidacion(emp, inputs);
         liquidaciones.push(record);
