@@ -9831,7 +9831,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const COLOR_TEXTO = [44,62,80];
       const AUTOTABLE_BASE = { styles:{fontSize:8.5,textColor:COLOR_TEXTO,cellPadding:2}, headStyles:{fillColor:[235,235,235],textColor:COLOR_TEXTO,fontStyle:'bold',fontSize:8} };
 
-      const [imagenGrafico] = await Promise.all([imagenGraficoCosto(liq)]);
+      const [imagenGrafico] = await Promise.all([imagenGraficoCostoSinLeyenda(liq)]);
       const base = liq.sueldoBrutoRemun;
       const pctDe = (monto, b) => b>0 ? (monto/b*100).toFixed(2)+'%' : '';
       const antigDiffiere = emp.fechaIngresoReconocida && emp.fechaIngresoReconocida !== emp.fechaIngreso;
@@ -9996,9 +9996,26 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
 
       if(imagenGrafico){
-        try{ doc.addImage(imagenGrafico, 'PNG', M+100, yDetalle, 55, 44); }catch(e){ /* si falla, el PDF sigue sin el gráfico */ }
+        // El círculo va chico y a la izquierda de su columna; la leyenda (texto real de jsPDF,
+        // no parte de la imagen) va al lado, siempre legible sin importar el tamaño del círculo.
+        const tamCirculo = 32;
+        const xCirculo = M + 100;
+        try{ doc.addImage(imagenGrafico, 'PNG', xCirculo, yDetalle, tamCirculo, tamCirculo); }catch(e){ /* si falla, el PDF sigue sin el gráfico */ }
+        const buckets = costoChartBuckets(liq);
+        const total = buckets.reduce((s,b)=>s+b.value,0) || 1;
+        let yLeyenda = yDetalle + tamCirculo + 5;
+        doc.setFontSize(7);
+        buckets.forEach(b=>{
+          const pct = Math.round(b.value/total*100);
+          const [r,g,bl] = hexToRgb_(b.color);
+          doc.setFillColor(r,g,bl);
+          doc.rect(xCirculo, yLeyenda-2.6, 3, 3, 'F');
+          doc.setTextColor(...COLOR_TEXTO);
+          doc.text(`${b.label} — ${pct}%`, xCirculo+5, yLeyenda);
+          yLeyenda += 4.2;
+        });
       }
-      y = Math.max(y, yDetalle+46);
+      y = Math.max(y, yDetalle+32+5+(costoChartBuckets(liq).length*4.2)+4);
       y += 4;
 
       if(y>270){ doc.addPage(); y=18; }
@@ -10010,6 +10027,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       doc.text('Firma del empleado — recibí conforme', 120, y);
 
       doc.save(`Recibo_${(emp.nombreCompleto||'empleado').replace(/[^a-zA-Z0-9]/g,'_')}_${(liq.periodo||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
+    }
+
+    function hexToRgb_(hex){
+      const h = hex.replace('#','');
+      return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
     }
 
     // Compartida entre el gráfico en pantalla y el que se incrusta en el PDF -- así siempre
@@ -10082,6 +10104,42 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
                 }
               }
             }
+          },
+          plugins: [{
+            id: 'capturar-al-terminar',
+            afterRender: (c)=>{
+              const dataUrl = canvas.toDataURL('image/png', 1.0);
+              document.body.removeChild(canvas);
+              c.destroy();
+              resolve(dataUrl);
+            }
+          }]
+        });
+      });
+    }
+
+    // Para el PDF: la MISMA torta, pero SIN la leyenda incrustada en la imagen -- al pdf le
+    // interesa un círculo chico y limpio, y la leyenda se escribe aparte como texto normal de
+    // jsPDF (con costoChartBuckets), que siempre se lee bien sin importar cuánto se achique la
+    // imagen. Meter texto DENTRO de una imagen y después comprimirla a unos pocos milímetros es
+    // lo que hacía que se superpusiera y quedara ilegible.
+    function imagenGraficoCostoSinLeyenda(liq){
+      return new Promise(resolve=>{
+        if(!window.Chart){ resolve(null); return; }
+        const buckets = costoChartBuckets(liq);
+        if(buckets.length===0){ resolve(null); return; }
+        const canvas = document.createElement('canvas');
+        canvas.width = 300; canvas.height = 300;
+        canvas.style.position = 'fixed'; canvas.style.left = '-9999px'; canvas.style.top='0';
+        document.body.appendChild(canvas);
+        const chart = new Chart(canvas, {
+          type: 'pie',
+          data: { labels: buckets.map(b=>b.label), datasets: [{ data: buckets.map(b=>b.value), backgroundColor: buckets.map(b=>b.color), borderWidth: 2, borderColor: '#fff' }] },
+          options: {
+            responsive: false,
+            animation: { duration: 0 },
+            layout: { padding: 4 },
+            plugins: { legend: { display: false } },
           },
           plugins: [{
             id: 'capturar-al-terminar',
