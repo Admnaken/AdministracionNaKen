@@ -1243,13 +1243,36 @@
 
   /* ---------- HOME GRID (accesos rápidos, solo mobile) ---------- */
   .home-grid-wrap { display: none; }
+  #home-back-btn { display: none; }
   @media (max-width: 860px) {
     .home-grid-wrap { display: block; margin-bottom: 22px; }
-    /* Mientras estemos en "modo inicio" (recién entrando, sin haber tocado ningún botón todavía),
-       el propietario ve SOLO la grilla -- ni el menú de arriba ni el contenido de Resumen. En
-       cuanto toca cualquier botón de navegación, esta clase se saca y todo vuelve a la normalidad. */
-    body.home-mode .sidebar { display: none !important; }
-    body.home-mode #panel-resumen > *:not(#home-grid-mount) { display: none !important; }
+    /* En mobile, para el PROPIETARIO (no para el admin, que sigue necesitando el menú de
+       siempre) la navegación es siempre a través de la grilla -- el menú de arriba (fila
+       horizontal) queda oculto todo el tiempo, no solo al principio. */
+    body.role-propietario .sidebar { display: none !important; }
+    /* Mientras estemos en "modo inicio" (recién entrando, o después de tocar "← Inicio"), se ve
+       solo la grilla y se esconden todos los paneles, sea cual sea el que esté activo. Apenas se
+       toca un botón de navegación, se sale del modo inicio: aparece el panel elegido y el botón
+       "← Inicio" para poder volver a la grilla cuando haga falta. */
+    body.role-propietario.home-mode .content > .panel { display: none !important; }
+    body.role-propietario:not(.home-mode) #home-grid-mount { display: none !important; }
+    body:not(.role-propietario) #home-grid-mount,
+    body:not(.role-propietario) #home-back-btn { display: none !important; }
+    #home-back-btn {
+      display: block;
+      width: 100%;
+      margin-bottom: 14px;
+      padding: 10px 14px;
+      background: #fff;
+      border: 1px solid var(--gray-200);
+      border-radius: var(--radius);
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--primary);
+      cursor: pointer;
+    }
+    body.home-mode #home-back-btn { display: none !important; }
   }
   .home-grid-header {
     display: flex;
@@ -1400,10 +1423,11 @@
     <div class="content" id="admin-overview-screen" style="display:none;"></div>
 
     <div class="content" id="main-content">
+      <div id="home-grid-mount"></div>
+      <button type="button" id="home-back-btn">← Inicio</button>
 
       <!-- RESUMEN (dashboard) -->
       <section class="panel active" id="panel-resumen">
-        <div id="home-grid-mount"></div>
         <div class="panel-head">
           <span class="eyebrow">Consorcistas</span>
           <h2>Resumen del consorcio</h2>
@@ -3884,6 +3908,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
   function applyRole(newRole){
     role = newRole;
+    document.body.classList.toggle('role-propietario', role==='propietario');
 
     document.querySelectorAll('.navbtn.admin-only').forEach(b=>{
       b.style.display = role==='admin' ? '' : 'none';
@@ -4155,6 +4180,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     applyRole('propietario');
   }
   globalLogoutBtn.addEventListener('click', logout);
+  document.getElementById('home-back-btn').addEventListener('click', ()=>{
+    document.body.classList.add('home-mode');
+  });
   globalRefreshBtn.addEventListener('click', async ()=>{
     const original = globalRefreshBtn.textContent;
     globalRefreshBtn.textContent = 'Actualizando…';
@@ -4182,11 +4210,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
   async function renderProfileBanner(){
     profileBanner.style.display = 'flex';
+    // Antes acá también se mostraba nombre/unidad -- ahora esos datos ya están en la tarjeta
+    // "Mi perfil" de la grilla de inicio, así que esta caja queda solo con los botones.
     profileBanner.innerHTML = `
-      <div class="who">
-        <b>${escapeHtml(currentUser.nombreCompleto)}</b> — Unidad ${escapeHtml(currentUser.unidad)}
-        <div class="meta" id="profile-banner-meta">Cargando datos del consorcio…</div>
-      </div>
+      <span id="profile-banner-meta" style="display:none;"></span>
       <button id="profile-refresh-btn" class="btn ghost" style="margin-right:8px;">↻ Actualizar</button>
       <button id="logout-btn">Cerrar sesión</button>
     `;
