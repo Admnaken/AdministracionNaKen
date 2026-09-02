@@ -10220,6 +10220,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               sueldoNeto: r.sueldoNeto, cargasSociales,
             });
             if(!res.ok){ alert(res.error || 'No se pudo cargar en Gastos_Mensual.'); return; }
+
+            // Chequeo cruzado: el nombre de la planilla donde el backend REALMENTE escribió
+            // tiene que coincidir con el consorcio que la app cree que está activo. Si no
+            // coincide, algo está mal en el ID guardado para este edificio -- mejor avisar
+            // fuerte acá que dejar un "listo" silencioso y engañoso.
+            const edificios = await getEdificios();
+            const edificioActivo = edificios.find(e=>e.id===getActiveConsorcioId());
+            const nombreEsperado = edificioActivo ? edificioActivo.nombre : '';
+            if(nombreEsperado && res.consorcio && nombreEsperado.trim().toLowerCase() !== res.consorcio.trim().toLowerCase()){
+              alert(`⚠ Atención: la carga se hizo, pero en una planilla distinta a la esperada.\n\nConsorcio activo acá: "${nombreEsperado}"\nPlanilla donde realmente escribió: "${res.consorcio}"\n\nRevisá el ID de planilla cargado para "${nombreEsperado}" en "Todos los consorcios" — probablemente esté apuntando a la planilla de otro edificio.\n\nLink de la hoja donde SÍ quedó cargado: ${res.hojaUrl}`);
+              return; // no marco como "cargado" para este consorcio, ya que en realidad fue a otro lado
+            }
+
+            alert(`✓ Se cargaron ${res.filasAgregadas} fila(s) en Gastos_Mensual de "${res.consorcio}", a partir de la fila ${res.fila}.\n\n${res.hojaUrl}`);
             r.cargadoEnGastos = true;
             await saveData(storageKey, liquidaciones, statusId);
             renderList();
