@@ -9435,6 +9435,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         sumaFijaRemun: siNo(emp.sumaFijaRemun), hs50: record.hs50, hs100: record.hs100,
         diasInasistencia: record.diasInasistencia, legajo: emp.legajo,
         afiliadoSindical: siNo(emp.afiliadoSindical), antiguedadReconocida: record.antiguedadAnios,
+        // Montos ya calculados por la app -- el respaldo los guarda tal cual, sin volver a
+        // calcular nada con una escala local que podría estar desactualizada.
+        basico: record.basico, adicAntiguedad: record.adicAntiguedad, adicPresentismo: record.adicPresentismo,
+        adicTitulo: record.adicTitulo, adicZona: record.adicZona, impResiduos: record.impResiduos,
+        impCocheras: record.impCocheras, impCalderas: record.impCalderas, impJardin: record.impJardin,
+        impPiletas: record.impPiletas, impSumaFija: record.impSumaFija, imp50: record.imp50, imp100: record.imp100,
+        descInasistencias: record.descInasistencias, impVacaciones: record.impVacaciones,
+        retJubilacion: record.retJubilacion, retPami: record.retPami, retObraSocial: record.retObraSocial, retSindical: record.retSindical,
+        contribSipa: record.contribSipa, contribObraSocial: record.contribObraSocial, contribFateryh: record.contribFateryh,
+        contribSuterh: record.contribSuterh, contribSeracarh: record.contribSeracarh, fmvdd: record.fmvdd,
+        art: record.art, seguroVida: record.seguroVida,
       };
     }
 
@@ -9558,9 +9569,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const antiguedadAnios = inputs.antiguedadAnios !== '' && inputs.antiguedadAnios != null
         ? num(inputs.antiguedadAnios)
         : calcAntiguedadAniosCct589(emp.fechaIngresoReconocida || emp.fechaIngreso);
-      // La paritaria trae dos pluses de antigüedad distintos (Resoluc. 106/09 + ART. 11) que se
-      // suman acá -- confirmá con tu asesor si tu convenio los aplica de otra forma.
-      const pctAntiguedadTotal = (numEscala(adic.antiguedadPct106_09) + numEscala(adic.antiguedadPct)) / 100;
+      // Art. 11 del CCT 589/10: bonificación por antigüedad = 2% del básico por año de servicio.
+      // Antes esto sumaba también un "antiguedadPct106_09" como si fuera un plus aparte -- no lo
+      // es: la Disposición 106/09 es el acuerdo paritario que en su momento AJUSTÓ este mismo
+      // artículo, no un adicional distinto que se acumule -- sumarlo duplicaba la antigüedad
+      // (3%/año en vez de 2%/año), sobre-liquidando el rubro en un 50%.
+      const pctAntiguedadTotal = numEscala(adic.antiguedadPct) / 100;
       const adicAntiguedad = basico * pctAntiguedadTotal * antiguedadAnios;
       // El % de presentismo NO es un valor fijo del CCT -- se carga mes a mes (puede variar
       // según lo pactado, o perderse directamente si hubo inasistencias injustificadas).
