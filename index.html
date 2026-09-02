@@ -9295,7 +9295,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <div class="subhead" style="font-size:12px;margin-top:14px;">Adicionales que le corresponden por su función — tildá solo lo que corresponda de verdad</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;">
             ${checkboxRow('Título Encargado Integral','tituloIntegral',e,i)}
-            ${checkboxRow('Zona desfavorable','zonaDesfavorable',e,i)}
+            ${checkboxRow('Zona desfavorable (zona fría, Ley 27.637 -- nunca corresponde en CABA)','zonaDesfavorable',e,i)}
             ${checkboxRow('Retiro de residuos','retiroResiduos',e,i)}
             ${checkboxRow('Clasificación de residuos','clasificacionResiduos',e,i)}
             ${checkboxRow('Limpieza de cocheras','limpiezaCocheras',e,i)}
@@ -9784,7 +9784,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <span style="font-size:18px;font-weight:700;color:var(--primary);">${fmt(liq.sueldoNeto)}</span>
           </div>
 
-          <p style="font-size:9.5px;color:var(--muted);padding:8px 14px 0;text-align:justify;line-height:1.3;">Nota: la seguridad social del empleador incluye SIPA, Fondo Nacional de Empleo y Asignaciones Familiares. Recibo generado conforme al art. 140 LCT (reforma de modernización laboral, Decreto 407/2026).</p>
+          <p style="font-size:9.5px;color:var(--muted);padding:8px 14px 0;text-align:justify;line-height:1.3;">Nota: la seguridad social del empleador incluye SIPA, Fondo Nacional de Empleo y Asignaciones Familiares. Recibo generado conforme al art. 140 LCT (según modif. Ley N° 27.802 de Modernización Laboral, Decreto Reglamentario 407/2026).</p>
 
           <div class="dash-grid" style="grid-template-columns:1.6fr 1fr;margin-top:6px;">
             <div>
@@ -9807,15 +9807,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
                 <tr><td style="padding-left:10px;">Empleador</td><td style="text-align:right;">${fmt(liq.seguroVida)}</td></tr>
               </table>
             </div>
-            <div style="max-width:170px;">
+            <div style="max-width:170px;margin:0 auto;">
               <h4 style="text-align:center;font-size:11px;">Costo total empleador</h4>
-              <canvas id="${canvasId}" height="130"></canvas>
+              <canvas id="${canvasId}" height="130" style="display:block;margin:0 auto;"></canvas>
             </div>
           </div>
 
-          <div style="display:flex;justify-content:space-between;padding:14px;font-size:12px;">
+          <div style="display:flex;justify-content:space-between;padding:34px 14px 14px;font-size:12px;">
             <div>____________________________<br>Firma del empleador</div>
-            <div style="text-align:right;">____________________________<br>Firma del empleado — recibí conforme</div>
+            <div style="text-align:right;">____________________________<br>Firma del empleado</div>
           </div>
         </div>
       `;
@@ -9964,7 +9964,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
       // La nota va ARRIBA del bloque de detalle+gráfico, justificada al ancho completo.
       doc.setFontSize(7); doc.setTextColor(150,150,150);
-      const notaLineas = doc.splitTextToSize('Nota: la seguridad social del empleador incluye SIPA, Fondo Nacional de Empleo y Asignaciones Familiares. Recibo generado conforme al art. 140 LCT (reforma de modernización laboral, Decreto 407/2026).', 182);
+      const notaLineas = doc.splitTextToSize('Nota: la seguridad social del empleador incluye SIPA, Fondo Nacional de Empleo y Asignaciones Familiares. Recibo generado conforme al art. 140 LCT (según modif. Ley N° 27.802 de Modernización Laboral, Decreto Reglamentario 407/2026).', 182);
       doc.text(notaLineas, M, y, { align: 'justify', maxWidth: 182 }); y += notaLineas.length*3.3 + 5;
       doc.setTextColor(...COLOR_TEXTO);
 
@@ -9996,10 +9996,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
 
       if(imagenGrafico){
-        // El círculo va chico y a la izquierda de su columna; la leyenda (texto real de jsPDF,
-        // no parte de la imagen) va al lado, siempre legible sin importar el tamaño del círculo.
+        // El círculo va centrado dentro de la segunda columna (que arranca donde termina la
+        // tabla de detalle, ~M+90, y llega hasta el margen derecho, ~M+182) -- antes quedaba
+        // pegado al borde izquierdo de esa columna. La leyenda (texto real de jsPDF, no parte
+        // de la imagen) va al lado, siempre legible sin importar el tamaño del círculo.
         const tamCirculo = 32;
-        const xCirculo = M + 100;
+        const xCirculo = M + 112;
         try{ doc.addImage(imagenGrafico, 'PNG', xCirculo, yDetalle, tamCirculo, tamCirculo); }catch(e){ /* si falla, el PDF sigue sin el gráfico */ }
         const buckets = costoChartBuckets(liq);
         const total = buckets.reduce((s,b)=>s+b.value,0) || 1;
@@ -10018,13 +10020,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       y = Math.max(y, yDetalle+32+5+(costoChartBuckets(liq).length*4.2)+4);
       y += 4;
 
-      if(y>270){ doc.addPage(); y=18; }
+      // Espacio extra ANTES de la línea de firma, para que la firma manuscrita (que va arriba
+      // de la línea) no quede pegada al texto de arriba ni pisada contra "Firma del..." de abajo.
+      y += 14;
+      if(y>260){ doc.addPage(); y=18+14; }
       doc.setFontSize(9);
       doc.text('____________________________', M, y);
       doc.text('____________________________', 120, y);
-      y += 5;
+      y += 6;
       doc.text('Firma del empleador', M, y);
-      doc.text('Firma del empleado — recibí conforme', 120, y);
+      doc.text('Firma del empleado', 120, y);
 
       doc.save(`Recibo_${(emp.nombreCompleto||'empleado').replace(/[^a-zA-Z0-9]/g,'_')}_${(liq.periodo||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
     }
