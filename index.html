@@ -1900,6 +1900,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify(Object.assign({ action:'respaldarLiquidacionSueldo', sessionToken: SESSION_TOKEN }, payload))
       }));
     },
+    async cargarLiquidacionEnGastos(payload){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'cargarLiquidacionEnGastos', sessionToken: SESSION_TOKEN }, payload))
+      }));
+    },
     async actualizarConflictoPropio(key, casoId, accion, extra){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -10174,8 +10181,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               <b>${escapeHtml(r.empleadoNombre)}</b>
               <div class="card-meta">${escapeHtml(r.periodo)} · Neto: ${fmt(r.sueldoNeto)} · Costo total empleador: ${fmt(r.costoTotalEmpleador)}</div>
             </div>
-            <div style="display:flex;gap:8px;align-items:center;">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
               <button class="btn ghost" data-action="resend" data-id="${r.id}" title="Manda de nuevo una copia de esta liquidación a la hoja Personal_CargasSociales de la planilla de este consorcio (por si la primera vez falló, o si corregiste algo).">↻ Reenviar copia a la planilla</button>
+              ${r.cargadoEnGastos
+                ? `<span class="badge resuelto" title="Se cargaron 2 filas: sueldo neto y cargas sociales, con rubro Remuneraciones al Personal y Cargas Sociales">✓ En Gastos_Mensual</span>`
+                : `<button class="btn ghost" data-action="cargar-gastos" data-id="${r.id}" title="Carga el sueldo neto y las cargas sociales en Gastos_Mensual, en el rubro correcto, para que entre al prorrateo del mes. Fecha y comprobante quedan en blanco para completar cuando pagues cada cosa de verdad.">+ Cargar en Gastos_Mensual</button>`}
               <button class="btn ghost" data-action="toggle" data-id="${r.id}">Ver recibo</button>
               <button class="btn ghost" data-action="delete" data-id="${r.id}" style="color:var(--danger,#C0392B);border-color:var(--danger,#C0392B);">Eliminar</button>
             </div>
@@ -10194,6 +10204,26 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           await enviarRespaldo(r, emp, document.getElementById(mountId+'-backup-status'));
           btn.textContent = original;
           btn.disabled = false;
+        });
+      });
+      listEl.querySelectorAll('[data-action="cargar-gastos"]').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const r = liquidaciones.find(x=>x.id===btn.dataset.id);
+          const emp = empleados[r.empleadoIdx] || {};
+          if(!r) return;
+          await withLoading(btn, 'Cargando…', async ()=>{
+            const spreadsheetId = await getSpreadsheetIdActivo();
+            if(!spreadsheetId){ alert('Este consorcio todavía no tiene la planilla vinculada.'); return; }
+            const cargasSociales = num(r.totalContribPatronales) + num(r.totalRetenciones);
+            const res = await window.storage.cargarLiquidacionEnGastos({
+              spreadsheetId, periodo: r.periodo, nombreCompleto: r.empleadoNombre, cuil: emp.cuil||'',
+              sueldoNeto: r.sueldoNeto, cargasSociales,
+            });
+            if(!res.ok){ alert(res.error || 'No se pudo cargar en Gastos_Mensual.'); return; }
+            r.cargadoEnGastos = true;
+            await saveData(storageKey, liquidaciones, statusId);
+            renderList();
+          });
         });
       });
       listEl.querySelectorAll('[data-action="delete"]').forEach(btn=>{
