@@ -9119,6 +9119,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   // Funciones que corresponden a "con vivienda" -- se usan para sumar el adicional de
   // "Valor vivienda" automáticamente, sin necesitar un casillero aparte en el legajo.
   const FUNCIONES_CON_VIVIENDA = ['enc_perm_cv','ayud_perm_cv','asimilado_cv','mayordomo_cv','mas1funcion_cv','guardacoches_cv','enc_noperm_cv'];
+  // Art. 11 CCT 589/10: para media jornada, suplente y jornalizados (incisos d, e, h, n y p del
+  // art. 7, y art. 8) la antigüedad es 1% por año, no el 2% general del resto de las funciones.
+  const FUNCIONES_ANTIGUEDAD_REDUCIDA = ['ayud_temp_media','ayud_media','vigilancia_media','jornalizado','suplente'];
 
   function parseFechaAR(str){
     if(!str) return null;
@@ -9452,7 +9455,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         retJubilacion: record.retJubilacion, retPami: record.retPami, retObraSocial: record.retObraSocial, retSindical: record.retSindical,
         contribSipa: record.contribSipa, contribObraSocial: record.contribObraSocial, contribFateryh: record.contribFateryh,
         contribSuterh: record.contribSuterh, contribSeracarh: record.contribSeracarh, fmvdd: record.fmvdd,
-        art: record.art, seguroVida: record.seguroVida,
+        art: record.art + (record.ffep||0), seguroVida: record.seguroVida, // el FFEP se suma acá para no tener que agregar otra columna a Personal_CargasSociales
       };
     }
 
@@ -9576,12 +9579,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const antiguedadAnios = inputs.antiguedadAnios !== '' && inputs.antiguedadAnios != null
         ? num(inputs.antiguedadAnios)
         : calcAntiguedadAniosCct589(emp.fechaIngresoReconocida || emp.fechaIngreso);
-      // Art. 11 del CCT 589/10: bonificación por antigüedad = 2% del básico por año de servicio.
-      // Antes esto sumaba también un "antiguedadPct106_09" como si fuera un plus aparte -- no lo
-      // es: la Disposición 106/09 es el acuerdo paritario que en su momento AJUSTÓ este mismo
-      // artículo, no un adicional distinto que se acumule -- sumarlo duplicaba la antigüedad
-      // (3%/año en vez de 2%/año), sobre-liquidando el rubro en un 50%.
-      const pctAntiguedadTotal = numEscala(adic.antiguedadPct) / 100;
+      // Art. 11 del CCT 589/10: bonificación por antigüedad = 2% del básico por año de servicio,
+      // salvo para media jornada/suplente/jornalizados, que es 1% (ver FUNCIONES_ANTIGUEDAD_REDUCIDA).
+      const pctAntiguedadTotal = (FUNCIONES_ANTIGUEDAD_REDUCIDA.includes(funcion)
+        ? numEscala(adic.antiguedadPctReducido)
+        : numEscala(adic.antiguedadPct)) / 100;
       const adicAntiguedad = basico * pctAntiguedadTotal * antiguedadAnios;
       // El % de presentismo NO es un valor fijo del CCT -- se carga mes a mes (puede variar
       // según lo pactado, o perderse directamente si hubo inasistencias injustificadas).
@@ -9630,17 +9632,30 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       let sueldoNeto = sueldoBrutoRemun - totalRetenciones - descOtros;
       if(inputs.redondeo) sueldoNeto = Math.round(sueldoNeto);
 
-      const contribSipa = esJubilado ? 0 : sueldoBrutoRemun * (numEscala(ap.contribSipaPct)/100);
+      // Decreto 814/01 (MiPyME/Servicios): el bloque de Seguridad Social patronal (18% total)
+      // se compone de 4 subsistemas distintos -- antes se mostraba todo como "SIPA 18%", lo cual
+      // es engañoso (la jubilación propiamente dicha es solo una parte) y puede generar
+      // inconsistencias contra la DJ F.931. "contribSipa" sigue siendo la SUMA de los 4 (se usa
+      // para el respaldo y el resumen "Total Seguridad Social"); los 4 valores por separado
+      // quedan disponibles para mostrar el desglose real en el recibo.
+      const contribSipaSolo = esJubilado ? 0 : sueldoBrutoRemun * (numEscala(ap.contribSipaPct)/100);
+      const contribInssjpPatr = esJubilado ? 0 : sueldoBrutoRemun * (numEscala(ap.contribInssjpPct)/100);
+      const contribAaf = esJubilado ? 0 : sueldoBrutoRemun * (numEscala(ap.contribAafPct)/100);
+      const contribFne = esJubilado ? 0 : sueldoBrutoRemun * (numEscala(ap.contribFnePct)/100);
+      const contribSipa = contribSipaSolo + contribInssjpPatr + contribAaf + contribFne;
       const contribObraSocial = sueldoBrutoRemun * (numEscala(ap.contribObraSocialPct)/100);
       const contribFateryh = sueldoBrutoRemun * (numEscala(ap.contribFateryhPct)/100);
       const contribSuterh = sueldoBrutoRemun * (numEscala(ap.contribSuterhPct)/100);
       const contribSeracarh = sueldoBrutoRemun * (numEscala(ap.contribSeracarhPct)/100);
       const fmvdd = numEscala(ap.fmvddMonto);
       const art = sueldoBrutoRemun * (numEscala(ap.artPct)/100);
+      // FFEP (Fondo Fiduciario de Enfermedades Profesionales, Decreto 590/1997 art. 5): cuota
+      // FIJA por trabajador que va junto con la ART, además del %. Se actualiza todos los meses.
+      const ffep = numEscala(ap.ffepMonto);
       // "Seguro de vida" puede ajustarse puntual por liquidación (ej. cambio de aseguradora ese
       // mes) -- si no se carga nada, usa el valor de la Escala CCT589 nacional, como siempre.
       const seguroVida = (inputs.seguroVidaOverride && num(inputs.seguroVidaOverride)>0) ? num(inputs.seguroVidaOverride) : numEscala(ap.seguroVidaMonto);
-      const totalContribPatronales = contribSipa+contribObraSocial+contribFateryh+contribSuterh+contribSeracarh+fmvdd+art+seguroVida;
+      const totalContribPatronales = contribSipa+contribObraSocial+contribFateryh+contribSuterh+contribSeracarh+fmvdd+art+ffep+seguroVida;
       const costoTotalEmpleador = sueldoBrutoRemun + totalContribPatronales;
 
       return {
@@ -9651,7 +9666,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         impResiduos, impClasifResiduos, impVivienda, impCocheras, impMovCoches, impCalderas, impJardin, impPiletas, impViaticos, impSumaFija, impAdicionalCct,
         valorHora, imp50, imp100, valorDia, descInasistencias, impVacaciones, impAguinaldo, impOtros,
         sueldoBrutoRemun, retJubilacion, retPami, retObraSocial, retSindical, totalRetenciones, sueldoNeto,
-        contribSipa, contribObraSocial, contribFateryh, contribSuterh, contribSeracarh, fmvdd, art, seguroVida,
+        contribSipa, contribSipaSolo, contribInssjpPatr, contribAaf, contribFne, contribObraSocial, contribFateryh, contribSuterh, contribSeracarh, fmvdd, art, ffep, seguroVida,
         totalContribPatronales, costoTotalEmpleador,
         remunerativo: sueldoBrutoRemun, noRemunerativo: 0,
       };
@@ -9676,7 +9691,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
       const filasContrib = [
         filaConcepto('ART', pct(pctDe(liq.art, base)), base, liq.art),
-        filaConcepto('Contribución Jubilación (SIPA)', pct(pctDe(liq.contribSipa, base)), base, liq.contribSipa),
+        filaConcepto('FFEP (cuota fija ART)', '', null, liq.ffep),
+        filaConcepto('SIPA — jubilación (F.931)', pct(pctDe(liq.contribSipaSolo, base)), base, liq.contribSipaSolo),
+        filaConcepto('INSSJP — PAMI patronal (F.931)', pct(pctDe(liq.contribInssjpPatr, base)), base, liq.contribInssjpPatr),
+        filaConcepto('Asignaciones Familiares — AAFF (F.931)', pct(pctDe(liq.contribAaf, base)), base, liq.contribAaf),
+        filaConcepto('Fondo Nacional de Empleo — FNE (F.931)', pct(pctDe(liq.contribFne, base)), base, liq.contribFne),
         filaConcepto('Contribución OO.SS.', pct(pctDe(liq.contribObraSocial, base)), base, liq.contribObraSocial),
         filaConcepto('Seguro de vida obligatorio', '', null, liq.seguroVida),
         `<tr><td colspan="4" style="padding-top:8px;font-weight:600;color:var(--muted);">Costo derivado del CCT:</td></tr>`,
@@ -9801,12 +9820,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
                 <tr><td style="padding-left:10px;">Empleador</td><td style="text-align:right;">${fmt(liq.contribSuterh)}</td></tr>
                 <tr><td style="padding-left:10px;">Trabajador</td><td style="text-align:right;">${fmt(liq.retSindical)}</td></tr>
                 <tr><td style="padding-top:6px;"><b>Total costo INSSJP</b></td><td></td></tr>
+                <tr><td style="padding-left:10px;">Empleador</td><td style="text-align:right;">${fmt(liq.contribInssjpPatr)}</td></tr>
                 <tr><td style="padding-left:10px;">Trabajador</td><td style="text-align:right;">${fmt(liq.retPami)}</td></tr>
                 <tr><td style="padding-top:6px;"><b>Total Seguridad Social</b></td><td></td></tr>
                 <tr><td style="padding-left:10px;">Empleador</td><td style="text-align:right;">${fmt(liq.contribSipa)}</td></tr>
                 <tr><td style="padding-left:10px;">Trabajador</td><td style="text-align:right;">${fmt(liq.retJubilacion)}</td></tr>
-                <tr><td style="padding-top:6px;"><b>Total costo ART</b></td><td></td></tr>
-                <tr><td style="padding-left:10px;">Empleador</td><td style="text-align:right;">${fmt(liq.art)}</td></tr>
+                <tr><td style="padding-top:6px;"><b>Total costo ART (incl. FFEP)</b></td><td></td></tr>
+                <tr><td style="padding-left:10px;">Empleador</td><td style="text-align:right;">${fmt(liq.art + liq.ffep)}</td></tr>
                 <tr><td style="padding-top:6px;"><b>Total Obra Social</b></td><td></td></tr>
                 <tr><td style="padding-left:10px;">Empleador</td><td style="text-align:right;">${fmt(liq.contribObraSocial)}</td></tr>
                 <tr><td style="padding-left:10px;">Trabajador</td><td style="text-align:right;">${fmt(liq.retObraSocial)}</td></tr>
@@ -9907,7 +9927,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       // ---------- Contribuciones patronales ----------
       const filasContrib = [
         ['ART', pctDe(liq.art, base), fmt(base), fmt(liq.art)],
-        ['Contribución Jubilación (SIPA)', pctDe(liq.contribSipa, base), fmt(base), fmt(liq.contribSipa)],
+        ['FFEP (cuota fija ART)', '', '', fmt(liq.ffep)],
+        ['SIPA — jubilación (F.931)', pctDe(liq.contribSipaSolo, base), fmt(base), fmt(liq.contribSipaSolo)],
+        ['INSSJP — PAMI patronal (F.931)', pctDe(liq.contribInssjpPatr, base), fmt(base), fmt(liq.contribInssjpPatr)],
+        ['Asignaciones Familiares — AAFF (F.931)', pctDe(liq.contribAaf, base), fmt(base), fmt(liq.contribAaf)],
+        ['Fondo Nacional de Empleo — FNE (F.931)', pctDe(liq.contribFne, base), fmt(base), fmt(liq.contribFne)],
         ['Contribución OO.SS.', pctDe(liq.contribObraSocial, base), fmt(base), fmt(liq.contribObraSocial)],
         ['Seguro de vida obligatorio', '', '', fmt(liq.seguroVida)],
         [{content:'Costo derivado del CCT:', colSpan:4, styles:{fontStyle:'bold', fillColor:[250,250,250]}}],
@@ -9986,11 +10010,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         ['Total Costo Sindical', null],
         ['  Empleador', liq.contribSuterh], ['  Trabajador', liq.retSindical],
         ['Total costo INSSJP', null],
-        ['  Trabajador', liq.retPami],
+        ['  Empleador', liq.contribInssjpPatr], ['  Trabajador', liq.retPami],
         ['Total Seguridad Social', null],
         ['  Empleador', liq.contribSipa], ['  Trabajador', liq.retJubilacion],
-        ['Total costo ART', null],
-        ['  Empleador', liq.art],
+        ['Total costo ART (incl. FFEP)', null],
+        ['  Empleador', liq.art + liq.ffep],
         ['Total Obra Social', null],
         ['  Empleador', liq.contribObraSocial], ['  Trabajador', liq.retObraSocial],
         ['Total Costo SCVO', null],
@@ -10056,7 +10080,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         {label:'Costo Sindical', value: liq.contribSuterh + liq.retSindical, color:'#8D5BB8'},
         {label:'Obra Social', value: liq.contribObraSocial + liq.retObraSocial, color:'#6EA37A'},
         {label:'PAMI y otras cargas', value: liq.retPami + liq.contribFateryh + liq.contribSeracarh + liq.fmvdd, color:'#E8952C'},
-        {label:'ART y seguro de vida', value: liq.art + liq.seguroVida, color:'#C9A84C'},
+        {label:'ART y seguro de vida', value: liq.art + liq.ffep + liq.seguroVida, color:'#C9A84C'},
       ].filter(b=>b.value>0);
     }
 
