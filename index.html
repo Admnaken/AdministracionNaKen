@@ -10214,7 +10214,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           await withLoading(btn, 'Cargando…', async ()=>{
             const spreadsheetId = await getSpreadsheetIdActivo();
             if(!spreadsheetId){ alert('Este consorcio todavía no tiene la planilla vinculada.'); return; }
-            const cargasSociales = num(r.totalContribPatronales) + num(r.totalRetenciones);
+            // OJO: totalContribPatronales/totalRetenciones YA son números de JS (no texto con
+            // formato argentino) -- pasarlos por num() les borraba el punto decimal como si
+            // fuera separador de miles, multiplicando el valor por miles (ej: 150000.5 -> 1500005).
+            const cargasSociales = Number(r.totalContribPatronales||0) + Number(r.totalRetenciones||0);
             const res = await window.storage.cargarLiquidacionEnGastos({
               spreadsheetId, periodo: r.periodo, nombreCompleto: r.empleadoNombre, cuil: emp.cuil||'',
               sueldoNeto: r.sueldoNeto, cargasSociales,
