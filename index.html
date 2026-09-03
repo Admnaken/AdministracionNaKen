@@ -1844,11 +1844,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify({ action:'restablecerPasswordUsuario', usuarioId, password, sessionToken: SESSION_TOKEN })
       }));
     },
-    async cerrarMes(spreadsheetId, confirmar){
+    async cerrarMes(spreadsheetId, confirmar, consorcioId){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action:'cerrarMes', spreadsheetId, confirmar: !!confirmar, sessionToken: SESSION_TOKEN })
+        body: JSON.stringify({ action:'cerrarMes', spreadsheetId, confirmar: !!confirmar, consorcioId, sessionToken: SESSION_TOKEN })
       }));
     },
     async registrarPagoVerificado(spreadsheetId, unidad, monto, periodo){
@@ -2358,6 +2358,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const pagosPendientes = pagosInformados.filter(p=>p.estado==='Pendiente de verificar').length;
 
     document.getElementById('resumen-kpi').innerHTML = `
+      <div class="kpi highlight"><div class="label">Total a cobrar por expensas — ${resumen && resumen.periodo ? escapeHtml(formatPeriodo(resumen.periodo)) : 'este período'}</div><div class="value">${resumen && resumen.totales ? fmt(resumen.totales.totalGeneralGastos) : '—'}</div>${resumen && resumen.totales ? `<div style="font-size:11px;color:var(--gray-600);margin-top:4px;">Fondo A: ${fmt(resumen.totales.totalFondoAGeneral)} · Fondo B: ${fmt(resumen.totales.totalFondoBGeneral)}</div>` : ''}</div>
       <div class="kpi highlight"><div class="label">Fondo de reserva</div><div class="value">${fmt(reservaTotal)}</div></div>
       <div class="kpi highlight"><div class="label">Deuda total del consorcio</div><div class="value">${fmt(deudaTotal)}</div></div>
       <div class="kpi"><div class="label">Reclamos abiertos</div><div class="value">${reclamosPendientes}</div></div>
@@ -6668,8 +6669,24 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const msg = document.getElementById(mountId+'-cerrar-mes-msg');
         const btn = document.getElementById(mountId+'-cerrar-mes-btn');
         await withLoading(btn, 'Consultando…', async ()=>{
-          const preview = await window.storage.cerrarMes(spreadsheetId, false);
-          if(!preview.ok){ msg.innerHTML = `<div class="gate-msg error">${escapeHtml(preview.error||'No se pudo consultar.')}</div>`; return; }
+          const preview = await window.storage.cerrarMes(spreadsheetId, false, getActiveConsorcioId());
+          if(!preview.ok){
+            // Si viene con la lista de sueldos sin cargar, se muestra bien clara -- ese es el
+            // caso más común de bloqueo, y conviene guiar directo a la solución.
+            if(preview.sueldosSinCargar && preview.sueldosSinCargar.length>0){
+              msg.innerHTML = `<div class="gate-msg error">
+                <b>⚠ No se puede cerrar el mes todavía.</b><br>
+                Hay ${preview.sueldosSinCargar.length} liquidación(es) de sueldo calculadas pero que no se cargaron en Gastos_Mensual:
+                <ul style="margin:6px 0 0 18px;">
+                  ${preview.sueldosSinCargar.map(s=>`<li>${escapeHtml(s.nombre||'')} — ${escapeHtml(s.periodo||'')} — $ ${Math.round(Number(s.sueldoNeto)||0).toLocaleString('es-AR')}</li>`).join('')}
+                </ul>
+                Andá a "Personal y Liquidación de Sueldos" y tocá "+ Cargar en Gastos_Mensual" en cada una, y después volvé a intentar cerrar el mes.
+              </div>`;
+            } else {
+              msg.innerHTML = `<div class="gate-msg error">${escapeHtml(preview.error||'No se pudo consultar.')}</div>`;
+            }
+            return;
+          }
           msg.innerHTML = `
             <div class="gate-msg pending">
               Se va a archivar <b>${escapeHtml(preview.periodoActual)}</b> como hoja
@@ -6682,7 +6699,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           document.getElementById(mountId+'-cerrar-mes-confirmar').addEventListener('click', async ()=>{
             const btnConfirmar = document.getElementById(mountId+'-cerrar-mes-confirmar');
             await withLoading(btnConfirmar, 'Cerrando el mes…', async ()=>{
-              const res = await window.storage.cerrarMes(spreadsheetId, true);
+              const res = await window.storage.cerrarMes(spreadsheetId, true, getActiveConsorcioId());
               if(!res.ok){ msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error||'No se pudo cerrar el mes.')}</div>`; return; }
               const fa = res.facturasArchivadas;
               let lineaFacturas = '';
