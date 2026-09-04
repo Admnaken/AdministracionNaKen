@@ -2398,7 +2398,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               <tr data-uf="${escapeHtml(u.uf)}" data-piso="${escapeHtml(u.pisoDpto||'')}">
                 <td>${escapeHtml(u.pisoDpto || u.uf)}</td>
                 <td>${escapeHtml(u.propietario||'—')}</td>
-                <td class="num"><input type="text" value="$ ${Number(u.deuda).toLocaleString('es-AR')}" disabled></td>
+                <td class="num"><input type="text" value="$ ${Number(u.deuda).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}" disabled></td>
                 <td>
                   <select data-field="estado">
                     ${['Al día','Intimado','En gestión','Judicializado'].map(op=>`<option ${e.estado===op?'selected':''}>${op}</option>`).join('')}
@@ -5702,7 +5702,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
                   if(spreadsheetId && p.unidad && !isNaN(monto) && monto>0){
                     const resDeuda = await window.storage.registrarPagoVerificado(spreadsheetId, p.unidad, monto, p.periodo);
                     if(resDeuda && resDeuda.ok && resDeuda.aplicadoAutomaticamente){
-                      p.notaAdmin = `Deuda actualizada sola: nuevo saldo pagado $${resDeuda.pagoRecibidoAcumulado.toLocaleString('es-AR')}.`;
+                      p.notaAdmin = `Deuda actualizada sola: nuevo saldo pagado $${resDeuda.pagoRecibidoAcumulado.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}.`;
                     } else if(resDeuda && resDeuda.aviso){
                       p.notaAdmin = resDeuda.aviso;
                     } else if(resDeuda && !resDeuda.ok){
@@ -5722,7 +5722,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     function fmtMonto(v){
       const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.'));
-      return isNaN(n) ? '—' : '$ ' + n.toLocaleString('es-AR');
+      // Formato estándar argentino: siempre 2 decimales, ni menos ni más -- sin especificar esto,
+      // toLocaleString('es-AR') usa el default del navegador, que puede mostrar hasta 3.
+      return isNaN(n) ? '—' : '$ ' + n.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
     }
 
     if(role==='propietario' && currentUser){
@@ -9201,7 +9203,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <table class="ledger">
             <thead><tr><th>Función</th><th style="width:180px;">Básico (${categoria}ª cat.)</th></tr></thead>
             <tbody>
-              ${filas.map(f=>`<tr><td>${escapeHtml(f.label)}</td><td class="num">$ ${f.basico.toLocaleString('es-AR')}</td></tr>`).join('')}
+              ${filas.map(f=>`<tr><td>${escapeHtml(f.label)}</td><td class="num">$ ${f.basico.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`).join('')}
             </tbody>
           </table>
           `}
