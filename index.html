@@ -1851,11 +1851,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify({ action:'cerrarMes', spreadsheetId, confirmar: !!confirmar, consorcioId, sessionToken: SESSION_TOKEN })
       }));
     },
-    async registrarPagoVerificado(spreadsheetId, unidad, monto, periodo){
+    async registrarPagoVerificado(spreadsheetId, unidad, monto, periodo, idPago, consorcioId){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action:'registrarPagoVerificado', spreadsheetId, unidad, monto, periodo, sessionToken: SESSION_TOKEN })
+        body: JSON.stringify({ action:'registrarPagoVerificado', spreadsheetId, unidad, monto, periodo, idPago, consorcioId, sessionToken: SESSION_TOKEN })
       }));
     },
     async sembrarDeudaInicial(spreadsheetId, periodoAnterior, deudas){
@@ -5674,10 +5674,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             const actual = sel.dataset.estadoActual;
             if(nuevo===actual){ wrap.innerHTML=''; return; }
             const necesitaNota = nuevo==='Observado';
+            const necesitaMonto = nuevo==='Verificado';
+            const pagoActual = visibles.find(x=>x.id===sel.dataset.id);
+            const montoDeclarado = pagoActual ? pagoActual.monto : '';
             wrap.innerHTML = `
               <div style="margin-top:8px;padding:10px 12px;background:var(--paper,#faf8f3);border-left:3px solid var(--gold);border-radius:4px;">
                 <p style="margin:0 0 8px;font-size:12.5px;">Vas a marcar este pago como <b>${escapeHtml(nuevo)}</b>. Esto queda visible para el propietario.</p>
                 ${necesitaNota ? `<textarea class="cp-nota" rows="2" placeholder="Contale al propietario qué está mal (ej: el monto no coincide, falta un mes)" style="width:100%;box-sizing:border-box;border:1px solid var(--line,#ccc);border-radius:5px;padding:7px 9px;font-family:'Inter',sans-serif;font-size:13px;margin-bottom:8px;"></textarea>` : ''}
+                ${necesitaMonto ? `
+                  <label style="display:block;font-size:11px;color:var(--gray-600);margin-bottom:3px;">Monto que realmente muestra el comprobante (declaró $${escapeHtml(String(montoDeclarado))} — corregilo acá si no coincide, antes de verificar)</label>
+                  <input type="text" class="cp-monto-verificado" value="${escapeHtml(String(montoDeclarado))}" style="width:100%;box-sizing:border-box;border:1px solid var(--line,#ccc);border-radius:5px;padding:7px 9px;font-family:'Inter',sans-serif;font-size:13px;margin-bottom:8px;">
+                ` : ''}
                 <div class="toolbar" style="margin:0;">
                   <button class="btn ghost cp-cancelar" style="font-size:11px;">Cancelar</button>
                   <button class="btn primary cp-confirmar" style="font-size:11px;">Confirmar ${nuevo.toLowerCase()}</button>
@@ -5690,30 +5697,55 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             });
             wrap.querySelector('.cp-confirmar').addEventListener('click', async (e)=>{
               const btn = e.target;
-              const pagos2 = await loadData('naken-pagos-informados', []);
-              const p = pagos2.find(x=>x.id===sel.dataset.id);
-              if(p){
-                p.estado = nuevo;
-                if(necesitaNota) p.notaAdmin = wrap.querySelector('.cp-nota').value.trim();
-                if(nuevo==='Verificado'){
-                  p.notaAdmin = '';
-                  const spreadsheetId = await getSpreadsheetIdActivo();
-                  const monto = parseFloat((p.monto||'0').toString().replace(/\./g,'').replace(',','.'));
-                  if(spreadsheetId && p.unidad && !isNaN(monto) && monto>0){
-                    const resDeuda = await window.storage.registrarPagoVerificado(spreadsheetId, p.unidad, monto, p.periodo);
-                    if(resDeuda && resDeuda.ok && resDeuda.aplicadoAutomaticamente){
-                      p.notaAdmin = `Deuda actualizada sola: nuevo saldo pagado $${resDeuda.pagoRecibidoAcumulado.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}.`;
-                    } else if(resDeuda && resDeuda.aviso){
-                      p.notaAdmin = resDeuda.aviso;
-                    } else if(resDeuda && !resDeuda.ok){
-                      p.notaAdmin = 'No se pudo actualizar la deuda automáticamente: ' + (resDeuda.error||'') + ' — revisalo a mano.';
+              if(btn.disabled) return; // evita que un doble clic (ej. esperando que cargue) sume el mismo pago dos veces
+              const textoOriginalBtn = btn.textContent;
+              btn.disabled = true;
+              btn.textContent = 'Confirmando…'; // feedback inmediato y visible -- antes solo quedaba gris, sin texto claro, y parecía que "no hacía nada"
+              wrap.querySelector('.cp-cancelar').disabled = true;
+              try{
+                const pagos2 = await loadData('naken-pagos-informados', []);
+                const p = pagos2.find(x=>x.id===sel.dataset.id);
+                if(p){
+                  p.estado = nuevo;
+                  if(necesitaNota) p.notaAdmin = wrap.querySelector('.cp-nota').value.trim();
+                  if(nuevo==='Verificado'){
+                    p.notaAdmin = '';
+                    const spreadsheetId = await getSpreadsheetIdActivo();
+                    // El admin puede haber corregido el monto acá si el comprobante no coincide
+                    // con lo que declaró el propietario -- si lo cambió, se deja constancia de
+                    // los dos valores (lo declarado y lo verificado), y se usa el verificado para
+                    // actualizar la deuda real.
+                    const montoInput = wrap.querySelector('.cp-monto-verificado');
+                    const montoDeclaradoOriginal = p.monto;
+                    const monto = parseFloat(((montoInput ? montoInput.value : p.monto)||'0').toString().replace(/\./g,'').replace(',','.'));
+                    if(spreadsheetId && p.unidad && !isNaN(monto) && monto>0){
+                      const resDeuda = await window.storage.registrarPagoVerificado(spreadsheetId, p.unidad, monto, p.periodo, p.id, getActiveConsorcioId());
+                      let notaCorreccion = '';
+                      const montoDeclaradoNum = parseFloat((montoDeclaradoOriginal||'0').toString().replace(/\./g,'').replace(',','.'));
+                      if(Math.abs(monto - montoDeclaradoNum) > 0.01){
+                        p.montoDeclaradoOriginal = montoDeclaradoOriginal;
+                        p.monto = monto;
+                        notaCorreccion = `Monto corregido por la administración: el propietario declaró $${montoDeclaradoNum.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}, el comprobante mostraba $${monto.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}. `;
+                      }
+                      if(resDeuda && resDeuda.ok && resDeuda.aplicadoAutomaticamente){
+                        p.notaAdmin = notaCorreccion + `Deuda actualizada sola: nuevo saldo pagado $${resDeuda.pagoRecibidoAcumulado.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}.`;
+                      } else if(resDeuda && resDeuda.aviso){
+                        p.notaAdmin = notaCorreccion + resDeuda.aviso;
+                      } else if(resDeuda && !resDeuda.ok){
+                        p.notaAdmin = notaCorreccion + 'No se pudo actualizar la deuda automáticamente: ' + (resDeuda.error||'') + ' — revisalo a mano.';
+                      }
                     }
                   }
                 }
+                await saveData('naken-pagos-informados', pagos2, statusId);
+                flashButtonSuccess(btn, '✓ Listo');
+                setTimeout(()=>renderLista(), 900);
+              }catch(err){
+                alert('No se pudo confirmar: ' + (err.message||err) + '. Volvé a intentar.');
+                btn.disabled = false;
+                btn.textContent = textoOriginalBtn;
+                wrap.querySelector('.cp-cancelar').disabled = false;
               }
-              await saveData('naken-pagos-informados', pagos2, statusId);
-              flashButtonSuccess(btn, '✓ Listo');
-              setTimeout(()=>renderLista(), 900);
             });
           });
         });
