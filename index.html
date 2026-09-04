@@ -1858,6 +1858,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify({ action:'registrarPagoVerificado', spreadsheetId, unidad, monto, periodo, idPago, consorcioId, sessionToken: SESSION_TOKEN })
       }));
     },
+    async perdonarInteresUnidad(spreadsheetId, unidad){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'perdonarInteresUnidad', spreadsheetId, unidad, sessionToken: SESSION_TOKEN })
+      }));
+    },
     async sembrarDeudaInicial(spreadsheetId, periodoAnterior, deudas){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -5590,16 +5597,57 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return 'pendiente';
     }
 
+    // Estado del filtro/paginación de la lista -- persiste entre renders (no se resetea al
+    // guardar un pago), para que no se pierda dónde estaba parado el que la está mirando.
+    let anioFiltroPagos = 'todos';
+    const PAGOS_POR_TANDA = 12;
+    let cantidadMostradaPagos = PAGOS_POR_TANDA;
+
     async function renderLista(){
-      const visibles = role==='admin' ? await loadData('naken-pagos-informados', []) : await loadPropios('naken-pagos-informados', 'pagos', []);
+      const todos = role==='admin' ? await loadData('naken-pagos-informados', []) : await loadPropios('naken-pagos-informados', 'pagos', []);
       const listEl = document.getElementById(listMountId+'-lista');
+      const filtrosEl = document.getElementById(listMountId+'-filtros');
       if(!listEl) return;
-      if(visibles.length===0){
+      if(todos.length===0){
+        if(filtrosEl) filtrosEl.innerHTML = '';
         listEl.innerHTML = `<div class="empty">${role==='admin' ? 'Todavía no hay pagos informados.' : 'Todavía no informaste ningún pago.'}</div>`;
         return;
       }
+
+      // Filtro por año -- sin esto, con el tiempo la lista crece sin límite mezclando todos los
+      // meses históricos juntos.
+      const anioDe = (p)=>{ const m = String(p.fecha||'').match(/(\d{4})$/); return m ? m[1] : ''; };
+      const anios = Array.from(new Set(todos.map(anioDe).filter(Boolean))).sort().reverse();
+      if(filtrosEl && anios.length>1){
+        filtrosEl.innerHTML = `
+          <div style="margin-bottom:10px;">
+            <select id="${listMountId}-anio-select" style="padding:6px 10px;border-radius:8px;border:1px solid var(--line,#ccc);font-size:12.5px;">
+              <option value="todos" ${anioFiltroPagos==='todos'?'selected':''}>Todos los años</option>
+              ${anios.map(a=>`<option value="${a}" ${anioFiltroPagos===a?'selected':''}>${a}</option>`).join('')}
+            </select>
+          </div>
+        `;
+        document.getElementById(listMountId+'-anio-select').addEventListener('change', (e)=>{
+          anioFiltroPagos = e.target.value;
+          cantidadMostradaPagos = PAGOS_POR_TANDA; // vuelve a la primera tanda al cambiar de año
+          renderLista();
+        });
+      } else if(filtrosEl){
+        filtrosEl.innerHTML = '';
+      }
+
+      const visibles = anioFiltroPagos==='todos' ? todos : todos.filter(p=>anioDe(p)===anioFiltroPagos);
+      if(visibles.length===0){
+        listEl.innerHTML = `<div class="empty">No hay pagos informados en ${anioFiltroPagos}.</div>`;
+        return;
+      }
+
+      const ordenados = visibles.slice().reverse(); // más reciente primero
+      const aMostrar = ordenados.slice(0, cantidadMostradaPagos);
+      const quedanMas = ordenados.length > aMostrar.length;
+
       listEl.innerHTML = '';
-      visibles.slice().reverse().forEach(p=>{
+      aMostrar.forEach(p=>{
         const card = document.createElement('div');
         card.className = 'card';
         card.innerHTML = `
@@ -5611,6 +5659,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <span class="badge ${badgeClass(p.estado)}">${escapeHtml(p.estado)}</span>
           </div>
           ${p.comprobante ? `<a href="${escapeHtml(p.comprobante)}" target="_blank" rel="noopener" class="btn ghost" style="display:inline-block;margin-top:6px;text-decoration:none;font-size:11px;padding:6px 10px;">Ver comprobante ↗</a>` : `<div class="empty" style="padding:6px 0 0;">Sin comprobante adjunto</div>`}
+          ${p.observaciones ? `<div class="card-meta" style="margin-top:6px;font-style:italic;">"${escapeHtml(p.observaciones)}"</div>` : ''}
           ${role==='admin' ? `
             <span class="card-field-label">Estado</span>
             <select class="cp-field" data-id="${p.id}" data-estado-actual="${escapeHtml(p.estado)}">
@@ -5618,6 +5667,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             </select>
             <div class="cp-confirm-wrap" data-id="${p.id}"></div>
             ${p.notaAdmin ? `<div class="card-meta" style="margin-top:6px;">${escapeHtml(p.notaAdmin)}</div>` : ''}
+            ${p.estado==='Verificado' ? `<button class="btn ghost cp-perdonar-interes" data-unidad="${escapeHtml(p.unidad)}" style="font-size:11px;margin-top:8px;" title="Para cuando constatás que esta unidad pagó a tiempo aunque no lo informó a tiempo por la app -- pone en $0 los Intereses Punitorios de esta unidad en Prorrateo_Mensual.">Marcar como pagado a tiempo, sin interés</button>` : ''}
           ` : `
             ${p.notaAdmin ? `<div class="card-meta" style="margin-top:6px;">Nota de la administración: ${escapeHtml(p.notaAdmin)}</div>` : ''}
             ${p.estado==='Pendiente de verificar' ? `
@@ -5632,6 +5682,18 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         `;
         listEl.appendChild(card);
       });
+
+      if(quedanMas){
+        const btnMas = document.createElement('button');
+        btnMas.className = 'btn ghost';
+        btnMas.style.cssText = 'display:block;margin:10px auto 0;font-size:12px;';
+        btnMas.textContent = `Ver más (quedan ${ordenados.length - aMostrar.length})`;
+        btnMas.addEventListener('click', ()=>{
+          cantidadMostradaPagos += PAGOS_POR_TANDA;
+          renderLista();
+        });
+        listEl.appendChild(btnMas);
+      }
 
       if(role==='propietario'){
         listEl.querySelectorAll('[data-action="cp-eliminar"]').forEach(btn=>{
@@ -5667,6 +5729,23 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         });
       }
       if(role==='admin'){
+        listEl.querySelectorAll('.cp-perdonar-interes').forEach(btn=>{
+          btn.addEventListener('click', async ()=>{
+            if(!confirm(`¿Poner en $0 los Intereses Punitorios de la unidad ${btn.dataset.unidad}? Usalo solo si confirmaste que pagó a tiempo, aunque no lo haya informado a tiempo por la app.`)) return;
+            btn.disabled = true;
+            btn.textContent = 'Aplicando…';
+            try{
+              const spreadsheetId = await getSpreadsheetIdActivo();
+              const res = await window.storage.perdonarInteresUnidad(spreadsheetId, btn.dataset.unidad);
+              if(!res.ok){ alert(res.error || 'No se pudo actualizar.'); btn.disabled = false; btn.textContent = 'Marcar como pagado a tiempo, sin interés'; return; }
+              flashButtonSuccess(btn, '✓ Interés en $0');
+            }catch(err){
+              alert('No se pudo actualizar: ' + (err.message||err));
+              btn.disabled = false;
+              btn.textContent = 'Marcar como pagado a tiempo, sin interés';
+            }
+          });
+        });
         listEl.querySelectorAll('.cp-field').forEach(sel=>{
           sel.addEventListener('change', ()=>{
             const wrap = listEl.querySelector(`.cp-confirm-wrap[data-id="${sel.dataset.id}"]`);
@@ -5771,6 +5850,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               <input type="text" id="cp-periodo-manual" placeholder="Ej: deuda de la gestión anterior" style="display:none;margin-top:6px;">
             </div>
           </div>
+          <label>Observaciones (opcional)</label>
+          <textarea id="cp-observaciones" rows="2" placeholder="Ej: este pago cubre septiembre y parte de agosto, o cualquier otra aclaración que nos ayude a entender el pago" style="width:100%;box-sizing:border-box;border:1px solid var(--line,#ccc);border-radius:5px;padding:8px 10px;font-family:'Inter',sans-serif;font-size:13px;margin-bottom:10px;"></textarea>
           <label>Comprobante (foto o PDF)</label>
           <input type="file" id="cp-file" accept="image/*,application/pdf" style="width:100%;border:1px solid var(--line);border-radius:5px;padding:8px 10px;font-size:13px;background:#fff;">
           <div id="cp-file-status" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin-top:5px;"></div>
@@ -5783,6 +5864,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       `;
       listWrap.innerHTML = `
         <div class="subhead">Tus pagos informados</div>
+        <div id="${listMountId}-filtros"></div>
         <div class="cards" id="${listMountId}-lista"></div>
       `;
 
@@ -5794,19 +5876,29 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       (async ()=>{
         const periodoSelect = document.getElementById('cp-periodo-select');
         const periodoManual = document.getElementById('cp-periodo-manual');
-        const [resumen, pagosPrevios] = await Promise.all([
+        const spreadsheetIdPropio = currentUser.consorcioSpreadsheetId || await getSpreadsheetIdDelConsorcio(currentUser.consorcio);
+        const [resumen, pagosPrevios, liqPropia] = await Promise.all([
           currentUser.consorcioSpreadsheetId ? fetchResumenConsorcio(currentUser.consorcioSpreadsheetId) : Promise.resolve(null),
-          loadPropios('naken-pagos-informados', 'pagos', [])
+          loadPropios('naken-pagos-informados', 'pagos', []),
+          spreadsheetIdPropio ? fetchLiquidacion(spreadsheetIdPropio, currentUser.unidad) : Promise.resolve(null)
         ]);
         const yaVerificados = new Set(
           pagosPrevios.filter(p=>p.estado==='Verificado').map(p=>p.periodo)
         );
         const periodos = (resumen && resumen.periodosDisponibles) ? resumen.periodosDisponibles.filter(p=>!yaVerificados.has(formatPeriodo(p)) && !yaVerificados.has(p)) : [];
+        const totalPrimerVto = (liqPropia && liqPropia.unidad) ? Number(liqPropia.unidad.totalPrimerVto)||0 : 0;
         periodoSelect.innerHTML =
           (periodos.length ? periodos.map(p=>`<option value="${escapeHtml(formatPeriodo(p))}">${escapeHtml(formatPeriodo(p))}</option>`).join('') : `<option value="">No hay meses pendientes</option>`) +
+          (totalPrimerVto>0 ? `<option value="__total__">Cubre toda mi deuda (pago total o casi total)</option>` : '') +
           `<option value="__otro__">Otro / deuda de gestión anterior</option>`;
         periodoSelect.addEventListener('change', ()=>{
           periodoManual.style.display = periodoSelect.value==='__otro__' ? '' : 'none';
+          // Si elige "cubre toda mi deuda" y todavía no tipeó nada, le sugerimos el monto exacto
+          // que figura en "Tu monto a pagar" -- lo puede ajustar si el comprobante es distinto.
+          const montoInput = document.getElementById('cp-monto');
+          if(periodoSelect.value==='__total__' && !montoInput.value && totalPrimerVto>0){
+            montoInput.value = '$ ' + totalPrimerVto.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+          }
         });
       })();
 
@@ -5836,11 +5928,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       document.getElementById('cp-submit').addEventListener('click', async ()=>{
         const monto = parseMoneyMasked(document.getElementById('cp-monto').value);
         const periodoSelect = document.getElementById('cp-periodo-select');
-        const periodo = periodoSelect.value==='__otro__' ? document.getElementById('cp-periodo-manual').value.trim() : periodoSelect.value;
+        const periodo = periodoSelect.value==='__otro__' ? document.getElementById('cp-periodo-manual').value.trim()
+          : periodoSelect.value==='__total__' ? 'Pago total (cubre toda la deuda pendiente)'
+          : periodoSelect.value;
+        const observaciones = document.getElementById('cp-observaciones').value.trim();
         const comprobante = document.getElementById('cp-comprobante-link').value;
         if(!monto){ setStatus(statusId,'error'); return; }
         setStatus(statusId,'saving');
-        const res = await window.storage.informarPagoPropio(nsKey('naken-pagos-informados'), { monto, periodo, comprobante });
+        const res = await window.storage.informarPagoPropio(nsKey('naken-pagos-informados'), { monto, periodo, comprobante, observaciones });
         if(!res.ok){
           setStatus(statusId,'error');
           alert(res.error || 'No se pudo informar el pago.');
@@ -5850,6 +5945,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         document.getElementById('cp-monto').value = '';
         document.getElementById('cp-periodo-manual').value = '';
         document.getElementById('cp-periodo-manual').style.display = 'none';
+        document.getElementById('cp-observaciones').value = '';
         document.getElementById('cp-comprobante-link').value = '';
         document.getElementById('cp-file').value = '';
         document.getElementById('cp-file-status').textContent = '';
@@ -5860,6 +5956,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       document.getElementById(formMountId).innerHTML = '';
       listWrap.innerHTML = `
         <div class="subhead">Pagos informados por propietarios</div>
+        <div id="${listMountId}-filtros"></div>
         <div class="cards" id="${listMountId}-lista"></div>
       `;
     }
