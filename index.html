@@ -1438,6 +1438,7 @@
         <div id="resumen-contact-mount"></div>
         <div id="mi-liquidacion-mount"></div>
         <div id="resumen-kpi" class="kpi-row"></div>
+        <div id="resumen-aviso-coeficientes"></div>
         <div id="resumen-comparativa-mount"></div>
         <div class="dash-grid">
           <div class="dash-card">
@@ -2372,6 +2373,22 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       ${role==='admin' ? `<div class="kpi ${pagosPendientes>0?'highlight':''}"><div class="label">Pagos por verificar</div><div class="value">${pagosPendientes}</div></div>` : ''}
       <div class="kpi"><div class="label">Última expensa publicada</div><div class="value" style="font-size:16px;">${resumen && resumen.periodo ? escapeHtml(formatPeriodo(resumen.periodo)) : 'Sin datos'}</div></div>
     `;
+
+    // Aviso proactivo: si los coeficientes de copropiedad de las unidades no suman 100%, el
+    // consorcio recauda de más o de menos sin que nadie lo note en el día a día -- solo lo ve el
+    // admin, que es quien puede corregirlo en la hoja Propietarios.
+    const avisoCoefEl = document.getElementById('resumen-aviso-coeficientes');
+    if(avisoCoefEl){
+      if(role==='admin' && resumen && resumen.coeficientesOk===false){
+        const pct = (n)=>(Number(n)*100).toFixed(2)+'%';
+        avisoCoefEl.innerHTML = `<div class="gate-msg error" style="margin-bottom:14px;">
+          ⚠ Los coeficientes de copropiedad de las unidades no suman 100%: Fondo A da ${pct(resumen.sumaPctFondoA)}, Fondo B da ${pct(resumen.sumaPctFondoB)}.
+          El consorcio está recaudando de más o de menos sin que se note en el día a día. Revisá la hoja "Propietarios" (columnas % Fondo A / % Fondo B) — hay una celda de control al pie de la tabla que se pone en rojo mientras esto no esté corregido.
+        </div>`;
+      } else {
+        avisoCoefEl.innerHTML = '';
+      }
+    }
 
     // Unidades con deuda + estado de gestión (Intimado / En gestión / Judicializado) -- solo para
     // el admin. El monto sale de "resumen.unidades" (ya cargado arriba, misma fuente que "Tu
@@ -6825,12 +6842,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             }
             return;
           }
+          const lineaInteres = (preview.unidadesConInteresNuevo > 0)
+            ? `<br>📈 Se va a aplicar el interés por mora (${(preview.tasaInteresMensual*100).toFixed(2)}% mensual) sobre la deuda impaga de ${preview.unidadesConInteresNuevo} unidad(es), por un total de $ ${Math.round(Number(preview.interesPorMoraAAplicar)||0).toLocaleString('es-AR')}.`
+            : '';
           msg.innerHTML = `
             <div class="gate-msg pending">
               Se va a archivar <b>${escapeHtml(preview.periodoActual)}</b> como hoja
               <code>${escapeHtml(preview.hojaAArchivar)}</code>, y el período activo pasa a
               <b>${escapeHtml(preview.proximoPeriodo)}</b>. Los pagos, intereses y cargos particulares
-              del mes que cierra quedan en cero. Esto no se puede deshacer solo — ¿confirmás?
+              del mes que cierra quedan en cero.${lineaInteres} Esto no se puede deshacer solo — ¿confirmás?
               <div class="toolbar" style="margin-top:10px;"><span></span><button class="btn primary" id="${mountId}-cerrar-mes-confirmar">Sí, cerrar el mes</button></div>
             </div>
           `;
