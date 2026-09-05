@@ -5807,7 +5807,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
                         notaCorreccion = `Monto corregido por la administración: el propietario declaró $${montoDeclaradoNum.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}, el comprobante mostraba $${monto.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}. `;
                       }
                       if(resDeuda && resDeuda.ok && resDeuda.aplicadoAutomaticamente){
-                        p.notaAdmin = notaCorreccion + `Deuda actualizada sola: nuevo saldo pagado $${resDeuda.pagoRecibidoAcumulado.toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2})}.`;
+                        // Imputación de pagos (Art. 903 CCyC): si había interés acumulado, el pago
+                        // se aplica primero ahí, y recién el remanente reduce el capital -- se
+                        // deja constancia del desglose, no solo del saldo final.
+                        const fmt2 = (n)=>Number(n).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+                        const desgloseInteres = (resDeuda.interesPagado>0)
+                          ? ` (de los cuales $${fmt2(resDeuda.interesPagado)} se imputaron a intereses pendientes y $${fmt2(resDeuda.capitalPagado)} a capital)`
+                          : '';
+                        p.notaAdmin = notaCorreccion + `Deuda actualizada sola: nuevo saldo pagado $${fmt2(resDeuda.pagoRecibidoAcumulado)}${desgloseInteres}.`;
                       } else if(resDeuda && resDeuda.aviso){
                         p.notaAdmin = notaCorreccion + resDeuda.aviso;
                       } else if(resDeuda && !resDeuda.ok){
