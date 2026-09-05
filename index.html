@@ -5930,6 +5930,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const file = e.target.files[0];
         const st = document.getElementById('cp-file-status');
         if(!file) return;
+        // El atributo accept="..." del input es solo una sugerencia del navegador -- el usuario
+        // puede elegir "Todos los archivos" y subir cualquier cosa igual, así que la validación
+        // real de tipo tiene que hacerse acá (y también en el servidor, ver handleUploadFile_).
+        const TIPOS_PERMITIDOS = ['image/jpeg','image/png','image/webp','image/heic','image/heif','application/pdf'];
+        if(!TIPOS_PERMITIDOS.includes(file.type)){
+          st.textContent = `Tipo de archivo no permitido (${file.type||'desconocido'}). Solo foto (JPG/PNG/WEBP) o PDF.`;
+          st.style.color = 'var(--danger)';
+          e.target.value = '';
+          return;
+        }
         const sizeMB = (file.size/1024/1024).toFixed(1);
         if(file.size > 20*1024*1024){
           st.textContent = `Este archivo pesa ${sizeMB} MB, es demasiado grande para subir directo.`;
@@ -5949,7 +5959,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         }
       });
 
-      document.getElementById('cp-submit').addEventListener('click', async ()=>{
+      document.getElementById('cp-submit').addEventListener('click', async (e)=>{
+        const btn = e.currentTarget;
+        if(btn.disabled) return; // evita crear el mismo aviso de pago dos veces con un doble clic
         const monto = parseMoneyMasked(document.getElementById('cp-monto').value);
         const periodoSelect = document.getElementById('cp-periodo-select');
         const periodo = periodoSelect.value==='__otro__' ? document.getElementById('cp-periodo-manual').value.trim()
@@ -5958,23 +5970,33 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const observaciones = document.getElementById('cp-observaciones').value.trim();
         const comprobante = document.getElementById('cp-comprobante-link').value;
         if(!monto){ setStatus(statusId,'error'); return; }
-        setStatus(statusId,'saving');
-        const res = await window.storage.informarPagoPropio(nsKey('naken-pagos-informados'), { monto, periodo, comprobante, observaciones });
-        if(!res.ok){
-          setStatus(statusId,'error');
-          alert(res.error || 'No se pudo informar el pago.');
-          return;
+        btn.disabled = true;
+        const textoOriginal = btn.textContent;
+        btn.textContent = 'Enviando…';
+        try{
+          setStatus(statusId,'saving');
+          const res = await window.storage.informarPagoPropio(nsKey('naken-pagos-informados'), { monto, periodo, comprobante, observaciones });
+          if(!res.ok){
+            setStatus(statusId,'error');
+            alert(res.error || 'No se pudo informar el pago.');
+            btn.disabled = false;
+            btn.textContent = textoOriginal;
+            return;
+          }
+          setStatus(statusId,'saved');
+          document.getElementById('cp-monto').value = '';
+          document.getElementById('cp-periodo-manual').value = '';
+          document.getElementById('cp-periodo-manual').style.display = 'none';
+          document.getElementById('cp-observaciones').value = '';
+          document.getElementById('cp-comprobante-link').value = '';
+          document.getElementById('cp-file').value = '';
+          document.getElementById('cp-file-status').textContent = '';
+          flashButtonSuccess(btn, '✓ Enviado');
+          renderLista();
+        } finally {
+          btn.disabled = false;
+          if(btn.textContent === 'Enviando…') btn.textContent = textoOriginal;
         }
-        setStatus(statusId,'saved');
-        document.getElementById('cp-monto').value = '';
-        document.getElementById('cp-periodo-manual').value = '';
-        document.getElementById('cp-periodo-manual').style.display = 'none';
-        document.getElementById('cp-observaciones').value = '';
-        document.getElementById('cp-comprobante-link').value = '';
-        document.getElementById('cp-file').value = '';
-        document.getElementById('cp-file-status').textContent = '';
-        flashButtonSuccess(document.getElementById('cp-submit'), '✓ Enviado');
-        renderLista();
       });
     } else {
       document.getElementById(formMountId).innerHTML = '';
