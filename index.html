@@ -6890,9 +6890,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               <b>${escapeHtml(preview.proximoPeriodo)}</b>. Los pagos, intereses y cargos particulares
               del mes que cierra quedan en cero.${lineaInteres} Esto no se puede deshacer solo — ¿confirmás?
               ${lineaAnomalias}
-              <div class="toolbar" style="margin-top:10px;"><span></span><button class="btn primary" id="${mountId}-cerrar-mes-confirmar" ${anomalias.length>0?'disabled':''}>Sí, cerrar el mes</button></div>
+              <div class="toolbar" style="margin-top:10px;">
+                <button class="btn ghost" id="${mountId}-cerrar-mes-cancelar">Todavía no, quiero revisar</button>
+                <button class="btn primary" id="${mountId}-cerrar-mes-confirmar" ${anomalias.length>0?'disabled':''}>Sí, cerrar el mes</button>
+              </div>
             </div>
           `;
+          document.getElementById(mountId+'-cerrar-mes-cancelar').addEventListener('click', ()=>{
+            renderCerrarMes(); // vuelve al estado inicial, sin ejecutar nada
+          });
           if(anomalias.length>0){
             document.getElementById(mountId+'-anomalias-ack').addEventListener('change', (e)=>{
               document.getElementById(mountId+'-cerrar-mes-confirmar').disabled = !e.target.checked;
