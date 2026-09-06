@@ -6867,15 +6867,37 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           const lineaInteres = (preview.unidadesConInteresNuevo > 0)
             ? `<br>📈 Se va a aplicar el interés por mora (${(preview.tasaInteresMensual*100).toFixed(2)}% mensual) sobre la deuda impaga de ${preview.unidadesConInteresNuevo} unidad(es), por un total de $ ${Math.round(Number(preview.interesPorMoraAAplicar)||0).toLocaleString('es-AR')}.`
             : '';
+          // "Botón antipánico": antes de dejar confirmar, muestra cualquier cosa rara que se
+          // haya detectado en cómo le va a quedar a cada unidad -- montos en $0/negativos, o
+          // variaciones extremas contra el mes anterior. Si hay algo, exige un check explícito
+          // antes de habilitar el cierre (no alcanza con solo mostrarlo de pasada).
+          const anomalias = preview.anomalias || [];
+          const bloqueTexto = (t)=>({monto_cero_o_negativo:'⚠ Monto en $0 o negativo',variacion_extrema:'📊 Variación fuera de lo normal'}[t] || t);
+          const lineaAnomalias = anomalias.length>0 ? `
+            <div style="margin-top:10px;padding:10px 12px;background:#fff3f0;border-left:3px solid var(--danger,#c0392b);border-radius:4px;">
+              <b>Antes de cerrar, revisá esto — ${anomalias.length} unidad(es) con algo fuera de lo esperado:</b>
+              <ul style="margin:8px 0 0 18px;padding:0;">
+                ${anomalias.map(a=>`<li><b>${escapeHtml(bloqueTexto(a.tipo))}</b> — Unidad ${escapeHtml(a.unidad)}: ${escapeHtml(a.detalle)}</li>`).join('')}
+              </ul>
+              <label style="display:block;margin-top:10px;font-size:12.5px;">
+                <input type="checkbox" id="${mountId}-anomalias-ack"> Revisé estas anomalías y quiero cerrar el mes igual.
+              </label>
+            </div>` : '';
           msg.innerHTML = `
             <div class="gate-msg pending">
               Se va a archivar <b>${escapeHtml(preview.periodoActual)}</b> como hoja
               <code>${escapeHtml(preview.hojaAArchivar)}</code>, y el período activo pasa a
               <b>${escapeHtml(preview.proximoPeriodo)}</b>. Los pagos, intereses y cargos particulares
               del mes que cierra quedan en cero.${lineaInteres} Esto no se puede deshacer solo — ¿confirmás?
-              <div class="toolbar" style="margin-top:10px;"><span></span><button class="btn primary" id="${mountId}-cerrar-mes-confirmar">Sí, cerrar el mes</button></div>
+              ${lineaAnomalias}
+              <div class="toolbar" style="margin-top:10px;"><span></span><button class="btn primary" id="${mountId}-cerrar-mes-confirmar" ${anomalias.length>0?'disabled':''}>Sí, cerrar el mes</button></div>
             </div>
           `;
+          if(anomalias.length>0){
+            document.getElementById(mountId+'-anomalias-ack').addEventListener('change', (e)=>{
+              document.getElementById(mountId+'-cerrar-mes-confirmar').disabled = !e.target.checked;
+            });
+          }
           document.getElementById(mountId+'-cerrar-mes-confirmar').addEventListener('click', async ()=>{
             const btnConfirmar = document.getElementById(mountId+'-cerrar-mes-confirmar');
             await withLoading(btnConfirmar, 'Cerrando el mes…', async ()=>{
