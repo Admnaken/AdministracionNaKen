@@ -7498,7 +7498,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         renderMovKpi();
         return;
       }
-      let saldo = 0;
+      let saldo = saldoInicial;
       movRows.forEach((row,i)=>{
         saldo += num(row.ingreso) - num(row.egreso);
         const tr = document.createElement('tr');
@@ -7519,7 +7519,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
 
     function recalcMovSaldos(){
-      let saldo = 0;
+      let saldo = saldoInicial;
       movBody.querySelectorAll('tr[data-idx]').forEach(tr=>{
         saldo += num(tr.querySelector('[data-field="ingreso"]').value) - num(tr.querySelector('[data-field="egreso"]').value);
         tr.querySelector('[data-saldo]').value = fmt(saldo);
@@ -8455,7 +8455,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         renderMovKpi();
         return;
       }
-      let saldo = 0;
+      let saldo = saldoInicial;
       movRows.forEach((row,i)=>{
         saldo += num(row.ingreso) - num(row.egreso);
         const tr = document.createElement('tr');
@@ -8478,7 +8478,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
 
     function recalcMovSaldos(){
-      let saldo = 0;
+      let saldo = saldoInicial;
       movBody.querySelectorAll('tr[data-idx]').forEach(tr=>{
         saldo += num(tr.querySelector('[data-field="ingreso"]').value) - num(tr.querySelector('[data-field="egreso"]').value);
         tr.querySelector('[data-saldo]').value = fmt(saldo);
