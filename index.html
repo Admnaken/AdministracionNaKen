@@ -6860,7 +6860,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         await withLoading(btn, 'Preparando…', async ()=>{
           const res = await window.storage.prepararCarpetaFacturasDelPeriodo(spreadsheetId);
           if(!res.ok){ msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error||'No se pudo preparar la carpeta.')}</div>`; return; }
-          msg.innerHTML = `<div class="gate-msg ok">✓ Carpeta lista para ${escapeHtml(res.periodo)}: <a href="${escapeHtml(res.carpetaUrl)}" target="_blank" rel="noopener">${escapeHtml(res.carpetaUrl)}</a></div>`;
+          msg.innerHTML = `<div class="gate-msg ok">✓ Carpeta lista para ${escapeHtml(res.periodo)} (${res.comprobantesYaSumados||0} comprobante(s) ya sumado(s)): <a href="${escapeHtml(res.carpetaUrl)}" target="_blank" rel="noopener">${escapeHtml(res.carpetaUrl)}</a></div>`;
         });
       });
       document.getElementById(mountId+'-cerrar-mes-btn').addEventListener('click', async ()=>{
