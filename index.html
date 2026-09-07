@@ -1852,6 +1852,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify({ action:'cerrarMes', spreadsheetId, confirmar: !!confirmar, consorcioId, sessionToken: SESSION_TOKEN })
       }));
     },
+    async prepararCarpetaFacturasDelPeriodo(spreadsheetId){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'prepararCarpetaFacturasDelPeriodo', spreadsheetId, sessionToken: SESSION_TOKEN })
+      }));
+    },
     async registrarPagoVerificado(spreadsheetId, unidad, monto, periodo, idPago, consorcioId){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -6836,12 +6843,26 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         return;
       }
       cont.innerHTML = `
+        <div class="toolbar" style="margin-bottom:10px;">
+          <span style="font-size:12.5px;color:var(--gray-600);">Antes de generar las expensas con AutoCrat, preparás el link de la carpeta de facturas de este mes (todavía no mueve los archivos, eso pasa recién al cerrar).</span>
+          <button class="btn ghost" id="${mountId}-preparar-facturas-btn">Preparar carpeta de facturas de este mes</button>
+        </div>
+        <div id="${mountId}-preparar-facturas-msg" style="margin-bottom:14px;"></div>
         <div class="toolbar">
           <span></span>
           <button class="btn primary" id="${mountId}-cerrar-mes-btn">Cerrar el mes actual y avanzar</button>
         </div>
         <div id="${mountId}-cerrar-mes-msg" style="margin-top:8px;"></div>
       `;
+      document.getElementById(mountId+'-preparar-facturas-btn').addEventListener('click', async (e)=>{
+        const btn = e.currentTarget;
+        const msg = document.getElementById(mountId+'-preparar-facturas-msg');
+        await withLoading(btn, 'Preparando…', async ()=>{
+          const res = await window.storage.prepararCarpetaFacturasDelPeriodo(spreadsheetId);
+          if(!res.ok){ msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error||'No se pudo preparar la carpeta.')}</div>`; return; }
+          msg.innerHTML = `<div class="gate-msg ok">✓ Carpeta lista para ${escapeHtml(res.periodo)}: <a href="${escapeHtml(res.carpetaUrl)}" target="_blank" rel="noopener">${escapeHtml(res.carpetaUrl)}</a></div>`;
+        });
+      });
       document.getElementById(mountId+'-cerrar-mes-btn').addEventListener('click', async ()=>{
         const msg = document.getElementById(mountId+'-cerrar-mes-msg');
         const btn = document.getElementById(mountId+'-cerrar-mes-btn');
