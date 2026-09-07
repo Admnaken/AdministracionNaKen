@@ -9705,7 +9705,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       };
     }
 
-    async function enviarRespaldo(record, emp, statusNode){
+    async function enviarRespaldo(record, emp, statusNode, liquidacionesArr, storageKeyArg, statusIdArg){
       const spreadsheetId = await getSpreadsheetIdActivo();
       if(!spreadsheetId){
         if(statusNode) statusNode.textContent = 'Este consorcio todavía no tiene la planilla vinculada (Todos los consorcios → ID de la planilla).';
@@ -9716,13 +9716,24 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const payload = buildBackupPayload(record, emp);
         payload.spreadsheetId = spreadsheetId;
         const res = await window.storage.respaldarLiquidacionSueldo(payload);
+        record.respaldadoEnPlanilla = !!(res && res.ok);
+        record.respaldoError = (res && !res.ok) ? (res.error || 'No se pudo guardar la copia.') : '';
         if(res && res.ok){
           if(statusNode) statusNode.textContent = `✓ Copia guardada en la planilla (${res.consorcio||'consorcio'})`;
         } else {
           if(statusNode) statusNode.textContent = 'No se pudo guardar la copia: ' + ((res && res.error) || 'revisá que la planilla tenga la hoja "Personal_CargasSociales".');
         }
       } catch(err){
-        if(statusNode) statusNode.textContent = 'No se pudo guardar la copia en la planilla: ' + (err && err.message ? err.message : 'error de conexión.');
+        record.respaldadoEnPlanilla = false;
+        record.respaldoError = (err && err.message) ? err.message : 'error de conexión.';
+        if(statusNode) statusNode.textContent = 'No se pudo guardar la copia en la planilla: ' + record.respaldoError;
+      }
+      // Se persiste el resultado (éxito o falla) en el registro, para que quede visible como
+      // badge en la tarjeta aunque el usuario ya haya seguido de largo a otra pantalla -- antes
+      // solo se mostraba un texto efímero que era fácil no llegar a ver nunca.
+      if(liquidacionesArr && storageKeyArg){
+        await saveData(storageKeyArg, liquidacionesArr, statusIdArg);
+        renderList();
       }
     }
 
@@ -10452,6 +10463,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               <div class="card-meta">${escapeHtml(r.periodo)} · Neto: ${fmt(r.sueldoNeto)} · Costo total empleador: ${fmt(r.costoTotalEmpleador)}</div>
             </div>
             <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              ${r.respaldadoEnPlanilla===true
+                ? `<span class="badge resuelto" title="Ya se guardó una copia en Personal_CargasSociales">✓ Respaldado</span>`
+                : r.respaldadoEnPlanilla===false
+                  ? `<span class="badge escalado" title="${escapeHtml(r.respaldoError||'No se pudo guardar la copia.')}">⚠ Sin respaldar</span>`
+                  : `<span class="badge pendiente" title="Todavía no se confirmó si el respaldo se guardó bien">… Respaldando</span>`}
               <button class="btn ghost" data-action="resend" data-id="${r.id}" title="Manda de nuevo una copia de esta liquidación a la hoja Personal_CargasSociales de la planilla de este consorcio (por si la primera vez falló, o si corregiste algo).">↻ Reenviar copia a la planilla</button>
               ${r.cargadoEnGastos
                 ? `<span class="badge resuelto" title="Se cargaron 2 filas: sueldo neto y cargas sociales, con rubro Remuneraciones al Personal y Cargas Sociales">✓ En Gastos_Mensual</span>`
@@ -10471,7 +10487,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           const original = btn.textContent;
           btn.textContent = 'Enviando…';
           btn.disabled = true;
-          await enviarRespaldo(r, emp, document.getElementById(mountId+'-backup-status'));
+          await enviarRespaldo(r, emp, document.getElementById(mountId+'-backup-status'), liquidaciones, storageKey, statusId);
           btn.textContent = original;
           btn.disabled = false;
         });
@@ -10599,7 +10615,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         renderList();
         await saveData(storageKey, liquidaciones, statusId);
         const backupStatusNode = document.getElementById(mountId+'-backup-status');
-        enviarRespaldo(record, emp, backupStatusNode);
+        enviarRespaldo(record, emp, backupStatusNode, liquidaciones, storageKey, statusId);
       });
     });
 
