@@ -1793,11 +1793,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       let ultimoError;
       for(let i=0; i<intentos; i++){
         try{
-          const res = await hacerFetch();
+          // Sin esto, si el servidor tarda mucho en responder (no falla, simplemente no
+          // contesta -- por ejemplo esperando un lock compartido con otra ejecución), la
+          // llamada se queda esperando indefinidamente y el usuario ve el botón pegado en
+          // "Enviando…" para siempre, sin ningún mensaje de error que le explique qué pasó.
+          // Uso Promise.race en vez de pasar un AbortSignal para no tener que tocar los
+          // decenas de llamados existentes a fetchConReintento en todo el archivo.
+          const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('TIMEOUT_30S')), 30000);
+          });
+          const res = await Promise.race([hacerFetch(), timeoutPromise]);
           if(!res.ok) throw new Error('HTTP ' + res.status);
           return await res.json();
         }catch(err){
-          ultimoError = err;
+          ultimoError = (err && err.message === 'TIMEOUT_30S') ? new Error('El servidor tardó demasiado en responder (más de 30 segundos).') : err;
           if(i < intentos-1){
             const espera = 400 * Math.pow(2, i) + Math.random()*200; // 400ms, 800ms, 1600ms + jitter
             await new Promise(r=>setTimeout(r, espera));
