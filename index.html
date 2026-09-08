@@ -1859,6 +1859,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify({ action:'prepararCarpetaFacturasDelPeriodo', spreadsheetId, sessionToken: SESSION_TOKEN })
       }));
     },
+    async traerSaldoBancoAlCierre(spreadsheetId, consorcioId){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'traerSaldoBancoAlCierre', spreadsheetId, consorcioId, sessionToken: SESSION_TOKEN })
+      }));
+    },
     async registrarPagoVerificado(spreadsheetId, unidad, monto, periodo, idPago, consorcioId){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -6848,6 +6855,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <button class="btn ghost" id="${mountId}-preparar-facturas-btn">Preparar carpeta de facturas de este mes</button>
         </div>
         <div id="${mountId}-preparar-facturas-msg" style="margin-bottom:14px;"></div>
+        <div class="toolbar" style="margin-bottom:10px;">
+          <span style="font-size:12.5px;color:var(--gray-600);">Trae el saldo actual de la cuenta corriente (Libro Banco) a Estado_Financiero_Mensual.</span>
+          <button class="btn ghost" id="${mountId}-traer-saldo-banco-btn">Traer saldo del banco</button>
+        </div>
+        <div id="${mountId}-traer-saldo-banco-msg" style="margin-bottom:14px;"></div>
         <div class="toolbar">
           <span></span>
           <button class="btn primary" id="${mountId}-cerrar-mes-btn">Cerrar el mes actual y avanzar</button>
@@ -6861,6 +6873,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           const res = await window.storage.prepararCarpetaFacturasDelPeriodo(spreadsheetId);
           if(!res.ok){ msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error||'No se pudo preparar la carpeta.')}</div>`; return; }
           msg.innerHTML = `<div class="gate-msg ok">✓ Carpeta lista para ${escapeHtml(res.periodo)} (${res.comprobantesYaSumados||0} comprobante(s) ya sumado(s)): <a href="${escapeHtml(res.carpetaUrl)}" target="_blank" rel="noopener">${escapeHtml(res.carpetaUrl)}</a></div>`;
+        });
+      });
+      document.getElementById(mountId+'-traer-saldo-banco-btn').addEventListener('click', async (e)=>{
+        const btn = e.currentTarget;
+        const msg = document.getElementById(mountId+'-traer-saldo-banco-msg');
+        await withLoading(btn, 'Trayendo…', async ()=>{
+          const res = await window.storage.traerSaldoBancoAlCierre(spreadsheetId, getActiveConsorcioId());
+          if(!res.ok){ msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error||'No se pudo traer el saldo.')}</div>`; return; }
+          msg.innerHTML = `<div class="gate-msg ok">✓ Saldo actualizado en Estado_Financiero_Mensual: $ ${Math.round(Number(res.saldo)||0).toLocaleString('es-AR')} (${res.cantidadMovimientos} movimiento(s) considerados)</div>`;
         });
       });
       document.getElementById(mountId+'-cerrar-mes-btn').addEventListener('click', async ()=>{
