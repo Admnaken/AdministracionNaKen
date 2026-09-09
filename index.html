@@ -10506,6 +10506,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               <button class="btn ghost" data-action="delete" data-id="${r.id}" style="color:var(--danger,#C0392B);border-color:var(--danger,#C0392B);">Eliminar</button>
             </div>
           </div>
+          <div id="resend-status-${r.id}" style="font-size:11.5px;color:var(--muted);margin-top:4px;"></div>
           <div id="recibo-${r.id}" style="display:none;margin-top:12px;"></div>
         `;
         listEl.appendChild(card);
@@ -10517,7 +10518,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           const original = btn.textContent;
           btn.textContent = 'Enviando…';
           btn.disabled = true;
-          await enviarRespaldo(r, emp, document.getElementById(mountId+'-backup-status'), liquidaciones, storageKey, statusId);
+          // El mensaje de estado va JUNTO A ESTA TARJETA (no en el formulario de arriba, que
+          // queda lejos de lo que el usuario está mirando cuando toca este botón específico) --
+          // antes el mensaje sí se mostraba, pero en otra parte de la pantalla, así que parecía
+          // que "no pasaba nada".
+          await enviarRespaldo(r, emp, document.getElementById(`resend-status-${r.id}`), liquidaciones, storageKey, statusId);
           btn.textContent = original;
           btn.disabled = false;
         });
