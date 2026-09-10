@@ -2380,7 +2380,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       role==='admin' ? loadData('naken-pagos-informados', []) : Promise.resolve([]),
     ]);
 
-    function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function num(v){ if(typeof v==='number') return isNaN(v)?0:v; const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
     function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:0}); }
 
     const reservaTotal = resumen && resumen.totales ? resumen.totales.saldoFondoReservaCierre : 0;
@@ -2704,7 +2704,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       <div id="cot-historial"></div>
     `;
 
-    function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function num(v){ if(typeof v==='number') return isNaN(v)?0:v; const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
     function fmt(n){ return '$ ' + Math.round(n).toLocaleString('es-AR'); }
 
     let ultimoResultado = null;
@@ -6256,6 +6256,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const resetBtn = document.getElementById(mountId+'-reset');
 
     function num(v){
+      if(typeof v==='number') return isNaN(v)?0:v;
       const n = parseFloat((v||'0').toString().replace(',','.'));
       return isNaN(n) ? 0 : n;
     }
@@ -6539,7 +6540,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const statusId = mountId+'-status';
     const storageKey = 'naken-asamblea-votacion';
 
-    function num(v){ const n = parseFloat((v||'0').toString().replace(',','.')); return isNaN(n) ? 0 : n; }
+    function num(v){ if(typeof v==='number') return isNaN(v)?0:v; const n = parseFloat((v||'0').toString().replace(',','.')); return isNaN(n) ? 0 : n; }
 
     async function refrescar(){
       mount.innerHTML = `<div class="empty">Cargando…</div>`;
@@ -7300,7 +7301,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   /* ----- Vista simplificada para propietarios: saldo + último resultado, sin el detalle operativo ----- */
   function mountCuentaResumenPropietario(mountId, movKey, concKey, opts={}){
     const mount = document.getElementById(mountId);
-    function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function num(v){ if(typeof v==='number') return isNaN(v)?0:v; const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
     function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); }
     function calcDiferencia(p){
       const partidasSum = (p.partidas||[]).reduce((acc,it)=> acc + (it.signo==='-' ? -num(it.importe) : num(it.importe)), 0);
@@ -7378,7 +7379,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     let saldoInicial = 0; // solo se usa si opts.mostrarSaldoInicial -- carga única al empezar a usar el fondo
     const extractoArchivoCache = {}; // { [periodoId]: { bytes: ArrayBuffer, mimeType, nombre } } — solo dura la sesión
 
-    function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function num(v){ if(typeof v==='number') return isNaN(v)?0:v; const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
     function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); }
     function uid(){ return 'c'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
     function blankPeriodo(){ return { id:uid(), numero:0, periodo:'', fechaExtracto:'', saldoLibroBanco:'', saldoExtracto:'', partidas:[], extractoMovs:[], extractoArchivoUrl:'', extractoArchivoNombre:'', extractoArchivoMimeType:'', cerrado:false, fechaCierre:'' }; }
@@ -8383,7 +8384,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
   function mountCajaResumenPropietario(mountId, movKey, arqueoKey){
     const mount = document.getElementById(mountId);
-    function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function num(v){ if(typeof v==='number') return isNaN(v)?0:v; const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
     function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); }
     function calcDiferenciaArqueo(a){ return num(a.efectivoContado) - num(a.saldoLibroCaja); }
 
@@ -8436,7 +8437,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     let currentArqueoId = null;
     const evidenciaCache = {};
 
-    function num(v){ const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function num(v){ if(typeof v==='number') return isNaN(v)?0:v; const n = parseFloat((v||'0').toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
     function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{maximumFractionDigits:2}); }
     function uid(){ return 'k'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
     let saldoInicial = 0; // carga única, si el consorcio ya venía manejando efectivo antes de esta app
@@ -9704,7 +9705,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     let consorcioDatos = {edificio:'', barrio:'', cuit:''};
     const chartsByCanvas = {};
 
-    function num(v){ const n = parseFloat((v===undefined||v===null?'':v).toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
+    function num(v){ if(typeof v==='number') return isNaN(v)?0:v; const n = parseFloat((v===undefined||v===null?'':v).toString().replace(/\./g,'').replace(',','.')); return isNaN(n)?0:n; }
     function fmt(n){ return '$ ' + (n||0).toLocaleString('es-AR',{maximumFractionDigits:2}); }
     function pct(n){ return (n||0).toLocaleString('es-AR',{maximumFractionDigits:2}) + '%'; }
 
