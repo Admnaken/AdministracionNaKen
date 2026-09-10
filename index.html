@@ -9732,6 +9732,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         contribSipa: record.contribSipa, contribObraSocial: record.contribObraSocial, contribFateryh: record.contribFateryh,
         contribSuterh: record.contribSuterh, contribSeracarh: record.contribSeracarh, fmvdd: record.fmvdd,
         art: record.art + (record.ffep||0), seguroVida: record.seguroVida, // el FFEP se suma acá para no tener que agregar otra columna a Personal_CargasSociales
+        // Estos 5 SÍ forman parte del Sueldo Bruto Remunerativo (ver sueldoBrutoRemun más
+        // arriba), pero antes se quedaban afuera de este payload -- se perdían en el camino y
+        // el "Costo Total para el Consorcio" de la planilla quedaba subestimado, con
+        // "Adicional remunerativo CCT" como el más importante (monto fijo grande, aplica a
+        // todas las categorías, no un caso especial).
+        impClasifResiduos: record.impClasifResiduos, impVivienda: record.impVivienda,
+        impMovCoches: record.impMovCoches, impViaticos: record.impViaticos, impAdicionalCct: record.impAdicionalCct,
       };
     }
 
