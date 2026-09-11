@@ -1387,6 +1387,7 @@
 
     <div class="navgroup">
       <div class="group-label">Transparencia</div>
+      <button class="navbtn" data-panel="informegeneral">Liquidación de Expensas</button>
       <button class="navbtn" data-panel="juicios">Juicios</button>
       <button class="navbtn" data-panel="reserva">Fondo de reserva</button>
       <button class="navbtn" data-panel="conciliaciones">Libro Banco y Conciliación bancaria</button>
@@ -1401,7 +1402,6 @@
       <button class="navbtn admin-only" data-panel="asistencia">Gestión de Asamblea</button>
       <button class="navbtn admin-only" data-panel="usuarios">Usuarios y accesos</button>
       <button class="navbtn admin-only" data-panel="personal">Personal y Liquidación de Sueldos</button>
-      <button class="navbtn admin-only" data-panel="informegeneral">Informe General Mensual</button>
       <button class="navbtn admin-only" data-panel="calchonorarios">Calculadora de honorarios</button>
     </div>
 
@@ -1622,12 +1622,12 @@
         <div id="calchonorarios-mount"></div>
       </section>
 
-      <!-- INFORME GENERAL MENSUAL -->
+      <!-- LIQUIDACIÓN DE EXPENSAS (documento único: informe general + liquidación individual) -->
       <section class="panel" id="panel-informegeneral">
         <div class="panel-head">
-          <span class="eyebrow">Herramientas del administrador</span>
-          <h2>Informe General Mensual</h2>
-          <p class="panel-note">El documento completo del mes (Art. 10 Ley 941), armado directo acá -- sin depender de tablas vinculadas de Google Docs, que quedan feas con datos de ancho variable. Para guardarlo como PDF: Ctrl+P (o Cmd+P en Mac) y elegí "Guardar como PDF".</p>
+          <span class="eyebrow">Transparencia</span>
+          <h2>Liquidación de Expensas</h2>
+          <p class="panel-note">El documento completo del mes (Art. 10 Ley 941), en un solo lugar como exige el Modelo Único del Manual de Buenas Prácticas Consorciales: los gastos y el estado financiero del edificio completo, y al final el detalle de tu propia unidad. Para guardarlo como PDF: Ctrl+P (o Cmd+P en Mac) y elegí "Guardar como PDF".</p>
         </div>
         <div id="informegeneral-mount"></div>
       </section>
@@ -2695,6 +2695,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       if(esFondoB) bloque.totalB += importe; else bloque.totalA += importe;
       bloque.total += importe;
     });
+    // Los rubros vienen en el orden en que aparecen los gastos en la hoja, no en orden numérico
+    // (podían salir 3, 2, 8, 4... en vez de 1, 2, 3...) -- se ordenan acá por el número inicial
+    // de cada rubro ("3 - Abonos de Servicios" -> 3).
+    gastosPorRubro.sort((a,b)=>{
+      const na = parseInt(String(a.rubro).match(/^\d+/)||[999], 10);
+      const nb = parseInt(String(b.rubro).match(/^\d+/)||[999], 10);
+      return na - nb;
+    });
     const totalGeneralGastos = gastosPorRubro.reduce((s,b)=>s+b.total, 0);
 
     const filaConcepto = (c) => `<tr><td>${escapeHtml(c.concepto)}</td><td style="text-align:right;">${fmt(c.importe)}</td></tr>`;
@@ -2752,8 +2760,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
         <h3>Remuneración al Personal y Cargas Sociales (Art. 10 inc. d Ley 941)</h3>
         <table>
-          <tr><th>Nombre y Apellido</th><th>Categoría</th><th style="text-align:right;">Costo Total para el Consorcio</th></tr>
-          ${(data.personal||[]).length ? data.personal.map(p=>`<tr><td>${escapeHtml(p.nombre)}</td><td>${escapeHtml(p.categoria||'')}</td><td style="text-align:right;">${fmt(p.costoTotal)}</td></tr>`).join('') : '<tr><td colspan="3"><i>Sin personal en relación de dependencia este período.</i></td></tr>'}
+          <tr><th>Nombre y Apellido</th><th>Categoría</th><th style="text-align:right;">Sueldo Neto</th><th style="text-align:right;">Costo Total para el Consorcio</th></tr>
+          ${(data.personal||[]).length ? data.personal.map(p=>`<tr><td>${escapeHtml(p.nombre)}</td><td>${escapeHtml(p.categoria||'')}</td><td style="text-align:right;">${fmt(p.sueldoNeto)}</td><td style="text-align:right;">${fmt(p.costoTotal)}</td></tr>`).join('') : '<tr><td colspan="4"><i>Sin personal en relación de dependencia este período.</i></td></tr>'}
         </table>
 
         <h3>Gastos del Período — Detalle por Rubro (Art. 10 inc. d, e y f Ley 941)</h3>
@@ -2790,9 +2798,29 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
         <h3>Referencia de Proveedores Utilizados</h3>
         <table>
-          <tr><th>Proveedor</th><th>CUIT</th><th>Domicilio</th></tr>
-          ${(data.proveedores||[]).length ? data.proveedores.map(p=>`<tr><td>${escapeHtml(p.proveedor)}</td><td>${escapeHtml(p.cuit||'')}</td><td>${escapeHtml(p.domicilio||'')}</td></tr>`).join('') : '<tr><td colspan="3"><i>Sin proveedores cargados este período.</i></td></tr>'}
+          ${(data.proveedores||[]).length ? data.proveedores.map(p=>`<tr><td>${[escapeHtml(p.proveedor), escapeHtml(p.cuit||''), escapeHtml(p.domicilio||'')].filter(Boolean).join(' — ')}</td></tr>`).join('') : '<tr><td><i>Sin proveedores cargados este período.</i></td></tr>'}
         </table>
+
+        <h3>Estado de Cuenta y Prorrateo — Todos los Propietarios</h3>
+        <table>
+          <tr><th>UF</th><th>Piso/Dpto.</th><th>Propietario</th><th style="text-align:right;">Deuda</th><th style="text-align:right;">Total 1er Vto.</th></tr>
+          ${(data.unidades||[]).length ? data.unidades.map(u=>`<tr><td>${escapeHtml(u.uf)}</td><td>${escapeHtml(u.pisoDpto||'')}</td><td>${escapeHtml(u.propietario||'')}</td><td style="text-align:right;">${fmt(u.deuda)}</td><td style="text-align:right;">${fmt(u.totalPrimerVto)}</td></tr>`).join('') : '<tr><td colspan="5"><i>Sin unidades cargadas.</i></td></tr>'}
+        </table>
+
+        ${data.miUnidad ? `
+        <h3>MIS EXPENSAS — Unidad ${escapeHtml(data.miUnidad.pisoDpto||data.miUnidad.uf)}</h3>
+        <table>
+          <tr><td>Propietario</td><td>${escapeHtml(data.miUnidad.propietario||'')}</td></tr>
+          <tr><td>Saldo Anterior</td><td style="text-align:right;">${fmt(data.miUnidad.saldoAnterior)}</td></tr>
+          <tr><td>Pago Recibido</td><td style="text-align:right;">${fmt(data.miUnidad.pagoRecibido)}</td></tr>
+          <tr><td>Deuda</td><td style="text-align:right;">${fmt(data.miUnidad.deuda)}</td></tr>
+          <tr><td>Intereses Punitorios</td><td style="text-align:right;">${fmt(data.miUnidad.interesesPunitorios)}</td></tr>
+          <tr><td>Cuota Fondo A (${data.miUnidad.pctFondoA?(data.miUnidad.pctFondoA*100).toFixed(2):'0'}%)</td><td style="text-align:right;">${fmt(data.miUnidad.importeFondoA)}</td></tr>
+          <tr><td>Cuota Fondo B (${data.miUnidad.pctFondoB?(data.miUnidad.pctFondoB*100).toFixed(2):'0'}%)</td><td style="text-align:right;">${fmt(data.miUnidad.importeFondoB)}</td></tr>
+          <tr class="rubro-total"><td>TOTAL AL 1er VENCIMIENTO (${escapeHtml(data.miUnidad.fechaPrimerVto||'')})</td><td style="text-align:right;">${fmt(data.miUnidad.totalPrimerVto)}</td></tr>
+          <tr class="rubro-total"><td>TOTAL AL 2do VENCIMIENTO (${escapeHtml(data.miUnidad.fechaSegundoVto||'')})</td><td style="text-align:right;">${fmt(data.miUnidad.totalSegundoVto)}</td></tr>
+        </table>
+        ` : ''}
 
         <p style="margin-top:24px;font-size:11px;color:#666;">Administración NAKEN · Documento generado automáticamente a partir de la liquidación mensual de expensas. Ante cualquier diferencia, prevalece la documentación respaldatoria.</p>
       </div>
@@ -4749,9 +4777,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
      en la app (reemplaza las tablas vinculadas de Google Docs, que quedaban feas con datos de
      ancho variable). Sin caché a propósito -- el admin siempre quiere los datos más frescos al
      generar esto. ---------- */
-  async function fetchInformeGeneral(spreadsheetId){
+  async function fetchInformeGeneral(spreadsheetId, unidad){
     if(!spreadsheetId) return null;
-    const url = `${APPS_SCRIPT_URL}?action=informeGeneral&spreadsheetId=${encodeURIComponent(spreadsheetId)}&sessionToken=${encodeURIComponent(window.storage.getSessionToken()||'')}`;
+    const url = `${APPS_SCRIPT_URL}?action=informeGeneral&spreadsheetId=${encodeURIComponent(spreadsheetId)}&unidad=${encodeURIComponent(unidad||'')}&sessionToken=${encodeURIComponent(window.storage.getSessionToken()||'')}`;
     try{
       const data = await window.storage.conCupo(()=>fetch(url).then(r=>r.json()));
       return data && data.ok ? data : null;
@@ -10962,7 +10990,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     },
     asistencia: () => mountGestionAsamblea('asistencia-mount'),
     usuarios: () => { if(role==='admin') mountUsuarios('usuarios-mount'); },
-    informegeneral: () => { if(role==='admin') mountInformeGeneral('informegeneral-mount'); },
+    informegeneral: () => mountInformeGeneral('informegeneral-mount'),
     calchonorarios: () => { if(role==='admin') mountCalcHonorarios('calchonorarios-mount'); },
     personal: () => {
       if(role!=='admin') return;
