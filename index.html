@@ -1401,6 +1401,7 @@
       <button class="navbtn admin-only" data-panel="asistencia">Gestión de Asamblea</button>
       <button class="navbtn admin-only" data-panel="usuarios">Usuarios y accesos</button>
       <button class="navbtn admin-only" data-panel="personal">Personal y Liquidación de Sueldos</button>
+      <button class="navbtn admin-only" data-panel="informegeneral">Informe General Mensual</button>
       <button class="navbtn admin-only" data-panel="calchonorarios">Calculadora de honorarios</button>
     </div>
 
@@ -1619,6 +1620,16 @@
           <p class="panel-note">Para usar cuando alguien te pide presupuesto: primero puntuás la complejidad del edificio, después calculás el honorario de referencia (tabla CAPHAI) y por último ves cuántos consorcios así necesitás para tu objetivo de ingresos.</p>
         </div>
         <div id="calchonorarios-mount"></div>
+      </section>
+
+      <!-- INFORME GENERAL MENSUAL -->
+      <section class="panel" id="panel-informegeneral">
+        <div class="panel-head">
+          <span class="eyebrow">Herramientas del administrador</span>
+          <h2>Informe General Mensual</h2>
+          <p class="panel-note">El documento completo del mes (Art. 10 Ley 941), armado directo acá -- sin depender de tablas vinculadas de Google Docs, que quedan feas con datos de ancho variable. Para guardarlo como PDF: Ctrl+P (o Cmd+P en Mac) y elegí "Guardar como PDF".</p>
+        </div>
+        <div id="informegeneral-mount"></div>
       </section>
 
       <!-- PERSONAL Y LIQUIDACIÓN DE SUELDOS -->
@@ -2637,8 +2648,161 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     return total;
   }
 
+  /* ---------------------------------------------------------------------
+     Informe General Mensual, armado directo en HTML (no como tablas
+     vinculadas de Google Docs, que quedaban feas con datos de ancho
+     variable -- la primera columna de "Gastos del período" tiene texto
+     largo y terminaba estirando cada fila a 5-6 líneas). Acá el ancho de
+     cada columna lo controla el CSS, así que nunca se rompe sin importar
+     cuánto texto tenga el detalle de una factura. Para guardarlo como
+     PDF, se usa Ctrl+P del navegador -- no genera el archivo del lado
+     del servidor.
+     --------------------------------------------------------------------- */
+  async function mountInformeGeneral(mountId){
+    function fmt(n){ return '$ ' + Math.round(Number(n)||0).toLocaleString('es-AR'); }
+    const mount = document.getElementById(mountId);
+    mount.innerHTML = `<div class="loading">Cargando datos del informe…</div>`;
+    const spreadsheetId = await getSpreadsheetIdActivo();
+    if(!spreadsheetId){
+      mount.innerHTML = `<div class="gate-msg error">Este consorcio todavía no tiene la planilla vinculada.</div>`;
+      return;
+    }
+    const data = await fetchInformeGeneral(spreadsheetId);
+    if(!data){
+      mount.innerHTML = `<div class="gate-msg error">No se pudo cargar el informe. Probá de nuevo en unos segundos.</div>`;
+      return;
+    }
+
+    const cfg = data.config || {};
+    const totales = data.totales || {};
+    const qrUrl = (link) => link ? `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(link)}` : '';
+
+    const gastosPorRubro = [];
+    const indiceRubro = {};
+    (data.gastos||[]).forEach(g=>{
+      const rubro = g.rubro || '(sin rubro)';
+      if(!(rubro in indiceRubro)){
+        indiceRubro[rubro] = gastosPorRubro.length;
+        gastosPorRubro.push({ rubro, lineas: [], totalA: 0, totalB: 0, total: 0 });
+      }
+      const bloque = gastosPorRubro[indiceRubro[rubro]];
+      const importe = Number(g.importe)||0;
+      const esFondoB = g.fondo === 'B';
+      bloque.lineas.push({
+        detalle: [g.proveedor, g.cuit, g.fecha, g.factura, g.detalle].filter(Boolean).join(' — '),
+        importeA: esFondoB ? 0 : importe, importeB: esFondoB ? importe : 0, total: importe
+      });
+      if(esFondoB) bloque.totalB += importe; else bloque.totalA += importe;
+      bloque.total += importe;
+    });
+    const totalGeneralGastos = gastosPorRubro.reduce((s,b)=>s+b.total, 0);
+
+    const filaConcepto = (c) => `<tr><td>${escapeHtml(c.concepto)}</td><td style="text-align:right;">${fmt(c.importe)}</td></tr>`;
+
+    mount.innerHTML = `
+      <style>
+        .informe-doc { font-family: Georgia, 'Times New Roman', serif; font-size: 13px; color:#1a1a1a; max-width: 900px; }
+        .informe-doc h3 { background:#1B2A3D; color:#fff; padding:8px 12px; margin:24px 0 10px 0; font-size:14px; }
+        .informe-doc table { width:100%; border-collapse: collapse; margin-bottom: 4px; }
+        .informe-doc td, .informe-doc th { border:1px solid #ccc; padding:5px 8px; vertical-align: top; }
+        .informe-doc th { background:#E9EEF3; text-align:left; }
+        .informe-doc .rubro-header { background:#1B2A3D; color:#fff; font-weight:bold; padding:6px 8px; }
+        .informe-doc .rubro-total { background:#D9D9D9; font-weight:bold; }
+        .informe-doc .col-detalle { width:55%; }
+        .informe-doc .col-monto { width:15%; text-align:right; }
+        .informe-doc .datos-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
+        .informe-doc .qr-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; text-align:center; margin-bottom:16px; }
+        @media print {
+          .no-imprimir { display:none !important; }
+          .informe-doc { max-width:none; }
+        }
+      </style>
+      <div class="no-imprimir" style="margin-bottom:16px;">
+        <button class="btn primary" id="${mountId}-imprimir-btn">🖨️ Imprimir / Guardar como PDF</button>
+      </div>
+      <div class="informe-doc">
+        <h2 style="text-align:center;">INFORME GENERAL DE LIQUIDACIÓN — PERÍODO ${escapeHtml(data.periodo||'')}</h2>
+
+        <div class="datos-grid">
+          <table>
+            <tr><th colspan="2">Administración</th></tr>
+            <tr><td>Nombre</td><td>${escapeHtml(cfg['Nombre de la Administración']||'')}</td></tr>
+            <tr><td>CUIT</td><td>${escapeHtml(cfg['CUIT Administración']||cfg['CUIT']||'')}</td></tr>
+            <tr><td>RPA</td><td>${escapeHtml(cfg['RPA']||'')}</td></tr>
+            <tr><td>Domicilio</td><td>${escapeHtml(cfg['Domicilio']||'')}</td></tr>
+          </table>
+          <table>
+            <tr><th colspan="2">Consorcio</th></tr>
+            <tr><td>Nombre</td><td>${escapeHtml(data.config['Nombre / Dirección']||'')}</td></tr>
+            <tr><td>CUIT</td><td>${escapeHtml(cfg['CUIT del Consorcio']||'')}</td></tr>
+            <tr><td>SUTERH</td><td>${escapeHtml(cfg['Clave SUTERH']||'')}</td></tr>
+          </table>
+        </div>
+
+        <div class="qr-grid">
+          <div>
+            <b>Manual de Buenas Prácticas Consorciales</b><br>
+            ${data.links.manualBuenasPracticas ? `<img src="${qrUrl(data.links.manualBuenasPracticas)}" alt="QR Manual">` : '<i>Sin link cargado</i>'}
+          </div>
+          <div>
+            <b>Reglamento de PH</b><br>
+            ${data.links.reglamento ? `<img src="${qrUrl(data.links.reglamento)}" alt="QR Reglamento">` : '<i>Sin link cargado</i>'}
+          </div>
+        </div>
+
+        <h3>Remuneración al Personal y Cargas Sociales (Art. 10 inc. d Ley 941)</h3>
+        <table>
+          <tr><th>Nombre y Apellido</th><th>Categoría</th><th style="text-align:right;">Costo Total para el Consorcio</th></tr>
+          ${(data.personal||[]).length ? data.personal.map(p=>`<tr><td>${escapeHtml(p.nombre)}</td><td>${escapeHtml(p.categoria||'')}</td><td style="text-align:right;">${fmt(p.costoTotal)}</td></tr>`).join('') : '<tr><td colspan="3"><i>Sin personal en relación de dependencia este período.</i></td></tr>'}
+        </table>
+
+        <h3>Gastos del Período — Detalle por Rubro (Art. 10 inc. d, e y f Ley 941)</h3>
+        ${gastosPorRubro.length===0 ? '<p><i>Sin gastos cargados este período.</i></p>' : gastosPorRubro.map(b=>`
+          <div class="rubro-header">${escapeHtml(b.rubro)}</div>
+          <table>
+            <colgroup><col class="col-detalle"><col class="col-monto"><col class="col-monto"><col class="col-monto"></colgroup>
+            ${b.lineas.map(l=>`<tr><td>${escapeHtml(l.detalle)}</td><td style="text-align:right;">${l.importeA?fmt(l.importeA):''}</td><td style="text-align:right;">${l.importeB?fmt(l.importeB):''}</td><td style="text-align:right;">${fmt(l.total)}</td></tr>`).join('')}
+            <tr class="rubro-total"><td>Total ${escapeHtml(b.rubro)}</td><td style="text-align:right;">${fmt(b.totalA)}</td><td style="text-align:right;">${fmt(b.totalB)}</td><td style="text-align:right;">${fmt(b.total)} (${totalGeneralGastos?Math.round(b.total/totalGeneralGastos*100):0}%)</td></tr>
+          </table>
+        `).join('')}
+
+        <table style="margin-top:12px;">
+          <tr><td>Total Fondo A del período</td><td style="text-align:right;">${fmt(totales.totalFondoAGeneral)}</td></tr>
+          <tr><td>Total Fondo B del período</td><td style="text-align:right;">${fmt(totales.totalFondoBGeneral)}</td></tr>
+          <tr class="rubro-total"><td>TOTAL GENERAL DE GASTOS DEL PERÍODO</td><td style="text-align:right;">${fmt(totales.totalGeneralGastos)}</td></tr>
+        </table>
+
+        <h3>Fondo de Reserva (Art. 10 inc. i Ley 941)</h3>
+        <table>
+          <tr><td>Saldo del Fondo de Reserva — mes anterior</td><td style="text-align:right;">${fmt(totales.saldoFondoReservaMesAnterior)}</td></tr>
+          <tr><td>Aporte al Fondo de Reserva — este período</td><td style="text-align:right;">${fmt(totales.aporteFondoReservaGeneral)}</td></tr>
+          <tr class="rubro-total"><td>Saldo del Fondo de Reserva — al cierre de este período</td><td style="text-align:right;">${fmt(totales.saldoFondoReservaCierre)}</td></tr>
+        </table>
+
+        ${data.estadoFinanciero ? `
+        <h3>Estado Financiero y Patrimonial del Período (Art. 10 inc. c e i Ley 941)</h3>
+        <table>${data.estadoFinanciero.financiero.map(filaConcepto).join('')}</table>
+        <div class="subhead" style="margin-top:10px;">Banco</div>
+        <table>${data.estadoFinanciero.banco.map(filaConcepto).join('')}</table>
+        <div class="subhead" style="margin-top:10px;">Patrimonial</div>
+        <table>${data.estadoFinanciero.patrimonial.map(filaConcepto).join('')}</table>
+        ` : ''}
+
+        <h3>Referencia de Proveedores Utilizados</h3>
+        <table>
+          <tr><th>Proveedor</th><th>CUIT</th><th>Domicilio</th></tr>
+          ${(data.proveedores||[]).length ? data.proveedores.map(p=>`<tr><td>${escapeHtml(p.proveedor)}</td><td>${escapeHtml(p.cuit||'')}</td><td>${escapeHtml(p.domicilio||'')}</td></tr>`).join('') : '<tr><td colspan="3"><i>Sin proveedores cargados este período.</i></td></tr>'}
+        </table>
+
+        <p style="margin-top:24px;font-size:11px;color:#666;">Administración NAKEN · Documento generado automáticamente a partir de la liquidación mensual de expensas. Ante cualquier diferencia, prevalece la documentación respaldatoria.</p>
+      </div>
+    `;
+    document.getElementById(mountId+'-imprimir-btn').addEventListener('click', ()=> window.print());
+  }
+
   function mountCalcHonorarios(mountId){
     const mount = document.getElementById(mountId);
+
     const statusId = mountId+'-status';
     const preguntas = [
       { key:'uf', label:'Unidades funcionales', opts:['Hasta 20 (1)','21 a 50 (2)','Más de 50 (3)'] },
@@ -4577,6 +4741,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const result = data && data.ok ? data : null;
       _cache.resumen[cacheKey] = { data: result, at: now };
       return result;
+    }catch(e){
+      return null;
+    }
+  }
+  /* ---------- Informe General: junta todo lo necesario para armar el documento mensual directo
+     en la app (reemplaza las tablas vinculadas de Google Docs, que quedaban feas con datos de
+     ancho variable). Sin caché a propósito -- el admin siempre quiere los datos más frescos al
+     generar esto. ---------- */
+  async function fetchInformeGeneral(spreadsheetId){
+    if(!spreadsheetId) return null;
+    const url = `${APPS_SCRIPT_URL}?action=informeGeneral&spreadsheetId=${encodeURIComponent(spreadsheetId)}&sessionToken=${encodeURIComponent(window.storage.getSessionToken()||'')}`;
+    try{
+      const data = await window.storage.conCupo(()=>fetch(url).then(r=>r.json()));
+      return data && data.ok ? data : null;
     }catch(e){
       return null;
     }
@@ -10784,6 +10962,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     },
     asistencia: () => mountGestionAsamblea('asistencia-mount'),
     usuarios: () => { if(role==='admin') mountUsuarios('usuarios-mount'); },
+    informegeneral: () => { if(role==='admin') mountInformeGeneral('informegeneral-mount'); },
     calchonorarios: () => { if(role==='admin') mountCalcHonorarios('calchonorarios-mount'); },
     personal: () => {
       if(role!=='admin') return;
