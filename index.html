@@ -2654,79 +2654,200 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
-    const M = 14;
-    let y = 16;
-    const COLOR_PRINCIPAL = [11,42,74];
-    const COLOR_TEXTO = [44,62,80];
-    const AUTOTABLE_BASE = { styles:{fontSize:8.5,textColor:COLOR_TEXTO,cellPadding:2}, headStyles:{fillColor:[235,235,235],textColor:COLOR_TEXTO,fontStyle:'bold',fontSize:8} };
-    const fmt = (n)=> '$ ' + Math.round(Number(n)||0).toLocaleString('es-AR');
-    const fmtFecha = (v)=> v ? new Date(v).toLocaleDateString('es-AR') : '';
+    const M = 16;
+    const ANCHO_UTIL = 210 - M*2;
+    let y = 18;
+
+    // Misma paleta NAKEN de siempre -- lo que cambia es CÓMO se usa: en vez de franjas sólidas
+    // pesadas tipo planilla de cálculo, el navy queda para títulos/montos clave, y el resto del
+    // documento vive en grises neutros muy suaves, con líneas finas en vez de bordes de tabla.
+    const NAVY = [11,42,74];
+    const TEXTO = [51,58,66];
+    const MUTED = [142,150,160];
+    const CARD_BG = [248,249,251];
+    const DIVIDER = [226,229,234];
+    const TOTAL_BG = [242,244,247];
+
     const cfg = data.config || {};
     const totales = data.totales || {};
+    const fmt = (n)=> '$ ' + Math.round(Number(n)||0).toLocaleString('es-AR');
+    // Si la celda de origen ya viene como texto "DD/MM/AAAA" (pasa en algunas columnas de la
+    // planilla que se cargan como texto, no como fecha real), hay que devolverla tal cual --
+    // new Date() la interpreta como MM/DD/AAAA (convención US) y con un día >12 rompe directo
+    // en "Invalid Date".
+    const fmtFecha = (v)=>{
+      if(!v) return '';
+      if(/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(String(v))) return String(v);
+      const d = new Date(v);
+      return isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('es-AR');
+    };
 
-    function bannerAzul(texto){
-      if(y>265){ doc.addPage(); y=18; }
-      doc.setFillColor(...COLOR_PRINCIPAL);
-      doc.rect(M, y, 182, 7, 'F');
-      doc.setTextColor(255,255,255);
-      doc.setFont('helvetica','bold');
-      doc.setFontSize(9);
-      doc.text(texto, M+3, y+5);
-      doc.setTextColor(...COLOR_TEXTO);
-      y += 10;
-    }
     function saltoSiHaceFalta(alturaEstim){
-      if(y + alturaEstim > 280){ doc.addPage(); y = 18; }
+      if(y + alturaEstim > 282){ doc.addPage(); y = 20; }
+    }
+    function lineaDivisoria(){
+      doc.setDrawColor(...DIVIDER); doc.setLineWidth(0.25);
+      doc.line(M, y, M+ANCHO_UTIL, y);
+    }
+    // Título de sección moderno: mayúsculas chicas en navy + una línea fina debajo -- reemplaza
+    // la franja azul sólida de la versión anterior, que se sentía más a planilla que a documento.
+    function tituloSeccion(texto){
+      saltoSiHaceFalta(14);
+      y += 4;
+      doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...NAVY);
+      doc.text(texto.toUpperCase(), M, y);
+      y += 3;
+      lineaDivisoria();
+      y += 6;
+    }
+    // Tabla sin bordes verticales: el encabezado va en gris mudo chico con una línea fina debajo,
+    // las columnas de monto quedan alineadas a la derecha, y la última fila (si es total) se
+    // destaca con negrita y un fondo gris muy sutil -- nunca con un borde de celda.
+    function tablaLimpia({ head, body, esUltimaFilaTotal, columnasMonto }){
+      const columnStyles = {};
+      (columnasMonto||[]).forEach(i => columnStyles[i] = { halign:'right' });
+      doc.autoTable({
+        theme:'plain', startY:y, margin:{left:M,right:M}, tableWidth:ANCHO_UTIL,
+        styles: { font:'helvetica', fontSize:8.7, textColor:TEXTO, cellPadding:{top:2,bottom:2,left:0,right:0} },
+        headStyles: { fontStyle:'bold', fontSize:7, textColor:MUTED, cellPadding:{top:0,bottom:2.5,left:0,right:0} },
+        columnStyles,
+        head: head ? [head] : undefined,
+        body,
+        didParseCell: (d) => {
+          if(esUltimaFilaTotal && d.section==='body' && d.row.index===body.length-1){
+            d.cell.styles.fontStyle = 'bold';
+            d.cell.styles.fillColor = TOTAL_BG;
+          }
+        },
+        didDrawCell: (d) => {
+          // línea fina bajo el encabezado, y una línea fina bajo cada fila del cuerpo (muy sutil,
+          // simulando la separación de un excel real pero sin las verticales)
+          if(d.section==='head' || (esUltimaFilaTotal && d.row.index===body.length-1)) return;
+          doc.setDrawColor(...DIVIDER); doc.setLineWidth(0.15);
+          doc.line(d.cell.x, d.cell.y+d.cell.height, d.cell.x+d.cell.width, d.cell.y+d.cell.height);
+        },
+        willDrawCell: (d) => {
+          if(d.section==='head'){
+            doc.setDrawColor(...DIVIDER); doc.setLineWidth(0.3);
+          }
+        },
+        didDrawPage: () => {},
+      });
+      // línea fina bajo todo el encabezado de columnas
+      y = doc.lastAutoTable.finalY + 8;
     }
 
     // ---------- Encabezado ----------
-    doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(...COLOR_PRINCIPAL);
-    doc.text('MIS EXPENSAS', M, y); y += 6;
-    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...COLOR_TEXTO);
-    doc.text('Período: '+(data.periodo||''), M, y); y += 8;
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...MUTED);
+    doc.text('ADMINISTRACIÓN NAKEN', M, y); y += 7;
+    doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.setTextColor(...NAVY);
+    doc.text('Mis Expensas', M, y); y += 6;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...TEXTO);
+    doc.text('Período '+(data.periodo||''), M, y); y += 10;
 
+    // ---------- Tarjeta destacada: propietario, unidad, vencimientos y montos ----------
     if(data.miUnidad){
-      doc.autoTable({
-        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-        head: [['Propietario','UF','Piso/Depto.','1er Vencimiento','2do Vencimiento']],
-        body: [[data.miUnidad.propietario||'', data.miUnidad.uf||'', data.miUnidad.pisoDpto||'', fmtFecha(data.miUnidad.fechaPrimerVto), fmtFecha(data.miUnidad.fechaSegundoVto)]],
-      });
-      y = doc.lastAutoTable.finalY + 6;
+      const mu = data.miUnidad;
+      const alturaCard = 34;
+      doc.setFillColor(...CARD_BG);
+      doc.roundedRect(M, y, ANCHO_UTIL, alturaCard, 2.5, 2.5, 'F');
+      const padX = 6;
+      let yc = y + 9;
+      doc.setFont('helvetica','bold'); doc.setFontSize(12.5); doc.setTextColor(...NAVY);
+      doc.text(mu.propietario||'', M+padX, yc);
+      yc += 6.5;
+      doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
+      doc.text('UNIDAD FUNCIONAL', M+padX, yc);
+      doc.text('PISO / DEPTO.', M+padX+55, yc);
+      yc += 4.2;
+      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...TEXTO);
+      doc.text(String(mu.uf||''), M+padX, yc);
+      doc.text(String(mu.pisoDpto||''), M+padX+55, yc);
+
+      // columna derecha: los dos vencimientos con su monto, apilados
+      const xVtoLabel = M+ANCHO_UTIL-padX-72;
+      const xVtoMonto = M+ANCHO_UTIL-padX;
+      let yv = y + 9;
+      doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
+      doc.text('1ER VENCIMIENTO · '+fmtFecha(mu.fechaPrimerVto), xVtoLabel, yv);
+      doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(...NAVY);
+      doc.text(fmt(mu.totalPrimerVto), xVtoMonto, yv+6, {align:'right'});
+      yv += 15;
+      doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...MUTED);
+      doc.text('2DO VENCIMIENTO · '+fmtFecha(mu.fechaSegundoVto), xVtoLabel, yv);
+      doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...TEXTO);
+      doc.text(fmt(mu.totalSegundoVto), xVtoMonto, yv+5.5, {align:'right'});
+
+      y += alturaCard + 10;
     }
 
-    // ---------- Administración | Consorcio, dos tablas lado a lado ----------
-    const anchoMitad = 89;
-    doc.autoTable({
-      ...AUTOTABLE_BASE, startY:y, margin:{left:M}, tableWidth:anchoMitad, theme:'grid',
-      head: [['Administración','']],
-      body: [
-        ['Nombre', cfg['ADMINISTRACIÓN | Nombre']||''],
-        ['Domicilio', cfg['ADMINISTRACIÓN | Domicilio']||''],
-        ['Email', cfg['ADMINISTRACIÓN | Email']||''],
-        ['Teléfono', cfg['ADMINISTRACIÓN | Teléfono']||''],
-        ['CUIT', cfg['ADMINISTRACIÓN | CUIT']||''],
-        ['Situación Fiscal', cfg['ADMINISTRACIÓN | Situación Fiscal']||''],
-        ['Horario de atención', cfg['ADMINISTRACIÓN | Horario de atención']||''],
-        ['Página web', cfg['DATOS ADICIONALES | Redes / sitio web de la administración']||''],
-        ['WhatsApp', cfg['DATOS PARA EL MODELO ÚNICO DE LIQUIDACIÓN (GCBA) | WhatsApp de la administración']||''],
-      ],
-    });
-    const finAdmin = doc.lastAutoTable.finalY;
-    doc.autoTable({
-      ...AUTOTABLE_BASE, startY:y, margin:{left:M+anchoMitad+4}, tableWidth:anchoMitad, theme:'grid',
-      head: [['Consorcio','']],
-      body: [
-        ['Nombre', cfg['CONSORCIO | Nombre / Dirección']||''],
-        ['CUIT', cfg['CONSORCIO | CUIT']||''],
-        ['Convenio', cfg['DATOS PARA EL MODELO ÚNICO DE LIQUIDACIÓN (GCBA) | Convenio del consorcio (si aplica)']||''],
-      ],
-    });
-    y = Math.max(finAdmin, doc.lastAutoTable.finalY) + 6;
+    // ---------- 4 códigos QR chicos, en fila, con etiqueta ----------
+    async function imagenBase64DeUrl(url){
+      try{
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        return await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(blob); });
+      }catch(e){ return null; }
+    }
+    const qrUrl = (link) => `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(link)}`;
+    const qrsAMostrar = [
+      { label:'Manual de Buenas Prácticas', link:data.links.manualBuenasPracticas },
+      { label:'Reglamento de PH', link:data.links.reglamento },
+      { label:'Ver Facturas del Mes', link:data.links.facturas },
+      { label:'Ver Extractos Bancarios', link:data.links.extractoBancario },
+    ].filter(q => q.link);
+    if(qrsAMostrar.length){
+      const tamQr = 20;
+      const anchoCelda = ANCHO_UTIL / qrsAMostrar.length;
+      const imagenes = await Promise.all(qrsAMostrar.map(q => imagenBase64DeUrl(qrUrl(q.link))));
+      const yQr = y;
+      qrsAMostrar.forEach((q, i) => {
+        const xCentro = M + anchoCelda*i + anchoCelda/2;
+        if(imagenes[i]) doc.addImage(imagenes[i], 'PNG', xCentro-tamQr/2, yQr, tamQr, tamQr);
+        doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...MUTED);
+        const lineas = doc.splitTextToSize(q.label, anchoCelda-4);
+        doc.text(lineas, xCentro, yQr+tamQr+4, {align:'center'});
+      });
+      y = yQr + tamQr + 4 + 8 + 4;
+    }
+
+    // ---------- Administración | Consorcio, dos columnas de texto limpio (sin tabla) ----------
+    function bloqueDatos(x, ancho, titulo, filas){
+      let yb = y;
+      doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...MUTED);
+      doc.text(titulo.toUpperCase(), x, yb); yb += 5;
+      filas.forEach(([label, valor]) => {
+        if(!valor) return;
+        doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...MUTED);
+        doc.text(label, x, yb); yb += 3.6;
+        doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...TEXTO);
+        const lineas = doc.splitTextToSize(String(valor), ancho);
+        doc.text(lineas, x, yb); yb += 4.2*lineas.length + 1.4;
+      });
+      return yb;
+    }
+    const anchoCol = (ANCHO_UTIL-10)/2;
+    const yFinAdmin = bloqueDatos(M, anchoCol, 'Administración', [
+      ['Nombre', cfg['ADMINISTRACIÓN | Nombre']],
+      ['Domicilio', cfg['ADMINISTRACIÓN | Domicilio']],
+      ['Email', cfg['ADMINISTRACIÓN | Email']],
+      ['Teléfono', cfg['ADMINISTRACIÓN | Teléfono']],
+      ['CUIT', cfg['ADMINISTRACIÓN | CUIT']],
+      ['Situación Fiscal', cfg['ADMINISTRACIÓN | Situación Fiscal']],
+      ['Horario de atención', cfg['ADMINISTRACIÓN | Horario de atención']],
+      ['Página web', cfg['DATOS ADICIONALES | Redes / sitio web de la administración']],
+      ['WhatsApp', cfg['DATOS PARA EL MODELO ÚNICO DE LIQUIDACIÓN (GCBA) | WhatsApp de la administración']],
+    ]);
+    const yFinConsorcio = bloqueDatos(M+anchoCol+10, anchoCol, 'Consorcio', [
+      ['Nombre', cfg['CONSORCIO | Nombre / Dirección']],
+      ['CUIT', cfg['CONSORCIO | CUIT']],
+      ['Convenio', cfg['DATOS PARA EL MODELO ÚNICO DE LIQUIDACIÓN (GCBA) | Convenio del consorcio (si aplica)']],
+    ]);
+    y = Math.max(yFinAdmin, yFinConsorcio) + 4;
 
     // ---------- Forma de Pago ----------
-    bannerAzul('Forma de Pago');
-    doc.autoTable({
-      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+    tituloSeccion('Forma de Pago');
+    tablaLimpia({
       body: [
         ['Titular de cuenta', cfg['FORMA DE PAGO | Titular de cuenta']||''],
         ['CUIT titular', cfg['FORMA DE PAGO | CUIT titular']||''],
@@ -2736,8 +2857,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         ['Alias', cfg['FORMA DE PAGO | Alias']||''],
         ['Código de pago electrónico', cfg['FORMA DE PAGO | Código de pago electrónico']||''],
       ],
+      columnasMonto: [1],
     });
-    y = doc.lastAutoTable.finalY + 6;
 
     // ---------- Gastos del período por rubro ----------
     const gastosPorRubro = [];
@@ -2765,123 +2886,91 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     });
     const totalGeneralGastos = gastosPorRubro.reduce((s,b)=>s+b.total, 0);
 
-    bannerAzul('Gastos del Período por Suministros, Servicios, Abonos y Seguros');
+    tituloSeccion('Gastos del Período por Suministros, Servicios, Abonos y Seguros');
     if(gastosPorRubro.length===0){
-      doc.setFont('helvetica','italic'); doc.setFontSize(9);
+      doc.setFont('helvetica','italic'); doc.setFontSize(9); doc.setTextColor(...MUTED);
       doc.text('Sin gastos cargados este período.', M, y); y += 8;
-      doc.setFont('helvetica','normal');
     } else {
       gastosPorRubro.forEach(b=>{
-        saltoSiHaceFalta(20);
-        doc.setFillColor(...COLOR_PRINCIPAL); doc.setTextColor(255,255,255);
-        doc.rect(M, y, 182, 6, 'F'); doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
-        doc.text(b.rubro, M+3, y+4.3); doc.setTextColor(...COLOR_TEXTO); y += 7;
+        saltoSiHaceFalta(18);
+        doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...TEXTO);
+        doc.text(b.rubro, M, y); y += 5;
         const pct = totalGeneralGastos ? Math.round(b.total/totalGeneralGastos*100) : 0;
-        doc.autoTable({
-          ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-          head: [['Detalle','Fondo A','Fondo B','Total']],
-          body: b.lineas.map(l=>[l.detalle, l.importeA?fmt(l.importeA):'', l.importeB?fmt(l.importeB):'', fmt(l.total)]),
-          foot: [['Total '+b.rubro, fmt(b.totalA), fmt(b.totalB), fmt(b.total)+' ('+pct+'%)']],
-          footStyles: { fillColor:[217,217,217], textColor:COLOR_TEXTO, fontStyle:'bold' },
-        });
-        y = doc.lastAutoTable.finalY + 4;
+        const filas = b.lineas.map(l=>[l.detalle, l.importeA?fmt(l.importeA):'', l.importeB?fmt(l.importeB):'', fmt(l.total)]);
+        filas.push(['Total '+b.rubro, fmt(b.totalA), fmt(b.totalB), fmt(b.total)+'  ('+pct+'%)']);
+        tablaLimpia({ head:['Detalle','Fondo A','Fondo B','Total'], body: filas, columnasMonto:[1,2,3], esUltimaFilaTotal:true });
       });
     }
 
     // ---------- Remuneración al Personal ----------
-    bannerAzul('Remuneración al Personal y Cargas Sociales (Art. 10 inc. d Ley 941)');
-    doc.autoTable({
-      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-      head: [['Nombre y Apellido','Categoría','Sueldo Neto','Costo Total']],
+    tituloSeccion('Remuneración al Personal y Cargas Sociales (Art. 10 inc. d Ley 941)');
+    tablaLimpia({
+      head: ['Nombre y Apellido','Categoría','Sueldo Neto','Costo Total'],
       body: (data.personal||[]).length ? data.personal.map(p=>[p.nombre, p.categoria||'', fmt(p.sueldoNeto), fmt(p.costoTotal)]) : [['Sin personal en relación de dependencia este período.','','','']],
+      columnasMonto: [2,3],
     });
-    y = doc.lastAutoTable.finalY + 6;
 
-    // ---------- Total Fondo A/B y Fondo de Reserva ----------
-    bannerAzul('Totales del Período y Fondo de Reserva');
-    doc.autoTable({
-      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+    // ---------- Totales del período y Fondo de Reserva ----------
+    tituloSeccion('Totales del Período y Fondo de Reserva');
+    tablaLimpia({
       body: [
         ['Total Fondo A del período', fmt(totales.totalFondoAGeneral)],
         ['Total Fondo B del período', fmt(totales.totalFondoBGeneral)],
-        ['TOTAL GENERAL DE GASTOS DEL PERÍODO', fmt(totales.totalGeneralGastos)],
         ['Saldo del Fondo de Reserva — mes anterior', fmt(totales.saldoFondoReservaMesAnterior)],
         ['Aporte al Fondo de Reserva — este período', fmt(totales.aporteFondoReservaGeneral)],
         ['Saldo del Fondo de Reserva — al cierre', fmt(totales.saldoFondoReservaCierre)],
+        ['TOTAL GENERAL DE GASTOS DEL PERÍODO', fmt(totales.totalGeneralGastos)],
       ],
+      columnasMonto: [1], esUltimaFilaTotal: true,
     });
-    y = doc.lastAutoTable.finalY + 6;
 
     // ---------- Estado Financiero ----------
     if(data.estadoFinanciero){
-      bannerAzul('Estado Financiero y Patrimonial del Período (Art. 10 inc. c e i Ley 941)');
+      tituloSeccion('Estado Financiero y Patrimonial del Período (Art. 10 inc. c e i Ley 941)');
       const filaConcepto = (c)=>[c.concepto, fmt(c.importe)];
-      doc.autoTable({ ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', body: data.estadoFinanciero.financiero.map(filaConcepto) });
-      y = doc.lastAutoTable.finalY + 3;
-      saltoSiHaceFalta(30);
-      doc.autoTable({ ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', head:[['Banco','']], body: data.estadoFinanciero.banco.map(filaConcepto) });
-      y = doc.lastAutoTable.finalY + 3;
-      saltoSiHaceFalta(30);
-      doc.autoTable({ ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', head:[['Patrimonial','']], body: data.estadoFinanciero.patrimonial.map(filaConcepto) });
-      y = doc.lastAutoTable.finalY + 6;
+      tablaLimpia({ body: data.estadoFinanciero.financiero.map(filaConcepto), columnasMonto:[1] });
+      saltoSiHaceFalta(22);
+      doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...MUTED);
+      doc.text('BANCO', M, y); y += 5;
+      tablaLimpia({ body: data.estadoFinanciero.banco.map(filaConcepto), columnasMonto:[1] });
+      saltoSiHaceFalta(22);
+      doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(...MUTED);
+      doc.text('PATRIMONIAL', M, y); y += 5;
+      tablaLimpia({ body: data.estadoFinanciero.patrimonial.map(filaConcepto), columnasMonto:[1] });
     }
 
     // ---------- Referencia de Proveedores ----------
-    bannerAzul('Referencia de Proveedores Utilizados');
-    doc.autoTable({
-      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-      body: (data.proveedores||[]).length ? data.proveedores.map(p=>[[p.proveedor, p.cuit||'', p.domicilio||''].filter(Boolean).join(' — ')]) : [['Sin proveedores cargados este período.']],
+    tituloSeccion('Referencia de Proveedores Utilizados');
+    tablaLimpia({
+      body: (data.proveedores||[]).length ? data.proveedores.map(p=>[[p.proveedor, p.cuit||'', p.domicilio||''].filter(Boolean).join('   ·   ')]) : [['Sin proveedores cargados este período.']],
     });
-    y = doc.lastAutoTable.finalY + 6;
 
-    // ---------- Estado de Cuenta y Prorrateo (todas las unidades, orientación horizontal por la
-    // cantidad de columnas) ----------
+    // ---------- Estado de Cuenta y Prorrateo (todas las unidades, horizontal por la cantidad de
+    // columnas -- misma estética limpia, sin verticales) ----------
     doc.addPage('a4','landscape');
-    y = 16;
-    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...COLOR_PRINCIPAL);
-    doc.text('Estado de Cuenta y Prorrateo — Todos los Propietarios', M, y); y += 8;
-    doc.setTextColor(...COLOR_TEXTO);
+    y = 20;
+    const anchoUtilH = 297 - M*2;
+    doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.setTextColor(...NAVY);
+    doc.text('Estado de Cuenta y Prorrateo — Todos los Propietarios', M, y); y += 3;
+    doc.setDrawColor(...DIVIDER); doc.setLineWidth(0.25); doc.line(M, y, M+anchoUtilH, y); y += 8;
     doc.autoTable({
-      styles:{fontSize:7,textColor:COLOR_TEXTO,cellPadding:1.5}, headStyles:{fillColor:[235,235,235],textColor:COLOR_TEXTO,fontStyle:'bold',fontSize:6.5},
-      startY:y, margin:{left:M,right:M}, theme:'grid',
+      theme:'plain', startY:y, margin:{left:M,right:M}, tableWidth:anchoUtilH,
+      styles:{ font:'helvetica', fontSize:7.3, textColor:TEXTO, cellPadding:{top:1.8,bottom:1.8,left:1,right:1} },
+      headStyles:{ fontStyle:'bold', fontSize:6.8, textColor:MUTED, cellPadding:{top:0,bottom:2.5,left:1,right:1} },
+      columnStyles:{ 3:{halign:'right'},4:{halign:'right'},5:{halign:'right'},6:{halign:'right'},7:{halign:'right'},8:{halign:'right'},9:{halign:'right'},10:{halign:'right'},11:{halign:'right'},12:{halign:'right'} },
       head: [['UF','Piso/Dpto.','Propietario/a','Saldo Ant.','Pago','Deuda','Intereses','%','EXP A','EXP B','Redondeo','Total 1° Vto.','Total 2° Vto.']],
       body: (data.unidades||[]).map(u=>[
         u.uf||'', u.pisoDpto||'', u.propietario||'', fmt(u.saldoAnterior), fmt(u.pagoRecibido), fmt(u.deuda), fmt(u.interesesPunitorios),
         u.pctFondoA ? (u.pctFondoA*100).toFixed(2)+'%' : '0%', fmt(u.importeFondoA), fmt(u.importeFondoB), fmt(u.redondeo),
         fmt(u.totalPrimerVto), fmt(u.totalSegundoVto)
       ]),
+      didDrawCell: (d) => {
+        doc.setDrawColor(...DIVIDER); doc.setLineWidth(0.12);
+        doc.line(d.cell.x, d.cell.y+d.cell.height, d.cell.x+d.cell.width, d.cell.y+d.cell.height);
+      },
     });
 
-    // ---------- QR de documentos, al final ----------
-    async function imagenBase64DeUrl(url){
-      try{
-        const resp = await fetch(url);
-        const blob = await resp.blob();
-        return await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(blob); });
-      }catch(e){ return null; }
-    }
-    const qrUrl = (link) => `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(link)}`;
-    if(data.links.manualBuenasPracticas || data.links.reglamento){
-      doc.addPage('a4','portrait');
-      y = 18;
-      doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...COLOR_PRINCIPAL);
-      doc.text('Documentos del Consorcio', M, y); y += 10;
-      doc.setTextColor(...COLOR_TEXTO); doc.setFont('helvetica','normal'); doc.setFontSize(9);
-      if(data.links.manualBuenasPracticas){
-        doc.text('Manual de Buenas Prácticas Consorciales', M, y); y += 4;
-        const img = await imagenBase64DeUrl(qrUrl(data.links.manualBuenasPracticas));
-        if(img){ doc.addImage(img, 'PNG', M, y, 35, 35); }
-        y += 40;
-      }
-      if(data.links.reglamento){
-        doc.text('Reglamento de PH', M, y); y += 4;
-        const img = await imagenBase64DeUrl(qrUrl(data.links.reglamento));
-        if(img){ doc.addImage(img, 'PNG', M, y, 35, 35); }
-        y += 40;
-      }
-    }
-
-    doc.save(`Expensas_${escapeHtml(data.miUnidad?data.miUnidad.pisoDpto:'').replace(/[^a-zA-Z0-9]/g,'_')||'General'}_${(data.periodo||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
+    doc.save(`Expensas_${(data.miUnidad?data.miUnidad.pisoDpto:'General').replace(/[^a-zA-Z0-9]/g,'_')}_${(data.periodo||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
   }
   function mountCalcHonorarios(mountId){
     const mount = document.getElementById(mountId);
