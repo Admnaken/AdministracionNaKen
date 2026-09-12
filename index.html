@@ -2730,7 +2730,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     doc.setTextColor(...TEXTO);
 
     // ---------- PROPIETARIO/A ----------
-    bannerSeccion('PROPIETARIO/A');
+    bannerSeccion('LIQUIDACIÓN CORRESPONDIENTE A');
     if(mu){
       tablaConBordes({
         body: [
@@ -2821,7 +2821,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       tablaConBordes({
         head: [['Nombre y Apellido','Categoría','Sueldo Neto','Costo Total']],
         body: (data.personal||[]).length ? data.personal.map(p=>[p.nombre, p.categoria||'', fmt(p.sueldoNeto), fmt(p.costoTotal)]) : [['Sin personal en relación de dependencia este período.','','','']],
-        columnStyles:{ 2:{halign:'right'}, 3:{halign:'right'} },
+        columnStyles:{ 2:{halign:'right',cellWidth:32}, 3:{halign:'right',cellWidth:32} },
       });
     }
 
@@ -2833,7 +2833,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         ['Gastos Extraordinarios / Fondo B del período (todo el consorcio)', fmt(totales.totalFondoBGeneral)],
         ['TOTAL GENERAL DE GASTOS DEL PERÍODO', fmt(totales.totalGeneralGastos)],
       ],
-      columnStyles:{ 1:{halign:'right'} },
+      columnStyles:{ 0:{cellWidth:'auto'}, 1:{halign:'right',cellWidth:35} },
       didParseCell:(d)=>{ if(d.row.index===2){ d.cell.styles.fillColor=FILA_TOTAL; d.cell.styles.fontStyle='bold'; } },
     });
 
@@ -2875,11 +2875,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         doc.rect(M, y, ANCHO_UTIL, 6, 'F'); doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
         doc.text(b.rubro, M+3, y+4.3); doc.setTextColor(...TEXTO); y += 6;
         const pct = totalGeneralGastos ? Math.round(b.total/totalGeneralGastos*100) : 0;
-        const filas = b.lineas.map(l=>[l.detalle, l.importeA?fmt(l.importeA):'', l.importeB?fmt(l.importeB):'', fmt(l.total)]);
-        filas.push(['Total '+b.rubro, fmt(b.totalA), fmt(b.totalB), fmt(b.total)+'  ('+pct+'%)']);
+        // El % va en su PROPIA columna -- antes iba pegado al monto de la fila de total
+        // ("$ 1.067.597  (43%)") y quedaba colgado, sin alinear con nada.
+        const filas = b.lineas.map(l=>[l.detalle, l.importeA?fmt(l.importeA):'', l.importeB?fmt(l.importeB):'', fmt(l.total), '']);
+        filas.push(['Total '+b.rubro, fmt(b.totalA), fmt(b.totalB), fmt(b.total), pct+'%']);
         tablaConBordes({
-          head: [['Detalle','Fondo A','Fondo B','Total']], body: filas,
-          columnStyles:{ 1:{halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'} },
+          head: [['Detalle','Fondo A','Fondo B','Total','% del Total']], body: filas,
+          columnStyles:{
+            0:{cellWidth:'auto'},
+            1:{halign:'right', cellWidth:28}, 2:{halign:'right', cellWidth:28},
+            3:{halign:'right', cellWidth:30}, 4:{halign:'right', cellWidth:20},
+          },
           didParseCell:(d)=>{ if(d.section==='body' && d.row.index===filas.length-1){ d.cell.styles.fillColor=FILA_TOTAL; d.cell.styles.fontStyle='bold'; } },
         });
       });
@@ -2893,7 +2899,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         ['Aporte al Fondo de Reserva - este período', fmt(totales.aporteFondoReservaGeneral)],
         ['Saldo del Fondo de Reserva - al cierre de este período', fmt(totales.saldoFondoReservaCierre)],
       ],
-      columnStyles:{ 1:{halign:'right'} },
+      columnStyles:{ 0:{cellWidth:'auto'}, 1:{halign:'right',cellWidth:35} },
       didParseCell:(d)=>{ if(d.row.index===2){ d.cell.styles.fillColor=FILA_TOTAL; d.cell.styles.fontStyle='bold'; } },
     });
 
@@ -2910,7 +2916,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         ['Cargos Particulares', fmt(mu.cargosParticulares)],
         ['Redondeo', fmt(mu.redondeo)],
       ] : [['Sin datos de la unidad para este período.','']],
-      columnStyles:{ 1:{halign:'right'} },
+      columnStyles:{ 0:{cellWidth:'auto'}, 1:{halign:'right',cellWidth:35} },
     });
 
     // ---------- CANALES DE COMUNICACIÓN ----------
@@ -2959,21 +2965,53 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     doc.setFillColor(...NAVY);
     doc.rect(M, y, anchoUtilH, 7.5, 'F');
     doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(10.5);
-    doc.text('ESTADO DE CUENTA Y PRORRATEO — TODOS LOS PROPIETARIOS', M+anchoUtilH/2, y+5.3, {align:'center'});
+    doc.text('ESTADO DE CUENTA Y PRORRATEO', M+anchoUtilH/2, y+5.3, {align:'center'});
     y += 7.5 + 6;
     doc.setTextColor(...TEXTO);
+    const unidadesTabla = data.unidades || [];
+    const sumar = (campo) => unidadesTabla.reduce((s,u)=>s+(Number(u[campo])||0), 0);
+    const filaTotalUnidades = [
+      '', '', 'TOTAL',
+      fmt(sumar('saldoAnterior')), fmt(sumar('pagoRecibido')), fmt(sumar('deuda')), fmt(sumar('interesesPunitorios')),
+      (sumar('pctFondoA')*100).toFixed(0)+'%', fmt(sumar('importeFondoA')), fmt(sumar('importeFondoB')), fmt(sumar('redondeo')),
+      fmt(sumar('totalPrimerVto')), fmt(sumar('totalSegundoVto')),
+    ];
     doc.autoTable({
+      // Ancho de cada columna fijado a mano -- con ancho automático, un monto como "$ 1.000.000"
+      // se cortaba en columnas angostas. Estos anchos dejan lugar de sobra para esa longitud.
       theme:'grid', startY:y, margin:{left:M,right:M}, tableWidth:anchoUtilH,
       styles:{ font:'helvetica', fontSize:7.3, textColor:TEXTO, cellPadding:1.8, lineColor:BORDE, lineWidth:0.2 },
       headStyles:{ fillColor:[240,241,243], textColor:TEXTO, fontStyle:'bold', fontSize:6.8 },
-      columnStyles:{ 3:{halign:'right'},4:{halign:'right'},5:{halign:'right'},6:{halign:'right'},7:{halign:'right'},8:{halign:'right'},9:{halign:'right'},10:{halign:'right'},11:{halign:'right'},12:{halign:'right'} },
+      columnStyles:{
+        0:{cellWidth:10}, 1:{cellWidth:16}, 2:{cellWidth:32},
+        3:{halign:'right',cellWidth:20}, 4:{halign:'right',cellWidth:18}, 5:{halign:'right',cellWidth:20}, 6:{halign:'right',cellWidth:18},
+        7:{halign:'right',cellWidth:12}, 8:{halign:'right',cellWidth:20}, 9:{halign:'right',cellWidth:20}, 10:{halign:'right',cellWidth:18},
+        11:{halign:'right',cellWidth:24}, 12:{halign:'right',cellWidth:24},
+      },
       head: [['UF','Piso/Dpto.','Propietario/a','Saldo Ant.','Pago','Deuda','Intereses','%','EXP A','EXP B','Redondeo','Total 1° Vto.','Total 2° Vto.']],
-      body: (data.unidades||[]).map(u=>[
-        u.uf||'', u.pisoDpto||'', u.propietario||'', fmt(u.saldoAnterior), fmt(u.pagoRecibido), fmt(u.deuda), fmt(u.interesesPunitorios),
-        u.pctFondoA ? (u.pctFondoA*100).toFixed(2)+'%' : '0%', fmt(u.importeFondoA), fmt(u.importeFondoB), fmt(u.redondeo),
-        fmt(u.totalPrimerVto), fmt(u.totalSegundoVto)
-      ]),
+      body: [
+        ...unidadesTabla.map(u=>[
+          u.uf||'', u.pisoDpto||'', u.propietario||'', fmt(u.saldoAnterior), fmt(u.pagoRecibido), fmt(u.deuda), fmt(u.interesesPunitorios),
+          u.pctFondoA ? (u.pctFondoA*100).toFixed(2)+'%' : '0%', fmt(u.importeFondoA), fmt(u.importeFondoB), fmt(u.redondeo),
+          fmt(u.totalPrimerVto), fmt(u.totalSegundoVto)
+        ]),
+        filaTotalUnidades,
+      ],
+      didParseCell:(d)=>{ if(d.section==='body' && d.row.index===unidadesTabla.length){ d.cell.styles.fillColor=FILA_TOTAL; d.cell.styles.fontStyle='bold'; } },
     });
+    y = doc.lastAutoTable.finalY + 5;
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...MUTED);
+    doc.text(String(cfg['DATOS ADICIONALES | Redes / sitio web de la administración']||''), M, y);
+
+    // ---------- Numeración de página, en el pie, en todas las páginas ----------
+    const totalPaginas = doc.internal.getNumberOfPages();
+    for(let p=1; p<=totalPaginas; p++){
+      doc.setPage(p);
+      const anchoPagina = doc.internal.pageSize.getWidth();
+      const altoPagina = doc.internal.pageSize.getHeight();
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...MUTED);
+      doc.text(`${p} / ${totalPaginas}`, anchoPagina - M, altoPagina - 8, {align:'right'});
+    }
 
     doc.save(`Expensas_${(mu?mu.pisoDpto:'General').replace(/[^a-zA-Z0-9]/g,'_')}_${(data.periodo||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
   }
@@ -4083,7 +4121,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <select id="req-unidad-select" disabled style="background:var(--gray-100,#f2f2f2);color:var(--muted);">
             <option value="">Elegí primero tu edificio</option>
           </select>
-          <input type="text" id="req-unidad-manual" placeholder="Ej: 4° B" style="display:none;">
+          <input type="text" id="req-unidad-manual" placeholder="Número de Unidad Funcional (UF), no el piso/depto -- ej: 10" style="display:none;">
           <label>Nombre completo (el titular de la unidad)</label><input type="text" id="req-nombre">
           <label>Código de invitación</label>
           <input type="text" id="req-codigo" placeholder="El que te mandó la administración por WhatsApp">
@@ -4148,9 +4186,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           // A propósito NO se muestra el nombre del propietario acá: este desplegable lo ve
           // cualquiera que abra la app, antes de loguearse. Los nombres solo se comparan
           // del lado del administrador, al aprobar la solicitud (ver mountUsuarios).
+          // El VALOR guardado tiene que ser siempre el UF (es la clave que usa el resto del
+          // sistema para identificar la unidad -- el PDF de "Mis Expensas", los pagos, etc.) --
+          // antes se guardaba el Piso/Dpto con prioridad, y esa unidad nunca coincidía con
+          // "UF" en Prorrateo_Mensual. El TEXTO mostrado sigue siendo el Piso/Dpto (más fácil
+          // de reconocer para el propietario), pero eso es solo apariencia, no lo que se guarda.
           unidades.map(u=>{
-            const valor = u.pisoDpto || u.uf;
-            return `<option value="${escapeHtml(valor)}">${escapeHtml(valor)}</option>`;
+            const valorGuardado = u.uf || u.pisoDpto;
+            const textoMostrado = u.pisoDpto || u.uf;
+            return `<option value="${escapeHtml(valorGuardado)}">${escapeHtml(textoMostrado)}</option>`;
           }).join('');
       });
     })();
@@ -5082,9 +5126,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const fmtN = (v)=> '$ ' + (Number(v)||0).toLocaleString('es-AR',{maximumFractionDigits:0});
     const fmtF = (v)=> v ? new Date(v).toLocaleDateString('es-AR') : '—';
     const unidades = data.unidades || [];
-    const botonDescargarExpensas = `<div style="margin-bottom:16px;"><button class="btn primary" id="${mountId}-descargar-expensas-btn">📄 Descargar Expensas</button></div>`;
+    // El botón genérico de arriba solo tiene sentido para un propietario (descarga la suya con
+    // un solo clic) -- el admin no tiene "su propia unidad", así que para él el botón de
+    // descarga vive en cada fila de la tabla (puede bajar la de cualquier propietario si hace
+    // falta mandársela por mail).
+    const botonDescargarExpensas = role==='propietario'
+      ? `<div style="margin-bottom:16px;"><button class="btn primary" id="${mountId}-descargar-expensas-btn">📄 Descargar Expensas</button></div>`
+      : '';
 
-    const filas = unidades.length===0 ? `<tr><td colspan="9" style="text-align:center;color:var(--muted);">Sin propietarios cargados para este período.</td></tr>` : unidades.map(u=>{
+    const filas = unidades.length===0 ? `<tr><td colspan="10" style="text-align:center;color:var(--muted);">Sin propietarios cargados para este período.</td></tr>` : unidades.map(u=>{
       const esMiUnidad = role==='propietario' && currentUser && String(u.uf).trim()===String(currentUser.unidad).trim();
       return `
         <tr${esMiUnidad ? ' style="background:rgba(201,168,76,.12);font-weight:600;"' : ''}>
@@ -5097,6 +5147,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <td class="nowrap">${fmtN(u.importeFondoReserva)}</td>
           <td class="nowrap">${fmtN(u.totalPrimerVto)}<br><span style="font-size:11px;color:var(--muted);">vto. ${fmtF(u.fechaPrimerVto)}</span></td>
           <td class="nowrap">${fmtN(u.totalSegundoVto)}<br><span style="font-size:11px;color:var(--muted);">vto. ${fmtF(u.fechaSegundoVto)}</span></td>
+          ${role==='admin' ? `<td class="nowrap"><button class="btn ghost btn-pdf-unidad" data-uf="${escapeHtml(String(u.uf||''))}" style="padding:4px 8px;font-size:12px;">📄 PDF</button></td>` : ''}
         </tr>
       `;
     }).join('');
@@ -5120,20 +5171,36 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <th style="width:110px;">Fondo de Reserva</th>
           <th style="width:120px;">Total 1er vto.</th>
           <th style="width:120px;">Total 2do vto.</th>
+          ${role==='admin' ? '<th style="width:60px;">PDF</th>' : ''}
         </tr></thead>
         <tbody>${filas}</tbody>
       </table>
     `;
-    document.getElementById(mountId+'-descargar-expensas-btn').addEventListener('click', async (e)=>{
-      const btn = e.currentTarget;
-      const original = btn.textContent;
-      btn.textContent = 'Generando PDF…'; btn.disabled = true;
-      try{
-        await generarPdfExpensas(spreadsheetId, role==='propietario' && currentUser ? currentUser.unidad : '');
-      } finally {
-        btn.textContent = original; btn.disabled = false;
-      }
-    });
+    if(role==='propietario'){
+      document.getElementById(mountId+'-descargar-expensas-btn').addEventListener('click', async (e)=>{
+        const btn = e.currentTarget;
+        const original = btn.textContent;
+        btn.textContent = 'Generando PDF…'; btn.disabled = true;
+        try{
+          await generarPdfExpensas(spreadsheetId, currentUser ? currentUser.unidad : '');
+        } finally {
+          btn.textContent = original; btn.disabled = false;
+        }
+      });
+    } else {
+      mount.querySelectorAll('.btn-pdf-unidad').forEach(btn=>{
+        btn.addEventListener('click', async (e)=>{
+          const b = e.currentTarget;
+          const original = b.textContent;
+          b.textContent = '…'; b.disabled = true;
+          try{
+            await generarPdfExpensas(spreadsheetId, b.dataset.uf);
+          } finally {
+            b.textContent = original; b.disabled = false;
+          }
+        });
+      });
+    }
   }
   /* ---------- Facturas y comprobantes: vista en vivo de Gastos_Mensual, con selector de período
      (acá es donde el propietario puede ver facturas de meses anteriores, no solo el último) ---------- */
