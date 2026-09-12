@@ -1387,7 +1387,6 @@
 
     <div class="navgroup">
       <div class="group-label">Transparencia</div>
-      <button class="navbtn" data-panel="informegeneral">Liquidación de Expensas</button>
       <button class="navbtn" data-panel="juicios">Juicios</button>
       <button class="navbtn" data-panel="reserva">Fondo de reserva</button>
       <button class="navbtn" data-panel="conciliaciones">Libro Banco y Conciliación bancaria</button>
@@ -1620,16 +1619,6 @@
           <p class="panel-note">Para usar cuando alguien te pide presupuesto: primero puntuás la complejidad del edificio, después calculás el honorario de referencia (tabla CAPHAI) y por último ves cuántos consorcios así necesitás para tu objetivo de ingresos.</p>
         </div>
         <div id="calchonorarios-mount"></div>
-      </section>
-
-      <!-- LIQUIDACIÓN DE EXPENSAS (documento único: informe general + liquidación individual) -->
-      <section class="panel" id="panel-informegeneral">
-        <div class="panel-head">
-          <span class="eyebrow">Transparencia</span>
-          <h2>Liquidación de Expensas</h2>
-          <p class="panel-note">El documento completo del mes (Art. 10 Ley 941), en un solo lugar como exige el Modelo Único del Manual de Buenas Prácticas Consorciales: los gastos y el estado financiero del edificio completo, y al final el detalle de tu propia unidad. Para guardarlo como PDF: Ctrl+P (o Cmd+P en Mac) y elegí "Guardar como PDF".</p>
-        </div>
-        <div id="informegeneral-mount"></div>
       </section>
 
       <!-- PERSONAL Y LIQUIDACIÓN DE SUELDOS -->
@@ -2658,30 +2647,99 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
      PDF, se usa Ctrl+P del navegador -- no genera el archivo del lado
      del servidor.
      --------------------------------------------------------------------- */
-  async function mountInformeGeneral(mountId){
-    function fmt(n){ return '$ ' + Math.round(Number(n)||0).toLocaleString('es-AR'); }
-    // El backend devuelve las celdas de fecha de Sheets como objetos Date, que al viajar en
-    // JSON se serializan a texto ISO ("2026-09-10T07:00:00.000Z") -- sin esto, esa fecha cruda
-    // se mostraba tal cual en vez de un formato legible. Mismo patrón que ya usa el resto de la
-    // app (fmtF) para no introducir un formato distinto acá.
-    const fmtFecha = (v)=> v ? new Date(v).toLocaleDateString('es-AR') : '';
-    const mount = document.getElementById(mountId);
-    mount.innerHTML = `<div class="loading">Cargando datos del informe…</div>`;
-    const spreadsheetId = await getSpreadsheetIdActivo();
-    if(!spreadsheetId){
-      mount.innerHTML = `<div class="gate-msg error">Este consorcio todavía no tiene la planilla vinculada.</div>`;
-      return;
-    }
-    const data = await fetchInformeGeneral(spreadsheetId);
-    if(!data){
-      mount.innerHTML = `<div class="gate-msg error">No se pudo cargar el informe. Probá de nuevo en unos segundos.</div>`;
-      return;
-    }
+  async function generarPdfExpensas(spreadsheetId, unidad){
+    if(!window.jspdf){ alert('No se pudo cargar el generador de PDF. Revisá tu conexión e intentá de nuevo.'); return; }
+    const data = await fetchInformeGeneral(spreadsheetId, unidad);
+    if(!data){ alert('No se pudo cargar la liquidación. Probá de nuevo en unos segundos.'); return; }
 
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const M = 14;
+    let y = 16;
+    const COLOR_PRINCIPAL = [11,42,74];
+    const COLOR_TEXTO = [44,62,80];
+    const AUTOTABLE_BASE = { styles:{fontSize:8.5,textColor:COLOR_TEXTO,cellPadding:2}, headStyles:{fillColor:[235,235,235],textColor:COLOR_TEXTO,fontStyle:'bold',fontSize:8} };
+    const fmt = (n)=> '$ ' + Math.round(Number(n)||0).toLocaleString('es-AR');
+    const fmtFecha = (v)=> v ? new Date(v).toLocaleDateString('es-AR') : '';
     const cfg = data.config || {};
     const totales = data.totales || {};
-    const qrUrl = (link) => link ? `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(link)}` : '';
 
+    function bannerAzul(texto){
+      if(y>265){ doc.addPage(); y=18; }
+      doc.setFillColor(...COLOR_PRINCIPAL);
+      doc.rect(M, y, 182, 7, 'F');
+      doc.setTextColor(255,255,255);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(9);
+      doc.text(texto, M+3, y+5);
+      doc.setTextColor(...COLOR_TEXTO);
+      y += 10;
+    }
+    function saltoSiHaceFalta(alturaEstim){
+      if(y + alturaEstim > 280){ doc.addPage(); y = 18; }
+    }
+
+    // ---------- Encabezado ----------
+    doc.setFont('helvetica','bold'); doc.setFontSize(14); doc.setTextColor(...COLOR_PRINCIPAL);
+    doc.text('MIS EXPENSAS', M, y); y += 6;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(...COLOR_TEXTO);
+    doc.text('Período: '+(data.periodo||''), M, y); y += 8;
+
+    if(data.miUnidad){
+      doc.autoTable({
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+        head: [['Propietario','UF','Piso/Depto.','1er Vencimiento','2do Vencimiento']],
+        body: [[data.miUnidad.propietario||'', data.miUnidad.uf||'', data.miUnidad.pisoDpto||'', fmtFecha(data.miUnidad.fechaPrimerVto), fmtFecha(data.miUnidad.fechaSegundoVto)]],
+      });
+      y = doc.lastAutoTable.finalY + 6;
+    }
+
+    // ---------- Administración | Consorcio, dos tablas lado a lado ----------
+    const anchoMitad = 89;
+    doc.autoTable({
+      ...AUTOTABLE_BASE, startY:y, margin:{left:M}, tableWidth:anchoMitad, theme:'grid',
+      head: [['Administración','']],
+      body: [
+        ['Nombre', cfg['ADMINISTRACIÓN | Nombre']||''],
+        ['Domicilio', cfg['ADMINISTRACIÓN | Domicilio']||''],
+        ['Email', cfg['ADMINISTRACIÓN | Email']||''],
+        ['Teléfono', cfg['ADMINISTRACIÓN | Teléfono']||''],
+        ['CUIT', cfg['ADMINISTRACIÓN | CUIT']||''],
+        ['Situación Fiscal', cfg['ADMINISTRACIÓN | Situación Fiscal']||''],
+        ['Horario de atención', cfg['ADMINISTRACIÓN | Horario de atención']||''],
+        ['Página web', cfg['DATOS ADICIONALES | Redes / sitio web de la administración']||''],
+        ['WhatsApp', cfg['DATOS PARA EL MODELO ÚNICO DE LIQUIDACIÓN (GCBA) | WhatsApp de la administración']||''],
+      ],
+    });
+    const finAdmin = doc.lastAutoTable.finalY;
+    doc.autoTable({
+      ...AUTOTABLE_BASE, startY:y, margin:{left:M+anchoMitad+4}, tableWidth:anchoMitad, theme:'grid',
+      head: [['Consorcio','']],
+      body: [
+        ['Nombre', cfg['CONSORCIO | Nombre / Dirección']||''],
+        ['CUIT', cfg['CONSORCIO | CUIT']||''],
+        ['Convenio', cfg['DATOS PARA EL MODELO ÚNICO DE LIQUIDACIÓN (GCBA) | Convenio del consorcio (si aplica)']||''],
+      ],
+    });
+    y = Math.max(finAdmin, doc.lastAutoTable.finalY) + 6;
+
+    // ---------- Forma de Pago ----------
+    bannerAzul('Forma de Pago');
+    doc.autoTable({
+      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+      body: [
+        ['Titular de cuenta', cfg['FORMA DE PAGO | Titular de cuenta']||''],
+        ['CUIT titular', cfg['FORMA DE PAGO | CUIT titular']||''],
+        ['Banco / Sucursal', (cfg['FORMA DE PAGO | Banco']||'')+' / '+(cfg['FORMA DE PAGO | Sucursal']||'')],
+        ['N° de cuenta', cfg['FORMA DE PAGO | N° de cuenta']||''],
+        ['CBU', cfg['FORMA DE PAGO | CBU']||''],
+        ['Alias', cfg['FORMA DE PAGO | Alias']||''],
+        ['Código de pago electrónico', cfg['FORMA DE PAGO | Código de pago electrónico']||''],
+      ],
+    });
+    y = doc.lastAutoTable.finalY + 6;
+
+    // ---------- Gastos del período por rubro ----------
     const gastosPorRubro = [];
     const indiceRubro = {};
     (data.gastos||[]).forEach(g=>{
@@ -2700,9 +2758,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       if(esFondoB) bloque.totalB += importe; else bloque.totalA += importe;
       bloque.total += importe;
     });
-    // Los rubros vienen en el orden en que aparecen los gastos en la hoja, no en orden numérico
-    // (podían salir 3, 2, 8, 4... en vez de 1, 2, 3...) -- se ordenan acá por el número inicial
-    // de cada rubro ("3 - Abonos de Servicios" -> 3).
     gastosPorRubro.sort((a,b)=>{
       const na = parseInt(String(a.rubro).match(/^\d+/)||[999], 10);
       const nb = parseInt(String(b.rubro).match(/^\d+/)||[999], 10);
@@ -2710,158 +2765,124 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     });
     const totalGeneralGastos = gastosPorRubro.reduce((s,b)=>s+b.total, 0);
 
-    const filaConcepto = (c) => `<tr><td>${escapeHtml(c.concepto)}</td><td style="text-align:right;">${fmt(c.importe)}</td></tr>`;
+    bannerAzul('Gastos del Período por Suministros, Servicios, Abonos y Seguros');
+    if(gastosPorRubro.length===0){
+      doc.setFont('helvetica','italic'); doc.setFontSize(9);
+      doc.text('Sin gastos cargados este período.', M, y); y += 8;
+      doc.setFont('helvetica','normal');
+    } else {
+      gastosPorRubro.forEach(b=>{
+        saltoSiHaceFalta(20);
+        doc.setFillColor(...COLOR_PRINCIPAL); doc.setTextColor(255,255,255);
+        doc.rect(M, y, 182, 6, 'F'); doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+        doc.text(b.rubro, M+3, y+4.3); doc.setTextColor(...COLOR_TEXTO); y += 7;
+        const pct = totalGeneralGastos ? Math.round(b.total/totalGeneralGastos*100) : 0;
+        doc.autoTable({
+          ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+          head: [['Detalle','Fondo A','Fondo B','Total']],
+          body: b.lineas.map(l=>[l.detalle, l.importeA?fmt(l.importeA):'', l.importeB?fmt(l.importeB):'', fmt(l.total)]),
+          foot: [['Total '+b.rubro, fmt(b.totalA), fmt(b.totalB), fmt(b.total)+' ('+pct+'%)']],
+          footStyles: { fillColor:[217,217,217], textColor:COLOR_TEXTO, fontStyle:'bold' },
+        });
+        y = doc.lastAutoTable.finalY + 4;
+      });
+    }
 
-    mount.innerHTML = `
-      <style>
-        .informe-doc { font-family: Georgia, 'Times New Roman', serif; font-size: 13px; color:#1a1a1a; max-width: 900px; }
-        .informe-doc h3 { background:#1B2A3D; color:#fff; padding:8px 12px; margin:24px 0 10px 0; font-size:14px; }
-        .informe-doc table { width:100%; border-collapse: collapse; margin-bottom: 4px; }
-        .informe-doc td, .informe-doc th { border:1px solid #ccc; padding:5px 8px; vertical-align: top; }
-        .informe-doc th { background:#E9EEF3; text-align:left; }
-        .informe-doc .rubro-header { background:#1B2A3D; color:#fff; font-weight:bold; padding:6px 8px; }
-        .informe-doc .rubro-total { background:#D9D9D9; font-weight:bold; }
-        .informe-doc .col-detalle { width:55%; }
-        .informe-doc .col-monto { width:15%; text-align:right; }
-        .informe-doc .datos-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px; }
-        .informe-doc .qr-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; text-align:center; margin-bottom:16px; }
-        @media print {
-          .no-imprimir { display:none !important; }
-          .informe-doc { max-width:none; }
-        }
-      </style>
-      <div class="no-imprimir" style="margin-bottom:16px;">
-        <button class="btn primary" id="${mountId}-imprimir-btn">🖨️ Imprimir / Guardar como PDF</button>
-      </div>
-      <div class="informe-doc">
-        <h2 style="text-align:center;">MIS EXPENSAS — PERÍODO ${escapeHtml(data.periodo||'')}</h2>
+    // ---------- Remuneración al Personal ----------
+    bannerAzul('Remuneración al Personal y Cargas Sociales (Art. 10 inc. d Ley 941)');
+    doc.autoTable({
+      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+      head: [['Nombre y Apellido','Categoría','Sueldo Neto','Costo Total']],
+      body: (data.personal||[]).length ? data.personal.map(p=>[p.nombre, p.categoria||'', fmt(p.sueldoNeto), fmt(p.costoTotal)]) : [['Sin personal en relación de dependencia este período.','','','']],
+    });
+    y = doc.lastAutoTable.finalY + 6;
 
-        ${data.miUnidad ? `
-        <table style="margin-bottom:16px;">
-          <tr>
-            <td><b>Propietario</b><br>${escapeHtml(data.miUnidad.propietario||'')}</td>
-            <td><b>Unidad Funcional</b><br>${escapeHtml(data.miUnidad.uf||'')}</td>
-            <td><b>Piso / Depto.</b><br>${escapeHtml(data.miUnidad.pisoDpto||'')}</td>
-            <td><b>1er Vencimiento</b><br>${escapeHtml(fmtFecha(data.miUnidad.fechaPrimerVto))}</td>
-            <td><b>2do Vencimiento</b><br>${escapeHtml(fmtFecha(data.miUnidad.fechaSegundoVto))}</td>
-          </tr>
-        </table>
-        ` : ''}
+    // ---------- Total Fondo A/B y Fondo de Reserva ----------
+    bannerAzul('Totales del Período y Fondo de Reserva');
+    doc.autoTable({
+      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+      body: [
+        ['Total Fondo A del período', fmt(totales.totalFondoAGeneral)],
+        ['Total Fondo B del período', fmt(totales.totalFondoBGeneral)],
+        ['TOTAL GENERAL DE GASTOS DEL PERÍODO', fmt(totales.totalGeneralGastos)],
+        ['Saldo del Fondo de Reserva — mes anterior', fmt(totales.saldoFondoReservaMesAnterior)],
+        ['Aporte al Fondo de Reserva — este período', fmt(totales.aporteFondoReservaGeneral)],
+        ['Saldo del Fondo de Reserva — al cierre', fmt(totales.saldoFondoReservaCierre)],
+      ],
+    });
+    y = doc.lastAutoTable.finalY + 6;
 
-        <div class="datos-grid">
-          <table>
-            <tr><th colspan="2">Administración</th></tr>
-            <tr><td>Nombre</td><td>${escapeHtml(cfg['ADMINISTRACIÓN | Nombre']||'')}</td></tr>
-            <tr><td>Domicilio</td><td>${escapeHtml(cfg['ADMINISTRACIÓN | Domicilio']||'')}</td></tr>
-            <tr><td>Email</td><td>${escapeHtml(cfg['ADMINISTRACIÓN | Email']||'')}</td></tr>
-            <tr><td>Teléfono</td><td>${escapeHtml(cfg['ADMINISTRACIÓN | Teléfono']||'')}</td></tr>
-            <tr><td>CUIT</td><td>${escapeHtml(cfg['ADMINISTRACIÓN | CUIT']||'')}</td></tr>
-            <tr><td>Situación Fiscal</td><td>${escapeHtml(cfg['ADMINISTRACIÓN | Situación Fiscal']||'')}</td></tr>
-            <tr><td>Horario de atención</td><td>${escapeHtml(cfg['ADMINISTRACIÓN | Horario de atención']||'')}</td></tr>
-            <tr><td>Página web</td><td>${escapeHtml(cfg['DATOS ADICIONALES | Redes / sitio web de la administración']||'')}</td></tr>
-            <tr><td>WhatsApp</td><td>${escapeHtml(cfg['DATOS PARA EL MODELO ÚNICO DE LIQUIDACIÓN (GCBA) | WhatsApp de la administración']||'')}</td></tr>
-          </table>
-          <table>
-            <tr><th colspan="2">Consorcio</th></tr>
-            <tr><td>Nombre</td><td>${escapeHtml(cfg['CONSORCIO | Nombre / Dirección']||'')}</td></tr>
-            <tr><td>CUIT</td><td>${escapeHtml(cfg['CONSORCIO | CUIT']||'')}</td></tr>
-            <tr><td>Convenio</td><td>${escapeHtml(cfg['DATOS PARA EL MODELO ÚNICO DE LIQUIDACIÓN (GCBA) | Convenio del consorcio (si aplica)']||'')}</td></tr>
-          </table>
-        </div>
+    // ---------- Estado Financiero ----------
+    if(data.estadoFinanciero){
+      bannerAzul('Estado Financiero y Patrimonial del Período (Art. 10 inc. c e i Ley 941)');
+      const filaConcepto = (c)=>[c.concepto, fmt(c.importe)];
+      doc.autoTable({ ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', body: data.estadoFinanciero.financiero.map(filaConcepto) });
+      y = doc.lastAutoTable.finalY + 3;
+      saltoSiHaceFalta(30);
+      doc.autoTable({ ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', head:[['Banco','']], body: data.estadoFinanciero.banco.map(filaConcepto) });
+      y = doc.lastAutoTable.finalY + 3;
+      saltoSiHaceFalta(30);
+      doc.autoTable({ ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid', head:[['Patrimonial','']], body: data.estadoFinanciero.patrimonial.map(filaConcepto) });
+      y = doc.lastAutoTable.finalY + 6;
+    }
 
-        <div class="qr-grid">
-          <div>
-            <b>Manual de Buenas Prácticas Consorciales</b><br>
-            ${data.links.manualBuenasPracticas ? `<img src="${qrUrl(data.links.manualBuenasPracticas)}" alt="QR Manual">` : '<i>Sin link cargado</i>'}
-          </div>
-          <div>
-            <b>Reglamento de PH</b><br>
-            ${data.links.reglamento ? `<img src="${qrUrl(data.links.reglamento)}" alt="QR Reglamento">` : '<i>Sin link cargado</i>'}
-          </div>
-        </div>
+    // ---------- Referencia de Proveedores ----------
+    bannerAzul('Referencia de Proveedores Utilizados');
+    doc.autoTable({
+      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+      body: (data.proveedores||[]).length ? data.proveedores.map(p=>[[p.proveedor, p.cuit||'', p.domicilio||''].filter(Boolean).join(' — ')]) : [['Sin proveedores cargados este período.']],
+    });
+    y = doc.lastAutoTable.finalY + 6;
 
-<h3>Forma de Pago</h3>
-        <table>
-          <tr><td>Empresa de Cobranzas</td><td>${escapeHtml(cfg['Empresa de Cobranzas']||'—')}</td></tr>
-          <tr><td>Titular de cuenta</td><td>${escapeHtml(cfg['FORMA DE PAGO | Titular de cuenta']||'')}</td></tr>
-          <tr><td>CUIT titular</td><td>${escapeHtml(cfg['FORMA DE PAGO | CUIT titular']||'')}</td></tr>
-          <tr><td>Banco / Sucursal</td><td>${escapeHtml(cfg['FORMA DE PAGO | Banco']||'')} / ${escapeHtml(cfg['FORMA DE PAGO | Sucursal']||'')}</td></tr>
-          <tr><td>N° de cuenta</td><td>${escapeHtml(cfg['FORMA DE PAGO | N° de cuenta']||'')}</td></tr>
-          <tr><td>CBU</td><td>${escapeHtml(cfg['FORMA DE PAGO | CBU']||'')}</td></tr>
-          <tr><td>Alias</td><td>${escapeHtml(cfg['FORMA DE PAGO | Alias']||'')}</td></tr>
-          <tr><td>Código de pago electrónico</td><td>${escapeHtml(cfg['FORMA DE PAGO | Código de pago electrónico']||'')}</td></tr>
-        </table>
+    // ---------- Estado de Cuenta y Prorrateo (todas las unidades, orientación horizontal por la
+    // cantidad de columnas) ----------
+    doc.addPage('a4','landscape');
+    y = 16;
+    doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...COLOR_PRINCIPAL);
+    doc.text('Estado de Cuenta y Prorrateo — Todos los Propietarios', M, y); y += 8;
+    doc.setTextColor(...COLOR_TEXTO);
+    doc.autoTable({
+      styles:{fontSize:7,textColor:COLOR_TEXTO,cellPadding:1.5}, headStyles:{fillColor:[235,235,235],textColor:COLOR_TEXTO,fontStyle:'bold',fontSize:6.5},
+      startY:y, margin:{left:M,right:M}, theme:'grid',
+      head: [['UF','Piso/Dpto.','Propietario/a','Saldo Ant.','Pago','Deuda','Intereses','%','EXP A','EXP B','Redondeo','Total 1° Vto.','Total 2° Vto.']],
+      body: (data.unidades||[]).map(u=>[
+        u.uf||'', u.pisoDpto||'', u.propietario||'', fmt(u.saldoAnterior), fmt(u.pagoRecibido), fmt(u.deuda), fmt(u.interesesPunitorios),
+        u.pctFondoA ? (u.pctFondoA*100).toFixed(2)+'%' : '0%', fmt(u.importeFondoA), fmt(u.importeFondoB), fmt(u.redondeo),
+        fmt(u.totalPrimerVto), fmt(u.totalSegundoVto)
+      ]),
+    });
 
-        <h3>Gastos del Período por Suministros, Servicios, Abonos y Seguros (Art. 10 inc. e y f Ley 941)</h3>
-        ${gastosPorRubro.length===0 ? '<p><i>Sin gastos cargados este período.</i></p>' : gastosPorRubro.map(b=>`
-          <div class="rubro-header">${escapeHtml(b.rubro)}</div>
-          <table>
-            <colgroup><col class="col-detalle"><col class="col-monto"><col class="col-monto"><col class="col-monto"></colgroup>
-            ${b.lineas.map(l=>`<tr><td>${escapeHtml(l.detalle)}</td><td style="text-align:right;">${l.importeA?fmt(l.importeA):''}</td><td style="text-align:right;">${l.importeB?fmt(l.importeB):''}</td><td style="text-align:right;">${fmt(l.total)}</td></tr>`).join('')}
-            <tr class="rubro-total"><td>Total ${escapeHtml(b.rubro)}</td><td style="text-align:right;">${fmt(b.totalA)}</td><td style="text-align:right;">${fmt(b.totalB)}</td><td style="text-align:right;">${fmt(b.total)} (${totalGeneralGastos?Math.round(b.total/totalGeneralGastos*100):0}%)</td></tr>
-          </table>
-        `).join('')}
+    // ---------- QR de documentos, al final ----------
+    async function imagenBase64DeUrl(url){
+      try{
+        const resp = await fetch(url);
+        const blob = await resp.blob();
+        return await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(blob); });
+      }catch(e){ return null; }
+    }
+    const qrUrl = (link) => `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(link)}`;
+    if(data.links.manualBuenasPracticas || data.links.reglamento){
+      doc.addPage('a4','portrait');
+      y = 18;
+      doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...COLOR_PRINCIPAL);
+      doc.text('Documentos del Consorcio', M, y); y += 10;
+      doc.setTextColor(...COLOR_TEXTO); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+      if(data.links.manualBuenasPracticas){
+        doc.text('Manual de Buenas Prácticas Consorciales', M, y); y += 4;
+        const img = await imagenBase64DeUrl(qrUrl(data.links.manualBuenasPracticas));
+        if(img){ doc.addImage(img, 'PNG', M, y, 35, 35); }
+        y += 40;
+      }
+      if(data.links.reglamento){
+        doc.text('Reglamento de PH', M, y); y += 4;
+        const img = await imagenBase64DeUrl(qrUrl(data.links.reglamento));
+        if(img){ doc.addImage(img, 'PNG', M, y, 35, 35); }
+        y += 40;
+      }
+    }
 
-        <h3>Remuneración al Personal y Cargas Sociales (Art. 10 inc. d Ley 941)</h3>
-        <table>
-          <tr><th>Nombre y Apellido</th><th>Categoría</th><th style="text-align:right;">Sueldo Neto</th><th style="text-align:right;">Costo Total para el Consorcio</th></tr>
-          ${(data.personal||[]).length ? data.personal.map(p=>`<tr><td>${escapeHtml(p.nombre)}</td><td>${escapeHtml(p.categoria||'')}</td><td style="text-align:right;">${fmt(p.sueldoNeto)}</td><td style="text-align:right;">${fmt(p.costoTotal)}</td></tr>`).join('') : '<tr><td colspan="4"><i>Sin personal en relación de dependencia este período.</i></td></tr>'}
-        </table>
-
-        <table style="margin-top:12px;">
-          <tr><td>Total Fondo A del período</td><td style="text-align:right;">${fmt(totales.totalFondoAGeneral)}</td></tr>
-          <tr><td>Total Fondo B del período</td><td style="text-align:right;">${fmt(totales.totalFondoBGeneral)}</td></tr>
-          <tr class="rubro-total"><td>TOTAL GENERAL DE GASTOS DEL PERÍODO</td><td style="text-align:right;">${fmt(totales.totalGeneralGastos)}</td></tr>
-        </table>
-
-        <h3>Fondo de Reserva (Art. 10 inc. i Ley 941)</h3>
-        <table>
-          <tr><td>Saldo del Fondo de Reserva — mes anterior</td><td style="text-align:right;">${fmt(totales.saldoFondoReservaMesAnterior)}</td></tr>
-          <tr><td>Aporte al Fondo de Reserva — este período</td><td style="text-align:right;">${fmt(totales.aporteFondoReservaGeneral)}</td></tr>
-          <tr class="rubro-total"><td>Saldo del Fondo de Reserva — al cierre de este período</td><td style="text-align:right;">${fmt(totales.saldoFondoReservaCierre)}</td></tr>
-        </table>
-
-        ${data.estadoFinanciero ? `
-        <h3>Estado Financiero y Patrimonial del Período (Art. 10 inc. c e i Ley 941)</h3>
-        <table>${data.estadoFinanciero.financiero.map(filaConcepto).join('')}</table>
-        <div class="subhead" style="margin-top:10px;">Banco</div>
-        <table>${data.estadoFinanciero.banco.map(filaConcepto).join('')}</table>
-        <div class="subhead" style="margin-top:10px;">Patrimonial</div>
-        <table>${data.estadoFinanciero.patrimonial.map(filaConcepto).join('')}</table>
-        ` : ''}
-
-        <h3>Referencia de Proveedores Utilizados</h3>
-        <table>
-          ${(data.proveedores||[]).length ? data.proveedores.map(p=>`<tr><td>${[escapeHtml(p.proveedor), escapeHtml(p.cuit||''), escapeHtml(p.domicilio||'')].filter(Boolean).join(' — ')}</td></tr>`).join('') : '<tr><td><i>Sin proveedores cargados este período.</i></td></tr>'}
-        </table>
-
-        <h3>Estado de Cuenta y Prorrateo — Todos los Propietarios</h3>
-        <table>
-          <tr><th>UF</th><th>Piso/Dpto.</th><th>Propietario</th><th style="text-align:right;">Deuda</th><th style="text-align:right;">Total 1er Vto.</th></tr>
-          ${(data.unidades||[]).length ? data.unidades.map(u=>`<tr><td>${escapeHtml(u.uf)}</td><td>${escapeHtml(u.pisoDpto||'')}</td><td>${escapeHtml(u.propietario||'')}</td><td style="text-align:right;">${fmt(u.deuda)}</td><td style="text-align:right;">${fmt(u.totalPrimerVto)}</td></tr>`).join('') : '<tr><td colspan="5"><i>Sin unidades cargadas.</i></td></tr>'}
-        </table>
-
-        ${data.miUnidad ? `
-        <h3>MIS EXPENSAS — Unidad ${escapeHtml(data.miUnidad.pisoDpto||data.miUnidad.uf)}</h3>
-        <table>
-          <tr><td>Propietario</td><td>${escapeHtml(data.miUnidad.propietario||'')}</td></tr>
-          <tr><td>Saldo Anterior</td><td style="text-align:right;">${fmt(data.miUnidad.saldoAnterior)}</td></tr>
-          <tr><td>Pago Recibido</td><td style="text-align:right;">${fmt(data.miUnidad.pagoRecibido)}</td></tr>
-          <tr><td>Deuda</td><td style="text-align:right;">${fmt(data.miUnidad.deuda)}</td></tr>
-          <tr><td>Intereses Punitorios</td><td style="text-align:right;">${fmt(data.miUnidad.interesesPunitorios)}</td></tr>
-          <tr><td>Cuota Fondo A (${data.miUnidad.pctFondoA?(data.miUnidad.pctFondoA*100).toFixed(2):'0'}%)</td><td style="text-align:right;">${fmt(data.miUnidad.importeFondoA)}</td></tr>
-          <tr><td>Cuota Fondo B (${data.miUnidad.pctFondoB?(data.miUnidad.pctFondoB*100).toFixed(2):'0'}%)</td><td style="text-align:right;">${fmt(data.miUnidad.importeFondoB)}</td></tr>
-          <tr class="rubro-total"><td>TOTAL AL 1er VENCIMIENTO (${escapeHtml(fmtFecha(data.miUnidad.fechaPrimerVto))})</td><td style="text-align:right;">${fmt(data.miUnidad.totalPrimerVto)}</td></tr>
-          <tr class="rubro-total"><td>TOTAL AL 2do VENCIMIENTO (${escapeHtml(fmtFecha(data.miUnidad.fechaSegundoVto))})</td><td style="text-align:right;">${fmt(data.miUnidad.totalSegundoVto)}</td></tr>
-        </table>
-        ` : ''}
-
-        <p style="margin-top:24px;font-size:11px;color:#666;">Administración NAKEN · Documento generado automáticamente a partir de la liquidación mensual de expensas. Ante cualquier diferencia, prevalece la documentación respaldatoria.</p>
-      </div>
-    `;
-    document.getElementById(mountId+'-imprimir-btn').addEventListener('click', ()=> window.print());
+    doc.save(`Expensas_${escapeHtml(data.miUnidad?data.miUnidad.pisoDpto:'').replace(/[^a-zA-Z0-9]/g,'_')||'General'}_${(data.periodo||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
   }
-
   function mountCalcHonorarios(mountId){
     const mount = document.getElementById(mountId);
 
@@ -5009,11 +5030,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <tbody>${filas}</tbody>
       </table>
     `;
-    // Reutiliza el botón real del sidebar (con toda su lógica de activar panel, marcar visto,
-    // montar el contenido la primera vez, etc.) en vez de duplicar esa lógica acá.
-    document.getElementById(mountId+'-descargar-expensas-btn').addEventListener('click', ()=>{
-      const btnSidebar = document.querySelector('.navbtn[data-panel="informegeneral"]');
-      if(btnSidebar) btnSidebar.click();
+    document.getElementById(mountId+'-descargar-expensas-btn').addEventListener('click', async (e)=>{
+      const btn = e.currentTarget;
+      const original = btn.textContent;
+      btn.textContent = 'Generando PDF…'; btn.disabled = true;
+      try{
+        await generarPdfExpensas(spreadsheetId, role==='propietario' && currentUser ? currentUser.unidad : '');
+      } finally {
+        btn.textContent = original; btn.disabled = false;
+      }
     });
   }
   /* ---------- Facturas y comprobantes: vista en vivo de Gastos_Mensual, con selector de período
@@ -11032,7 +11057,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     },
     asistencia: () => mountGestionAsamblea('asistencia-mount'),
     usuarios: () => { if(role==='admin') mountUsuarios('usuarios-mount'); },
-    informegeneral: () => mountInformeGeneral('informegeneral-mount'),
     calchonorarios: () => { if(role==='admin') mountCalcHonorarios('calchonorarios-mount'); },
     personal: () => {
       if(role!=='admin') return;
