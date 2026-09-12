@@ -2660,6 +2660,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
      --------------------------------------------------------------------- */
   async function mountInformeGeneral(mountId){
     function fmt(n){ return '$ ' + Math.round(Number(n)||0).toLocaleString('es-AR'); }
+    // El backend devuelve las celdas de fecha de Sheets como objetos Date, que al viajar en
+    // JSON se serializan a texto ISO ("2026-09-10T07:00:00.000Z") -- sin esto, esa fecha cruda
+    // se mostraba tal cual en vez de un formato legible. Mismo patrón que ya usa el resto de la
+    // app (fmtF) para no introducir un formato distinto acá.
+    const fmtFecha = (v)=> v ? new Date(v).toLocaleDateString('es-AR') : '';
     const mount = document.getElementById(mountId);
     mount.innerHTML = `<div class="loading">Cargando datos del informe…</div>`;
     const spreadsheetId = await getSpreadsheetIdActivo();
@@ -2689,7 +2694,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       const importe = Number(g.importe)||0;
       const esFondoB = g.fondo === 'B';
       bloque.lineas.push({
-        detalle: [g.proveedor, g.cuit, g.fecha, g.factura, g.detalle].filter(Boolean).join(' — '),
+        detalle: [g.proveedor, g.cuit, fmtFecha(g.fecha), g.factura, g.detalle].filter(Boolean).join(' — '),
         importeA: esFondoB ? 0 : importe, importeB: esFondoB ? importe : 0, total: importe
       });
       if(esFondoB) bloque.totalB += importe; else bloque.totalA += importe;
@@ -2729,21 +2734,38 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <button class="btn primary" id="${mountId}-imprimir-btn">🖨️ Imprimir / Guardar como PDF</button>
       </div>
       <div class="informe-doc">
-        <h2 style="text-align:center;">INFORME GENERAL DE LIQUIDACIÓN — PERÍODO ${escapeHtml(data.periodo||'')}</h2>
+        <h2 style="text-align:center;">MIS EXPENSAS — PERÍODO ${escapeHtml(data.periodo||'')}</h2>
+
+        ${data.miUnidad ? `
+        <table style="margin-bottom:16px;">
+          <tr>
+            <td><b>Propietario</b><br>${escapeHtml(data.miUnidad.propietario||'')}</td>
+            <td><b>Unidad Funcional</b><br>${escapeHtml(data.miUnidad.uf||'')}</td>
+            <td><b>Piso / Depto.</b><br>${escapeHtml(data.miUnidad.pisoDpto||'')}</td>
+            <td><b>1er Vencimiento</b><br>${escapeHtml(fmtFecha(data.miUnidad.fechaPrimerVto))}</td>
+            <td><b>2do Vencimiento</b><br>${escapeHtml(fmtFecha(data.miUnidad.fechaSegundoVto))}</td>
+          </tr>
+        </table>
+        ` : ''}
 
         <div class="datos-grid">
           <table>
             <tr><th colspan="2">Administración</th></tr>
-            <tr><td>Nombre</td><td>${escapeHtml(cfg['Nombre de la Administración']||'')}</td></tr>
-            <tr><td>CUIT</td><td>${escapeHtml(cfg['CUIT Administración']||cfg['CUIT']||'')}</td></tr>
-            <tr><td>RPA</td><td>${escapeHtml(cfg['RPA']||'')}</td></tr>
-            <tr><td>Domicilio</td><td>${escapeHtml(cfg['Domicilio']||'')}</td></tr>
+            <tr><td>Nombre</td><td>${escapeHtml(cfg['ADMINISTRACIÓN | Nombre']||'')}</td></tr>
+            <tr><td>Domicilio</td><td>${escapeHtml(cfg['ADMINISTRACIÓN | Domicilio']||'')}</td></tr>
+            <tr><td>Email</td><td>${escapeHtml(cfg['ADMINISTRACIÓN | Email']||'')}</td></tr>
+            <tr><td>Teléfono</td><td>${escapeHtml(cfg['ADMINISTRACIÓN | Teléfono']||'')}</td></tr>
+            <tr><td>CUIT</td><td>${escapeHtml(cfg['ADMINISTRACIÓN | CUIT']||'')}</td></tr>
+            <tr><td>Situación Fiscal</td><td>${escapeHtml(cfg['ADMINISTRACIÓN | Situación Fiscal']||'')}</td></tr>
+            <tr><td>Horario de atención</td><td>${escapeHtml(cfg['ADMINISTRACIÓN | Horario de atención']||'')}</td></tr>
+            <tr><td>Página web</td><td>${escapeHtml(cfg['DATOS ADICIONALES | Redes / sitio web de la administración']||'')}</td></tr>
+            <tr><td>WhatsApp</td><td>${escapeHtml(cfg['DATOS PARA EL MODELO ÚNICO DE LIQUIDACIÓN (GCBA) | WhatsApp de la administración']||'')}</td></tr>
           </table>
           <table>
             <tr><th colspan="2">Consorcio</th></tr>
-            <tr><td>Nombre</td><td>${escapeHtml(data.config['Nombre / Dirección']||'')}</td></tr>
-            <tr><td>CUIT</td><td>${escapeHtml(cfg['CUIT del Consorcio']||'')}</td></tr>
-            <tr><td>SUTERH</td><td>${escapeHtml(cfg['Clave SUTERH']||'')}</td></tr>
+            <tr><td>Nombre</td><td>${escapeHtml(cfg['CONSORCIO | Nombre / Dirección']||'')}</td></tr>
+            <tr><td>CUIT</td><td>${escapeHtml(cfg['CONSORCIO | CUIT']||'')}</td></tr>
+            <tr><td>Convenio</td><td>${escapeHtml(cfg['DATOS PARA EL MODELO ÚNICO DE LIQUIDACIÓN (GCBA) | Convenio del consorcio (si aplica)']||'')}</td></tr>
           </table>
         </div>
 
@@ -2758,13 +2780,19 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           </div>
         </div>
 
-        <h3>Remuneración al Personal y Cargas Sociales (Art. 10 inc. d Ley 941)</h3>
+<h3>Forma de Pago</h3>
         <table>
-          <tr><th>Nombre y Apellido</th><th>Categoría</th><th style="text-align:right;">Sueldo Neto</th><th style="text-align:right;">Costo Total para el Consorcio</th></tr>
-          ${(data.personal||[]).length ? data.personal.map(p=>`<tr><td>${escapeHtml(p.nombre)}</td><td>${escapeHtml(p.categoria||'')}</td><td style="text-align:right;">${fmt(p.sueldoNeto)}</td><td style="text-align:right;">${fmt(p.costoTotal)}</td></tr>`).join('') : '<tr><td colspan="4"><i>Sin personal en relación de dependencia este período.</i></td></tr>'}
+          <tr><td>Empresa de Cobranzas</td><td>${escapeHtml(cfg['Empresa de Cobranzas']||'—')}</td></tr>
+          <tr><td>Titular de cuenta</td><td>${escapeHtml(cfg['FORMA DE PAGO | Titular de cuenta']||'')}</td></tr>
+          <tr><td>CUIT titular</td><td>${escapeHtml(cfg['FORMA DE PAGO | CUIT titular']||'')}</td></tr>
+          <tr><td>Banco / Sucursal</td><td>${escapeHtml(cfg['FORMA DE PAGO | Banco']||'')} / ${escapeHtml(cfg['FORMA DE PAGO | Sucursal']||'')}</td></tr>
+          <tr><td>N° de cuenta</td><td>${escapeHtml(cfg['FORMA DE PAGO | N° de cuenta']||'')}</td></tr>
+          <tr><td>CBU</td><td>${escapeHtml(cfg['FORMA DE PAGO | CBU']||'')}</td></tr>
+          <tr><td>Alias</td><td>${escapeHtml(cfg['FORMA DE PAGO | Alias']||'')}</td></tr>
+          <tr><td>Código de pago electrónico</td><td>${escapeHtml(cfg['FORMA DE PAGO | Código de pago electrónico']||'')}</td></tr>
         </table>
 
-        <h3>Gastos del Período — Detalle por Rubro (Art. 10 inc. d, e y f Ley 941)</h3>
+        <h3>Gastos del Período por Suministros, Servicios, Abonos y Seguros (Art. 10 inc. e y f Ley 941)</h3>
         ${gastosPorRubro.length===0 ? '<p><i>Sin gastos cargados este período.</i></p>' : gastosPorRubro.map(b=>`
           <div class="rubro-header">${escapeHtml(b.rubro)}</div>
           <table>
@@ -2773,6 +2801,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <tr class="rubro-total"><td>Total ${escapeHtml(b.rubro)}</td><td style="text-align:right;">${fmt(b.totalA)}</td><td style="text-align:right;">${fmt(b.totalB)}</td><td style="text-align:right;">${fmt(b.total)} (${totalGeneralGastos?Math.round(b.total/totalGeneralGastos*100):0}%)</td></tr>
           </table>
         `).join('')}
+
+        <h3>Remuneración al Personal y Cargas Sociales (Art. 10 inc. d Ley 941)</h3>
+        <table>
+          <tr><th>Nombre y Apellido</th><th>Categoría</th><th style="text-align:right;">Sueldo Neto</th><th style="text-align:right;">Costo Total para el Consorcio</th></tr>
+          ${(data.personal||[]).length ? data.personal.map(p=>`<tr><td>${escapeHtml(p.nombre)}</td><td>${escapeHtml(p.categoria||'')}</td><td style="text-align:right;">${fmt(p.sueldoNeto)}</td><td style="text-align:right;">${fmt(p.costoTotal)}</td></tr>`).join('') : '<tr><td colspan="4"><i>Sin personal en relación de dependencia este período.</i></td></tr>'}
+        </table>
 
         <table style="margin-top:12px;">
           <tr><td>Total Fondo A del período</td><td style="text-align:right;">${fmt(totales.totalFondoAGeneral)}</td></tr>
@@ -2817,8 +2851,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <tr><td>Intereses Punitorios</td><td style="text-align:right;">${fmt(data.miUnidad.interesesPunitorios)}</td></tr>
           <tr><td>Cuota Fondo A (${data.miUnidad.pctFondoA?(data.miUnidad.pctFondoA*100).toFixed(2):'0'}%)</td><td style="text-align:right;">${fmt(data.miUnidad.importeFondoA)}</td></tr>
           <tr><td>Cuota Fondo B (${data.miUnidad.pctFondoB?(data.miUnidad.pctFondoB*100).toFixed(2):'0'}%)</td><td style="text-align:right;">${fmt(data.miUnidad.importeFondoB)}</td></tr>
-          <tr class="rubro-total"><td>TOTAL AL 1er VENCIMIENTO (${escapeHtml(data.miUnidad.fechaPrimerVto||'')})</td><td style="text-align:right;">${fmt(data.miUnidad.totalPrimerVto)}</td></tr>
-          <tr class="rubro-total"><td>TOTAL AL 2do VENCIMIENTO (${escapeHtml(data.miUnidad.fechaSegundoVto||'')})</td><td style="text-align:right;">${fmt(data.miUnidad.totalSegundoVto)}</td></tr>
+          <tr class="rubro-total"><td>TOTAL AL 1er VENCIMIENTO (${escapeHtml(fmtFecha(data.miUnidad.fechaPrimerVto))})</td><td style="text-align:right;">${fmt(data.miUnidad.totalPrimerVto)}</td></tr>
+          <tr class="rubro-total"><td>TOTAL AL 2do VENCIMIENTO (${escapeHtml(fmtFecha(data.miUnidad.fechaSegundoVto))})</td><td style="text-align:right;">${fmt(data.miUnidad.totalSegundoVto)}</td></tr>
         </table>
         ` : ''}
 
@@ -4933,6 +4967,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const fmtN = (v)=> '$ ' + (Number(v)||0).toLocaleString('es-AR',{maximumFractionDigits:0});
     const fmtF = (v)=> v ? new Date(v).toLocaleDateString('es-AR') : '—';
     const unidades = data.unidades || [];
+    const botonDescargarExpensas = `<div style="margin-bottom:16px;"><button class="btn primary" id="${mountId}-descargar-expensas-btn">📄 Descargar Expensas</button></div>`;
 
     const filas = unidades.length===0 ? `<tr><td colspan="9" style="text-align:center;color:var(--muted);">Sin propietarios cargados para este período.</td></tr>` : unidades.map(u=>{
       const esMiUnidad = role==='propietario' && currentUser && String(u.uf).trim()===String(currentUser.unidad).trim();
@@ -4952,6 +4987,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }).join('');
 
     mount.innerHTML = `
+      ${botonDescargarExpensas}
       <div class="kpi-row" style="margin-bottom:18px;">
         <div class="kpi highlight"><div class="label">Período publicado</div><div class="value" style="font-size:18px;">${escapeHtml(formatPeriodo(data.periodo))}</div></div>
         <div class="kpi"><div class="label">Gasto total del período (incluye Fondo de Reserva)</div><div class="value">${data.totales ? fmtN((Number(data.totales.totalGeneralGastos)||0) + (Number(data.totales.aporteFondoReservaGeneral)||0)) : '—'}</div></div>
@@ -4973,6 +5009,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <tbody>${filas}</tbody>
       </table>
     `;
+    // Reutiliza el botón real del sidebar (con toda su lógica de activar panel, marcar visto,
+    // montar el contenido la primera vez, etc.) en vez de duplicar esa lógica acá.
+    document.getElementById(mountId+'-descargar-expensas-btn').addEventListener('click', ()=>{
+      const btnSidebar = document.querySelector('.navbtn[data-panel="informegeneral"]');
+      if(btnSidebar) btnSidebar.click();
+    });
   }
   /* ---------- Facturas y comprobantes: vista en vivo de Gastos_Mensual, con selector de período
      (acá es donde el propietario puede ver facturas de meses anteriores, no solo el último) ---------- */
