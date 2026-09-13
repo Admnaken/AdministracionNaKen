@@ -2729,12 +2729,25 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     y += 11 + 6;
     doc.setTextColor(...TEXTO);
 
+    // El consorcio todavía no cerró ningún mes -- se está mostrando el período en curso, que
+    // puede seguir cambiando hasta que se confirme el cierre. Sin este aviso, un propietario
+    // podría tomar estos números como definitivos y después encontrarse con un monto distinto.
+    if(data.esVistaPrevia){
+      doc.setFillColor(253,244,224);
+      doc.rect(M, y, ANCHO_UTIL, 9, 'F');
+      doc.setDrawColor(...GOLD); doc.setLineWidth(0.3); doc.rect(M, y, ANCHO_UTIL, 9, 'S');
+      doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.setTextColor(150,110,20);
+      doc.text('ATENCIÓN: Este período todavía está en curso -- los montos pueden cambiar hasta que la administración cierre el mes.', M+ANCHO_UTIL/2, y+5.8, {align:'center'});
+      y += 9 + 6;
+      doc.setTextColor(...TEXTO);
+    }
+
     // ---------- PROPIETARIO/A ----------
     bannerSeccion('LIQUIDACIÓN CORRESPONDIENTE A');
     if(mu){
       tablaConBordes({
         body: [
-          ['Propietario', 'Unidad Funcional', 'Piso / Dpto.'],
+          ['Titular', 'Unidad Funcional', 'Piso / Dpto.'],
           [mu.propietario||'', String(mu.uf||''), mu.pisoDpto||''],
         ],
         didParseCell:(d)=>{ if(d.row.index===0) d.cell.styles.fontStyle='bold'; if(d.row.index===0) d.cell.styles.textColor=MUTED; if(d.row.index===0) d.cell.styles.fontSize=7.5; },
@@ -2744,6 +2757,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           ['Total a pagar (1er vencimiento)', 'Total a pagar (2do vencimiento)'],
           [fmt(mu.totalPrimerVto), fmt(mu.totalSegundoVto)],
         ],
+        columnStyles: { 0:{halign:'center'}, 1:{halign:'center'} },
         didParseCell:(d)=>{
           if(d.row.index===0){ d.cell.styles.fontStyle='bold'; d.cell.styles.textColor=MUTED; d.cell.styles.fontSize=7.5; }
           if(d.row.index===1){ d.cell.styles.fontStyle='bold'; d.cell.styles.fontSize=11; d.cell.styles.textColor=NAVY; }
@@ -2752,7 +2766,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }
     tablaConBordes({
       body: [
-        ['Administración NAKEN\nCUIT: '+(cfg['ADMINISTRACIÓN | CUIT']||'')+'\n'+(cfg['ADMINISTRACIÓN | Email']||'')+'\nDomicilio: '+(cfg['ADMINISTRACIÓN | Domicilio']||'')+'\nSituación Fiscal: '+(cfg['ADMINISTRACIÓN | Situación Fiscal']||''),
+        [(cfg['ADMINISTRACIÓN | Nombre']||'Administración')+'\nCUIT: '+(cfg['ADMINISTRACIÓN | CUIT']||'')+'\n'+(cfg['ADMINISTRACIÓN | Email']||'')+'\nTel.: '+(cfg['ADMINISTRACIÓN | Teléfono']||'')+'\nDomicilio: '+(cfg['ADMINISTRACIÓN | Domicilio']||'')+'\nSituación Fiscal: '+(cfg['ADMINISTRACIÓN | Situación Fiscal']||'')+'\nN° de Matrícula (RPA): '+(cfg['ADMINISTRACIÓN | N° Inscripción RPA']||''),
          'Consorcio al que pertenece la liquidación\n'+(cfg['CONSORCIO | Nombre / Dirección']||'')+'\nCUIT del Consorcio: '+(cfg['CONSORCIO | CUIT']||'')+'\nClave SUTERH: '+(cfg['CONSORCIO | Clave de SUTERH']||'—')],
       ],
       styles:{ fontSize:8, cellPadding:3, valign:'top' },
@@ -2799,7 +2813,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     bannerSeccion('FORMA DE PAGO');
     tablaConBordes({
       body: [[
-        'Banco: '+(cfg['FORMA DE PAGO | Banco']||'')+' / '+(cfg['FORMA DE PAGO | Sucursal']||'')+'\nTitular de cuenta: '+(cfg['FORMA DE PAGO | Titular de cuenta']||''),
+        'Banco: '+(cfg['FORMA DE PAGO | Banco']||'')+' / '+(cfg['FORMA DE PAGO | Sucursal']||'')+'\nTitular de cuenta: '+(cfg['FORMA DE PAGO | Titular de cuenta']||'')+'\n\nSubí el comprobante a través del menú "Forma de pago" de la aplicación.',
         'Depósito o transferencia\nN° de Cuenta: '+(cfg['FORMA DE PAGO | N° de cuenta']||'')+'\nCBU: '+(cfg['FORMA DE PAGO | CBU']||'')+'\nAlias: '+(cfg['FORMA DE PAGO | Alias']||''),
       ]],
       styles:{ fontSize:8, cellPadding:3, valign:'top' },
@@ -2924,10 +2938,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     saltoSiHaceFalta(28);
     doc.setFontSize(8.3); doc.setTextColor(...TEXTO);
     const canales = [
+      ['Aplicación del consorcio: ', (typeof window!=='undefined' && window.location ? window.location.origin : '')],
+      ['Página web: ', cfg['DATOS ADICIONALES | Redes / sitio web de la administración']||''],
+      ['WhatsApp: ', cfg['DATOS PARA EL MODELO ÚNICO DE LIQUIDACIÓN (GCBA) | WhatsApp de la administración']||''],
       ['Para consultas internas, reclamos o conflictos entre vecinos: ', 'utilice la aplicación del consorcio.'],
       ['Para denuncias al administrador: ', 'canales oficiales de Defensa del Consumidor / RPA del GCBA al 147 (Opción 6), o Defensoría del Pueblo de la Ciudad al 11-7128-8301.'],
       ['Para gestiones generales, reclamos en la vía pública o trámites de la Ciudad: ', 'descargue la app oficial BAX, la IA de la Ciudad, desde Google Play o App Store.'],
-    ];
+    ].filter(([,resto])=>resto);
     canales.forEach(([negrita, resto])=>{
       const anchoNegrita = doc.getStringUnitWidth(negrita)*8.3/doc.internal.scaleFactor;
       doc.setFont('helvetica','bold');
@@ -2945,10 +2962,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     bannerSeccion('NOTAS');
     saltoSiHaceFalta(35);
     doc.setFont('helvetica','normal'); doc.setFontSize(8.3); doc.setTextColor(...TEXTO);
-    const notaTexto1 = 'Se informa que los pagos efectuados con posterioridad a la primera y segunda fecha de vencimiento devengarán los intereses correspondientes de acuerdo con la normativa vigente; asimismo, con el fin de evitar inconvenientes o demoras en la correcta identificación e imputación de sus abonados, le solicitamos remitir el aviso o comprobante tras realizar cualquier transferencia o depósito bancario.';
-    const notaTexto2 = 'A su vez, le recordamos que dispone del menú de atención dentro de la aplicación del consorcio para la tramitación de todas sus consultas o requerimientos formales, aprovechando la oportunidad para reiterar que la propiedad y el destino de la comunidad pertenecen a cada uno de sus consorcistas, ejerciendo la administración únicamente su representación legal, por lo que el compromiso y el cumplimiento puntual de todos resulta indispensable para preservar y valorizar el patrimonio común.';
-    [notaTexto1, notaTexto2].forEach(txt=>{
-      const lineas = doc.splitTextToSize(txt, ANCHO_UTIL);
+    // El texto sale de Config_NAKEN (no está fijo acá) para que se pueda editar sin tocar
+    // código -- si la celda todavía no está cargada en algún consorcio viejo, usa el texto de
+    // referencia original como respaldo.
+    const textoNotasDefault = 'Se informa que los pagos efectuados con posterioridad a la primera y segunda fecha de vencimiento devengarán los intereses correspondientes de acuerdo con la normativa vigente; asimismo, con el fin de evitar inconvenientes o demoras en la correcta identificación e imputación de sus abonados, le solicitamos remitir el aviso o comprobante tras realizar cualquier transferencia o depósito bancario.\n\nA su vez, le recordamos que dispone del menú de atención dentro de la aplicación del consorcio para la tramitación de todas sus consultas o requerimientos formales, aprovechando la oportunidad para reiterar que la propiedad y el destino de la comunidad pertenecen a cada uno de sus consorcistas, ejerciendo la administración únicamente su representación legal, por lo que el compromiso y el cumplimiento puntual de todos resulta indispensable para preservar y valorizar el patrimonio común.';
+    const textoNotas = cfg['DATOS PARA EL MODELO ÚNICO DE LIQUIDACIÓN (GCBA) | Texto de la sección "Notas" del PDF (separá párrafos con una línea en blanco)'] || textoNotasDefault;
+    String(textoNotas).split(/\n\s*\n/).forEach(parrafo=>{
+      const lineas = doc.splitTextToSize(parrafo.trim(), ANCHO_UTIL);
       saltoSiHaceFalta(lineas.length*4.2+4);
       doc.text(lineas, M, y); y += lineas.length*4.2 + 4;
     });
@@ -3013,7 +3033,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       doc.text(`${p} / ${totalPaginas}`, anchoPagina - M, altoPagina - 8, {align:'right'});
     }
 
-    doc.save(`Expensas_${(mu?mu.pisoDpto:'General').replace(/[^a-zA-Z0-9]/g,'_')}_${(data.periodo||'').replace(/[^a-zA-Z0-9]/g,'_')}.pdf`);
+    doc.save(`Expensas_${(mu?mu.pisoDpto:'General').replace(/[^a-zA-Z0-9]/g,'_')}_${(data.periodo||'').replace(/[^a-zA-Z0-9]/g,'_')}${data.esVistaPrevia?'_VISTA_PREVIA':''}.pdf`);
   }
   function mountCalcHonorarios(mountId){
     const mount = document.getElementById(mountId);
