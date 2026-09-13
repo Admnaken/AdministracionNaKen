@@ -7888,6 +7888,46 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const CUENTA_KEY = opts.cuentaKey || (movKey+'-cuenta');
 
     async function renderCuenta(){
+      // Para EL FONDO DE RESERVA: mismos datos que ya se cargan en Config_NAKEN → "Cuenta del
+      // Fondo de Reserva" -- antes esta pantalla tenía su propio formulario manual (separado de
+      // la planilla), así que si alguien cargaba los datos en Config_NAKEN (como en este
+      // consorcio de prueba) nunca aparecían acá: quedaban en dos lugares distintos sin conectar.
+      if(opts.usarFondoReservaConsorcio){
+        const spreadsheetId = await getSpreadsheetIdActivo();
+        const cfg = spreadsheetId ? await fetchConfigConsorcio(spreadsheetId) : null;
+        const f = (cfg && cfg.fondoReserva) || {};
+        cuentaBancaria = { banco: f.banco, sucursal: f.sucursal, tipoCuenta: f.tipoCuenta, numeroCuenta: f.numeroCuenta, cbu: f.cbu, alias: f.alias };
+        cuentaWrap.innerHTML = `
+          ${opts.mostrarSaldoInicial ? `
+          <div class="field-grid" style="grid-template-columns:1fr;margin-bottom:6px;">
+            <div>
+              <label>Saldo inicial del fondo (carga única, al empezar a usarlo en la app)</label>
+              <input type="text" id="${mountId}-saldo-inicial" value="${escapeHtml(saldoInicial||0)}" placeholder="0" ${isAdmin?'':'disabled'}>
+            </div>
+          </div>
+          <p class="panel-note" style="margin-top:0;">Si el consorcio ya venía usando el Fondo de Reserva antes de esta app, cargá acá el saldo que tenía al momento de empezar a registrarlo. Si es la primera vez, dejalo en 0. Se carga una sola vez -- después el saldo se calcula solo, sumando los movimientos de abajo.</p>
+          ${isAdmin ? `<div class="toolbar" style="margin-top:0;"><span></span><div style="display:flex;align-items:center;gap:12px;">${statusEl(mountId+'-cta-status')}<button class="btn primary" id="${mountId}-cta-save">Guardar saldo inicial</button></div></div>` : ''}
+          ` : ''}
+          <div class="field-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:6px;">
+            <div><label>Banco</label><input type="text" value="${escapeHtml(f.banco||'—')}" disabled></div>
+            <div><label>Sucursal</label><input type="text" value="${escapeHtml(f.sucursal||'—')}" disabled></div>
+            <div><label>N° de cuenta</label><input type="text" value="${escapeHtml(f.numeroCuenta||'—')}" disabled></div>
+            <div><label>CBU</label><input type="text" value="${escapeHtml(f.cbu||'—')}" disabled></div>
+            <div><label>Alias</label><input type="text" value="${escapeHtml(f.alias||'—')}" disabled></div>
+            <div><label>Titular</label><input type="text" value="${escapeHtml(f.titular||'—')}" disabled></div>
+          </div>
+          <p class="panel-note" style="margin-top:0;">Estos son los mismos datos que ya cargaste en "Cuenta del Fondo de Reserva" (Config_NAKEN de la planilla) — se editan ahí, no hace falta cargarlos de nuevo acá.</p>
+        `;
+        if(isAdmin && opts.mostrarSaldoInicial){
+          document.getElementById(mountId+'-cta-save').addEventListener('click', ()=>{
+            saldoInicial = num(document.getElementById(mountId+'-saldo-inicial').value);
+            saveData(opts.saldoInicialKey || (movKey+'-saldo-inicial'), saldoInicial, mountId+'-cta-status');
+            renderMovKpi();
+          });
+        }
+        return;
+      }
+
       // Para LA CUENTA CORRIENTE (no para el Fondo de Reserva, que suele ser una cuenta bancaria
       // distinta): en vez de mantener un formulario aparte y duplicado, usamos los mismos datos
       // que ya se cargan en Config_NAKEN → Forma de pago -- así no hace falta cargarlos dos veces,
@@ -7896,7 +7936,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const spreadsheetId = await getSpreadsheetIdActivo();
         const cfg = spreadsheetId ? await fetchConfigConsorcio(spreadsheetId) : null;
         const f = (cfg && cfg.formaPago) || {};
-        cuentaBancaria = { banco: f.banco, sucursal: f.sucursal, tipoCuenta: '', numeroCuenta: f.numeroCuenta, cbu: f.cbu, alias: f.alias };
+        cuentaBancaria = { banco: f.banco, sucursal: f.sucursal, tipoCuenta: f.tipoCuenta, numeroCuenta: f.numeroCuenta, cbu: f.cbu, alias: f.alias };
         cuentaWrap.innerHTML = `
           ${opts.mostrarSaldoInicial ? `
           <div class="field-grid" style="grid-template-columns:1fr;margin-bottom:6px;">
@@ -11196,6 +11236,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     ], {emptyText:'No hay juicios cargados.', vistaTarjetas:true}),
     reserva: () => mountLibroBancoConciliacion('reserva-mount', 'naken-reserva-movimientos', 'naken-reserva-conciliacion', {
       cuentaKey: 'naken-reserva-cuenta-bancaria',
+      usarFondoReservaConsorcio: true,
       mostrarSaldoInicial: true,
       saldoInicialKey: 'naken-reserva-saldo-inicial',
       tituloCorto: 'el Fondo de Reserva',
