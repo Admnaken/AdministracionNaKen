@@ -11191,6 +11191,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     conciliaciones: () => mountLibroBancoConciliacion('conciliaciones-mount', 'naken-movimientos', 'naken-conciliacion-bancaria', {
       cuentaKey: 'naken-cuenta-bancaria',
       usarFormaPagoConsorcio: true,
+      mostrarSaldoInicial: true,
+      saldoInicialKey: 'naken-cuenta-saldo-inicial',
       tituloCorto: 'la cuenta corriente',
       nombreCuenta: 'Cuenta Corriente',
       pdfPrefijo: 'Conciliacion',
