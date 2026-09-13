@@ -7898,6 +7898,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         const f = (cfg && cfg.formaPago) || {};
         cuentaBancaria = { banco: f.banco, sucursal: f.sucursal, tipoCuenta: '', numeroCuenta: f.numeroCuenta, cbu: f.cbu, alias: f.alias };
         cuentaWrap.innerHTML = `
+          ${opts.mostrarSaldoInicial ? `
+          <div class="field-grid" style="grid-template-columns:1fr;margin-bottom:6px;">
+            <div>
+              <label>Saldo inicial de la cuenta (carga única, al empezar a usarla en la app)</label>
+              <input type="text" id="${mountId}-saldo-inicial" value="${escapeHtml(saldoInicial||0)}" placeholder="0" ${isAdmin?'':'disabled'}>
+            </div>
+          </div>
+          <p class="panel-note" style="margin-top:0;">Si el consorcio ya venía usando esta cuenta antes de esta app, cargá acá el saldo que tenía al momento de empezar a registrarlo. Si es la primera vez, dejalo en 0. Se carga una sola vez -- después el saldo se calcula solo, sumando los movimientos de abajo.</p>
+          ${isAdmin ? `<div class="toolbar" style="margin-top:0;"><span></span><div style="display:flex;align-items:center;gap:12px;">${statusEl(mountId+'-cta-status')}<button class="btn primary" id="${mountId}-cta-save">Guardar saldo inicial</button></div></div>` : ''}
+          ` : ''}
           <div class="field-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:6px;">
             <div><label>Banco</label><input type="text" value="${escapeHtml(f.banco||'—')}" disabled></div>
             <div><label>Sucursal</label><input type="text" value="${escapeHtml(f.sucursal||'—')}" disabled></div>
@@ -7908,6 +7918,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           </div>
           <p class="panel-note" style="margin-top:0;">Estos son los mismos datos que ya cargaste en "Forma de pago y cobranzas" (Config_NAKEN de la planilla) — se editan ahí, no hace falta cargarlos de nuevo acá.</p>
         `;
+        if(isAdmin && opts.mostrarSaldoInicial){
+          document.getElementById(mountId+'-cta-save').addEventListener('click', ()=>{
+            saldoInicial = num(document.getElementById(mountId+'-saldo-inicial').value);
+            saveData(opts.saldoInicialKey || (movKey+'-saldo-inicial'), saldoInicial, mountId+'-cta-status');
+            renderMovKpi();
+          });
+        }
         return;
       }
 
