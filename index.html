@@ -5305,12 +5305,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return;
     }
 
-    const cajaDocumento = (titulo, link, sinCargarMensaje) => `
+    // Los 3 documentos se tratan igual: si hay link, un botón que abre el documento; si no,
+    // un botón que avisa claramente que no está cargado (antes el Manual mostraba solo un
+    // texto sin botón, y el Reglamento de Propiedad Horizontal ni siquiera tenía el aviso
+    // conectado -- apretarlo no hacía nada).
+    const idBoton = (clave) => `${mountId}-btn-${clave}`;
+    const cajaDocumento = (titulo, link, clave, mensajeSinCargar) => `
       <div class="infoblock" style="margin-bottom:14px;">
         <h3>${escapeHtml(titulo)}</h3>
         ${link
           ? `<a class="btn primary" style="display:inline-block;margin-top:6px;text-decoration:none;" href="${escapeHtml(link)}" target="_blank" rel="noopener">Ver documento ↗</a>`
-          : `<button class="btn" style="margin-top:6px;" id="${mountId}-btn-${titulo.replace(/[^a-zA-Z0-9]/g,'')}">Ver documento</button>`
+          : `<button class="btn" style="margin-top:6px;" id="${idBoton(clave)}" data-mensaje-sin-cargar="${escapeHtml(mensajeSinCargar)}">Ver documento</button>`
         }
       </div>
     `;
@@ -5320,24 +5325,29 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <div style="flex:1;min-width:240px;">
           <h3>Manual de Buenas Prácticas Consorciales</h3>
           <p>El Manual de Buenas Prácticas Consorciales es un documento oficial emitido por el Gobierno de la Ciudad Autónoma de Buenos Aires que contiene información sobre la normativa, los derechos y las obligaciones de los administradores y propietarios en el régimen de propiedad horizontal. Se sugiere su lectura para ampliar el conocimiento sobre las herramientas con la que cuenta la persona que es dueña de cada unidad funcional.</p>
-          ${data.manual ? `<a class="btn primary" style="display:inline-block;margin-top:6px;text-decoration:none;" href="${escapeHtml(data.manual)}" target="_blank" rel="noopener">Ver manual (PDF) ↗</a>` : `<p class="panel-note" style="margin-top:6px;">Todavía no se cargó el link de este manual en la planilla del consorcio.</p>`}
+          ${data.manual
+            ? `<a class="btn primary" style="display:inline-block;margin-top:6px;text-decoration:none;" href="${escapeHtml(data.manual)}" target="_blank" rel="noopener">Ver manual (PDF) ↗</a>`
+            : `<button class="btn" style="margin-top:6px;" id="${idBoton('manual')}" data-mensaje-sin-cargar="Todavía no se cargó el link de este manual en la planilla del consorcio.">Ver manual (PDF)</button>`
+          }
         </div>
         <img src="${TAPA_MANUAL_BASE64}" alt="Portada del Manual de Buenas Prácticas Consorciales" style="width:110px;flex-shrink:0;border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.18);">
       </div>
 
       <div class="subhead">Documentación del Consorcio:</div>
-      ${cajaDocumento('Reglamento de Propiedad Horizontal', data.reglamento)}
-      ${cajaDocumento('Reglamento Interno', data.reglamentoInterno)}
+      ${cajaDocumento('Reglamento de Propiedad Horizontal', data.reglamento, 'reglamento', 'Este consorcio todavía no tiene cargado el Reglamento de Propiedad Horizontal.')}
+      ${cajaDocumento('Reglamento Interno', data.reglamentoInterno, 'reglamentoInterno', 'Este consorcio todavía no tiene cargado un Reglamento Interno.')}
 
-      <p class="panel-note" style="margin-top:14px;font-size:12px;">Los extractos bancarios del período se consultan desde cada conciliación (Libro Banco, Fondo de Reserva) — no hace falta subirlos acá también.</p>
+      <div class="infoblock" style="margin-top:14px;">
+        <p style="margin:0;">Los extractos bancarios no están habilitados para descarga directa en este menú. Dichos documentos son consolidados en la conciliación bancaria mensual y pueden ser solicitados para su observación mediante la vía correspondiente al Consejo de Propietarios.</p>
+      </div>
     `;
 
-    // El botón de Reglamento Interno, cuando ese consorcio no tiene uno cargado, avisa
-    // claramente en vez de desaparecer sin explicación o llevar a un link roto.
-    if(!data.reglamentoInterno){
-      const btn = document.getElementById(mountId+'-btn-ReglamentoInterno');
-      if(btn) btn.addEventListener('click', ()=> alert('Este consorcio todavía no tiene cargado un Reglamento Interno.'));
-    }
+    // Conecta el aviso de "no está cargado" en cualquiera de los 3 botones que haya quedado
+    // sin link -- antes esto solo se hacía para Reglamento Interno, así que el de Reglamento
+    // de Propiedad Horizontal (y el del Manual) no respondían al apretarlos.
+    mount.querySelectorAll('button[data-mensaje-sin-cargar]').forEach(btn=>{
+      btn.addEventListener('click', ()=> alert(btn.dataset.mensajeSinCargar));
+    });
   }
 
   function statusEl(id){
