@@ -1470,7 +1470,7 @@
         <div class="panel-head">
           <span class="eyebrow">Consorcistas</span>
           <h2>Forma de pago y cobranzas</h2>
-          <p class="panel-note">Lo que le corresponde pagar a tu unidad, los medios habilitados para pagar, e informar tus pagos. Los datos de la administración y el consorcio están en "Resumen".</p>
+          <p class="panel-note">No olvidar de adjuntar comprobante al momento de informar el pago.</p>
         </div>
         <div id="formapago-mount"></div>
       </section>
@@ -2381,10 +2381,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const reclamosPendientes = reclamos.filter(r=>r.estado==='Pendiente'||r.estado==='En proceso').length;
     const pagosPendientes = pagosInformados.filter(p=>p.estado==='Pendiente de verificar').length;
 
+    // Los 3 KPIs generales del consorcio (Total a cobrar, Fondo de reserva, Deuda total) solo se
+    // muestran al admin -- para el propietario son ruido (y "Deuda total del consorcio" en
+    // particular queda demasiado cerca visualmente de "Tu liquidación", arriba, con riesgo real
+    // de que alguien lea rápido y crea que esa es SU deuda, cuando es la de todo el edificio).
     document.getElementById('resumen-kpi').innerHTML = `
+      ${role==='admin' ? `
       <div class="kpi highlight"><div class="label">Total a cobrar por expensas — ${resumen && resumen.periodo ? escapeHtml(formatPeriodo(resumen.periodo)) : 'este período'}</div><div class="value">${resumen && resumen.totales ? fmt(resumen.totales.totalGeneralGastos) : '—'}</div>${resumen && resumen.totales ? `<div style="font-size:11px;color:var(--gray-600);margin-top:4px;">Fondo A: ${fmt(resumen.totales.totalFondoAGeneral)} · Fondo B: ${fmt(resumen.totales.totalFondoBGeneral)}</div>` : ''}</div>
       <div class="kpi highlight"><div class="label">Fondo de reserva</div><div class="value">${fmt(reservaTotal)}</div></div>
       <div class="kpi highlight"><div class="label">Deuda total del consorcio</div><div class="value">${fmt(deudaTotal)}</div></div>
+      ` : ''}
       <div class="kpi"><div class="label">Reclamos abiertos</div><div class="value">${reclamosPendientes}</div></div>
       ${role==='admin' ? `<div class="kpi ${pagosPendientes>0?'highlight':''}"><div class="label">Pagos por verificar</div><div class="value">${pagosPendientes}</div></div>` : ''}
       <div class="kpi"><div class="label">Última expensa publicada</div><div class="value" style="font-size:16px;">${resumen && resumen.periodo ? escapeHtml(formatPeriodo(resumen.periodo)) : 'Sin datos'}</div></div>
@@ -4703,11 +4709,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const pctEnVivoRaw = liq && liq.unidad && liq.unidad.pctFondoA;
     const pctEnVivo = pctEnVivoRaw ? Math.round(Number(pctEnVivoRaw)*10000)/100 : null;
     const porcentual = pctEnVivo || currentUser.porcentual || '—';
+    // El UF y el Piso/Dpto vienen del padrón real (liq.unidad), no de currentUser.unidad -- ese
+    // último es simplemente lo que quedó guardado en la sesión al loguearse, mientras que acá
+    // se puede confirmar contra la fuente de verdad (Propietarios en la planilla).
+    const ufReal = (liq && liq.unidad && liq.unidad.uf) || currentUser.unidad || '—';
+    const pisoDptoReal = (liq && liq.unidad && liq.unidad.pisoDpto) || '—';
     const metaEl = document.getElementById('profile-banner-meta');
     if(metaEl){
       metaEl.textContent = `${nombreEdificio} · Porcentual: ${porcentual}%`;
     }
-    renderHomeGrid(cAdmin.nombre, nombreEdificio, porcentual);
+    renderHomeGrid(cAdmin.nombre, nombreEdificio, porcentual, ufReal, pisoDptoReal);
   }
 
   // Accesos rápidos tipo grilla de íconos, visibles solo en mobile (arriba de "Resumen") --
@@ -4719,7 +4730,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     conciliaciones:'📒', caja:'🗄️', segurosdepositos:'🛡️', proveedores:'🚚',
     manual:'📄', remocion:'🔨', personal:'🧑‍💼', usuarios:'🔑', novedades:'📢', calchonorarios:'🧮',
   };
-  function renderHomeGrid(nombreAdmin, nombreEdificio, porcentual){
+  function renderHomeGrid(nombreAdmin, nombreEdificio, porcentual, ufReal, pisoDptoReal){
     const mount = document.getElementById('home-grid-mount');
     if(!mount) return;
     const logoImg = document.querySelector('.sidebar .brand img');
@@ -4742,10 +4753,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         </div>
         <div class="home-profile-card">
           <h3>Mi perfil</h3>
-          <div class="row"><span class="k">Nombre</span><span class="v">${escapeHtml(currentUser.nombreCompleto||'—')}</span></div>
-          <div class="row"><span class="k">Unidad Funcional</span><span class="v">${escapeHtml(currentUser.unidad||'—')}</span></div>
-          <div class="row"><span class="k">Coeficiente (Porcentaje)</span><span class="v">${escapeHtml(String(porcentual))}%</span></div>
           <div class="row"><span class="k">Consorcio</span><span class="v">${escapeHtml(nombreEdificio||'—')}</span></div>
+          <div class="row"><span class="k">Nombre</span><span class="v">${escapeHtml(currentUser.nombreCompleto||'—')}</span></div>
+          <div class="row"><span class="k">Unidad Funcional</span><span class="v">${escapeHtml(String(ufReal||'—'))}</span></div>
+          <div class="row"><span class="k">Piso / Dpto.</span><span class="v">${escapeHtml(String(pisoDptoReal||'—'))}</span></div>
+          <div class="row"><span class="k">Coeficiente (Porcentaje)</span><span class="v">${escapeHtml(String(porcentual))}%</span></div>
         </div>
         <div class="home-grid">
           ${tiles.map(t=>`
@@ -5165,8 +5177,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <td class="nowrap">${fmtN(u.importeFondoA)}</td>
           <td class="nowrap">${fmtN(u.importeFondoB)}</td>
           <td class="nowrap">${fmtN(u.importeFondoReserva)}</td>
-          <td class="nowrap">${fmtN(u.totalPrimerVto)}<br><span style="font-size:11px;color:var(--muted);">vto. ${fmtF(u.fechaPrimerVto)}</span></td>
-          <td class="nowrap">${fmtN(u.totalSegundoVto)}<br><span style="font-size:11px;color:var(--muted);">vto. ${fmtF(u.fechaSegundoVto)}</span></td>
+          <td class="nowrap">${fmtN(u.totalPrimerVto)}</td>
+          <td class="nowrap">${fmtN(u.totalSegundoVto)}</td>
           ${role==='admin' ? `<td class="nowrap"><button class="btn ghost btn-pdf-unidad" data-uf="${escapeHtml(String(u.uf||''))}" style="padding:4px 8px;font-size:12px;">📄 PDF</button></td>` : ''}
         </tr>
       `;
@@ -6394,12 +6406,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           <label>Observaciones (opcional)</label>
           <textarea id="cp-observaciones" rows="2" placeholder="Ej: este pago cubre septiembre y parte de agosto, o cualquier otra aclaración que nos ayude a entender el pago" style="width:100%;box-sizing:border-box;border:1px solid var(--line,#ccc);border-radius:5px;padding:8px 10px;font-family:'Inter',sans-serif;font-size:13px;margin-bottom:10px;"></textarea>
           <label>Comprobante (foto o PDF)</label>
-          <input type="file" id="cp-file" accept="image/*,application/pdf" style="width:100%;border:1px solid var(--line);border-radius:5px;padding:8px 10px;font-size:13px;background:#fff;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <label class="btn" for="cp-file" style="cursor:pointer;margin:0;">Elegir archivo</label>
+            <span id="cp-file-nombre" style="font-size:13px;color:var(--muted);">Ningún archivo elegido todavía</span>
+          </div>
+          <input type="file" id="cp-file" accept="image/*,application/pdf" style="display:none;">
           <div id="cp-file-status" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);margin-top:5px;"></div>
           <input type="hidden" id="cp-comprobante-link">
           <div class="toolbar" style="margin-top:10px;">
             <span></span>
-            <div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}<button class="btn primary" id="cp-submit">Enviar</button></div>
+            <div style="display:flex;align-items:center;gap:12px;">${statusEl(statusId)}<button class="btn primary" id="cp-submit">Informar</button></div>
           </div>
         </div>
       `;
@@ -6446,7 +6462,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       document.getElementById('cp-file').addEventListener('change', async (e)=>{
         const file = e.target.files[0];
         const st = document.getElementById('cp-file-status');
+        const nombreEl = document.getElementById('cp-file-nombre');
         if(!file) return;
+        // El input nativo queda oculto (ver el <label> de arriba) porque su texto "Sin archivos
+        // seleccionados" se corta feo en pantallas angostas -- el nombre elegido se muestra acá,
+        // en un lugar que sí se puede controlar.
+        if(nombreEl){ nombreEl.textContent = file.name; nombreEl.style.color = 'var(--text)'; }
         // El atributo accept="..." del input es solo una sugerencia del navegador -- el usuario
         // puede elegir "Todos los archivos" y subir cualquier cosa igual, así que la validación
         // real de tipo tiene que hacerse acá (y también en el servidor, ver handleUploadFile_).
@@ -6508,7 +6529,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           document.getElementById('cp-comprobante-link').value = '';
           document.getElementById('cp-file').value = '';
           document.getElementById('cp-file-status').textContent = '';
-          flashButtonSuccess(btn, '✓ Enviado');
+          document.getElementById('cp-file-nombre').textContent = 'Ningún archivo elegido todavía';
+          document.getElementById('cp-file-nombre').style.color = 'var(--muted)';
+          flashButtonSuccess(btn, '✓ Informado');
           renderLista();
         } finally {
           btn.disabled = false;
