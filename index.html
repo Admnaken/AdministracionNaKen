@@ -5305,6 +5305,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return;
     }
 
+    // Diagnóstico visible SOLO para admin: si un dato "no está cargado" pero el admin jura que
+    // SÍ lo cargó en la hoja, el primer sospechoso es que la app esté leyendo una planilla
+    // DISTINTA a la que el admin tiene abierta en su navegador (por ejemplo, dos consorcios de
+    // prueba con nombres parecidos). Mostrar acá el ID que la app está usando ahora mismo deja
+    // comparar eso contra la URL de Google Sheets en 5 segundos, sin tocar la consola.
+    const diagnosticoSpreadsheetId = role==='admin'
+      ? `<p class="panel-note" style="margin-bottom:14px;font-family:monospace;">ID de planilla que está usando esta pantalla: ${escapeHtml(spreadsheetId)}</p>`
+      : '';
+
     // Los 3 documentos se tratan igual: si hay link, un botón que abre el documento; si no,
     // un botón que avisa claramente que no está cargado (antes el Manual mostraba solo un
     // texto sin botón, y el Reglamento de Propiedad Horizontal ni siquiera tenía el aviso
@@ -5321,6 +5330,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     `;
 
     mount.innerHTML = `
+      ${diagnosticoSpreadsheetId}
       <div class="infoblock" style="margin-bottom:14px;display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;">
         <div style="flex:1;min-width:240px;">
           <h3>Manual de Buenas Prácticas Consorciales</h3>
