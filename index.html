@@ -1875,11 +1875,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify({ action:'traerSaldoBancoAlCierre', spreadsheetId, consorcioId, sessionToken: SESSION_TOKEN })
       }));
     },
-    async registrarPagoVerificado(spreadsheetId, unidad, monto, periodo, idPago, consorcioId){
+    async registrarPagoVerificado(spreadsheetId, unidad, monto, periodo, idPago, consorcioId, fecha){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action:'registrarPagoVerificado', spreadsheetId, unidad, monto, periodo, idPago, consorcioId, sessionToken: SESSION_TOKEN })
+        body: JSON.stringify({ action:'registrarPagoVerificado', spreadsheetId, unidad, monto, periodo, idPago, consorcioId, fecha, sessionToken: SESSION_TOKEN })
       }));
     },
     async perdonarInteresUnidad(spreadsheetId, unidad){
@@ -6292,7 +6292,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
                     const montoDeclaradoOriginal = p.monto;
                     const monto = parseFloat(((montoInput ? montoInput.value : p.monto)||'0').toString().replace(/\./g,'').replace(',','.'));
                     if(spreadsheetId && p.unidad && !isNaN(monto) && monto>0){
-                      const resDeuda = await window.storage.registrarPagoVerificado(spreadsheetId, p.unidad, monto, p.periodo, p.id, getActiveConsorcioId());
+                      const resDeuda = await window.storage.registrarPagoVerificado(spreadsheetId, p.unidad, monto, p.periodo, p.id, getActiveConsorcioId(), p.fecha);
                       let notaCorreccion = '';
                       const montoDeclaradoNum = parseFloat((montoDeclaradoOriginal||'0').toString().replace(/\./g,'').replace(',','.'));
                       if(Math.abs(monto - montoDeclaradoNum) > 0.01){
