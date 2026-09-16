@@ -2859,6 +2859,34 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
     }
 
+    // ---------- RETENCIONES A PROVEEDORES (Agente de Retención ARCA) ----------
+    // Solo aparece si el consorcio está declarado como agente de retención de AL MENOS un
+    // tributo en Config_NAKEN -- no es un dato obligatorio en la liquidación (a diferencia del
+    // resto de las secciones), así que para un consorcio que no es agente de retención esta
+    // sección directamente no ocupa lugar, en vez de mostrar "No aplica" o algo por el estilo.
+    {
+      const esSi = (v) => { const t = String(v||'').trim().toLowerCase(); return t==='sí' || t==='si'; };
+      const tributos = [
+        { activo: esSi(cfg['AGENTE DE RETENCIÓN ANTE ARCA (RETENCIONES A PROVEEDORES) | ¿Agente de retención de Ganancias (RG 830)?']), nombre:'Ganancias', rg:'RG 830' },
+        { activo: esSi(cfg['AGENTE DE RETENCIÓN ANTE ARCA (RETENCIONES A PROVEEDORES) | ¿Agente de retención de SUSS (RG 1784/1769)?']), nombre:'SUSS', rg:'RG 1784/1769' },
+        { activo: esSi(cfg['AGENTE DE RETENCIÓN ANTE ARCA (RETENCIONES A PROVEEDORES) | ¿Agente de retención de IVA (RG 2854)?']), nombre:'IVA', rg:'RG 2854' },
+      ].filter(t => t.activo);
+
+      if(tributos.length > 0){
+        bannerSeccion('RETENCIONES A PROVEEDORES (Agente de Retención ARCA)');
+        saltoSiHaceFalta(20);
+        doc.setFont('helvetica','normal'); doc.setFontSize(8.3); doc.setTextColor(...TEXTO);
+        // La cita normativa solo menciona los tributos que este consorcio efectivamente declaró
+        // -- si algún día se agrega/saca un tributo en Config_NAKEN, el texto se ajusta solo.
+        const listaRG = tributos.map(t => `${t.rg} (${t.nombre})`).join(', ');
+        const nombresTributos = tributos.map(t => t.nombre).join(', ').replace(/, ([^,]*)$/, ' y/o $1');
+        const textoRetenciones = `Este consorcio actúa como agente de retención conforme a la normativa vigente de ARCA: ${listaRG}. En concepto de retenciones (de ${nombresTributos}) practicadas a proveedores, en este período se depositaron ${fmt(data.totalRetenciones||0)}.`;
+        const lineasRet = doc.splitTextToSize(textoRetenciones, ANCHO_UTIL);
+        doc.text(lineasRet, M, y);
+        y += lineasRet.length * 4.2 + 8;
+      }
+    }
+
     // ---------- GASTOS DEL PERÍODO ----------
     bannerSeccion('GASTOS DEL PERIODO POR SUMINISTROS, SERVICIOS, ABONOS Y SEGUROS');
     tablaConBordes({
