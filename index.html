@@ -2773,7 +2773,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     });
 
     // ---------- DOCUMENTACIÓN Y TRANSPARENCIA ----------
-    bannerSeccion('DOCUMENTACIÓN Y TRANSPARENCIA', 'Conforme Disp. DI-2024-1146-GCABA-DGDYPC');
+    bannerSeccion('DOCUMENTACIÓN Y TRANSPARENCIA');
     async function imagenBase64DeUrl(url){
       try{
         const resp = await fetch(url);
@@ -2814,6 +2814,20 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         y = yInicio + altoFila + 6;
       }
     }
+    // Nota legal: la Disposición N° 3644/DGDYPC/26 (8/9/2026) dejó sin efecto el carácter
+    // obligatorio del Manual de Buenas Prácticas Consorciales (art. 3°), y estableció que el
+    // acceso al Reglamento de Propiedad Horizontal vía QR/link es facultativo (art. 2°, que
+    // sustituyó al art. 2° de la Disposición DI-2025-521-GCABA-DGDYPC). Se incluyen igual, de
+    // forma voluntaria, como servicio informativo para los propietarios.
+    saltoSiHaceFalta(14);
+    doc.setFont('helvetica','italic'); doc.setFontSize(6.8); doc.setTextColor(...MUTED);
+    {
+      const notaLegalDocs = 'Conforme Disposición N° 3644/DGDYPC/26 (art. 3°), la incorporación del Manual de Buenas Prácticas Consorciales dejó de ser obligatoria; y conforme su art. 2° (que sustituyó al art. 2° de la Disposición DI-2025-521-GCABA-DGDYPC), el acceso al Reglamento de Propiedad Horizontal mediante QR o enlace tiene carácter facultativo e informativo. Se ponen a disposición de todos modos, como servicio a los propietarios.';
+      const lineasNota = doc.splitTextToSize(notaLegalDocs, ANCHO_UTIL);
+      doc.text(lineasNota, M, y);
+      y += lineasNota.length * 3.4 + 6;
+    }
+    doc.setTextColor(...TEXTO);
 
     // ---------- FORMA DE PAGO ----------
     bannerSeccion('FORMA DE PAGO');
@@ -5347,6 +5361,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         <div style="flex:1;min-width:240px;">
           <h3>Manual de Buenas Prácticas Consorciales</h3>
           <p>El Manual de Buenas Prácticas Consorciales es un documento oficial emitido por el Gobierno de la Ciudad Autónoma de Buenos Aires que contiene información sobre la normativa, los derechos y las obligaciones de los administradores y propietarios en el régimen de propiedad horizontal. Se sugiere su lectura para ampliar el conocimiento sobre las herramientas con la que cuenta la persona que es dueña de cada unidad funcional.</p>
+          <p style="font-size:11px;color:var(--muted);font-style:italic;margin-top:6px;">Conforme Disposición N° 3644/DGDYPC/26, su incorporación ya no es obligatoria — se ofrece igual, de forma voluntaria, como servicio informativo.</p>
           ${data.manual
             ? `<a class="btn primary" style="display:inline-block;margin-top:6px;text-decoration:none;" href="${escapeHtml(data.manual)}" target="_blank" rel="noopener">Ver manual (PDF) ↗</a>`
             : `<button class="btn" style="margin-top:6px;" id="${idBoton('manual')}" data-mensaje-sin-cargar="Todavía no se cargó el link de este manual en la planilla del consorcio.">Ver manual (PDF)</button>`
