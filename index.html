@@ -1402,6 +1402,7 @@
       <button class="navbtn admin-only" data-panel="usuarios">Usuarios y accesos</button>
       <button class="navbtn admin-only" data-panel="personal">Personal y Liquidación de Sueldos</button>
       <button class="navbtn admin-only" data-panel="calchonorarios">Calculadora de honorarios</button>
+      <button class="navbtn admin-only" data-panel="traspaso">Cierre y Traspaso</button>
     </div>
 
     <div class="navgroup">
@@ -1663,6 +1664,16 @@
 
         <div class="subhead">Nuestro compromiso como administración</div>
         <div id="manual-mount"></div>
+      </section>
+
+      <!-- CIERRE Y TRASPASO -->
+      <section class="panel" id="panel-traspaso">
+        <div class="panel-head">
+          <span class="eyebrow">Herramientas del administrador</span>
+          <h2>Cierre y Traspaso de Administración</h2>
+          <p class="panel-note">Si en algún momento dejás de administrar este consorcio -- por renuncia, remoción o no renovación -- la ley te da un plazo breve para entregar todo al administrador entrante (o al Consejo de Propietarios), sin poder retener nada bajo ningún concepto, ni siquiera por honorarios pendientes. Este panel junta, desde los datos que ya tenés cargados en el sistema, todo lo que se te va a pedir en ese momento, para que nunca te agarre de sorpresa.</p>
+        </div>
+        <div id="traspaso-mount"></div>
       </section>
 
       <!-- REMOCIÓN -->
@@ -11307,6 +11318,309 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     })();
   }
 
+  /* ---------------------------------------------------------------------
+     CIERRE Y TRASPASO DE ADMINISTRACIÓN
+     Panel de autoservicio, solo para el administrador, pensado para el día
+     en que Sebastián (o cualquier otra administración que use esta app) deja
+     de administrar un consorcio puntual -- por renuncia, remoción o no
+     renovación. No agrega ningún dato nuevo: junta, desde los mismos
+     endpoints que ya usan el Resumen y los demás paneles, todo lo que el
+     art. 9° Ley 941 y la práctica habitual exigen entregar al dejar el
+     cargo, para que nunca falte nada a último momento. Fuera de alcance a
+     propósito (decisión explícita del usuario): no genera ninguna carta de
+     renuncia/cese -- eso lo redacta un abogado según el caso concreto.
+     --------------------------------------------------------------------- */
+  async function mountTraspaso(mountId){
+    if(role!=='admin') return;
+    const mount = document.getElementById(mountId);
+    mount.innerHTML = `<div class="empty">Cargando datos del consorcio…</div>`;
+
+    const spreadsheetId = await getSpreadsheetIdActivo();
+    if(!spreadsheetId){
+      mount.innerHTML = `<div class="empty">Elegí un consorcio arriba para ver su estado de cierre y traspaso.</div>`;
+      return;
+    }
+
+    const [resumen, documentos, cfg, juicios, polizas, empleados] = await Promise.all([
+      fetchResumenConsorcio(spreadsheetId),
+      fetchDocumentosConsorcio(spreadsheetId),
+      fetchConfigConsorcio(spreadsheetId),
+      loadData('naken-juicios', []),
+      loadData('naken-polizas', []),
+      loadData('naken-empleados', []),
+    ]);
+
+    const fmt = (n)=> '$ ' + (Number(n)||0).toLocaleString('es-AR',{maximumFractionDigits:0});
+    const unidades = (resumen && resumen.unidades) || [];
+    const deudaTotal = resumen ? (resumen.deudaTotal||0) : 0;
+    const unidadesConDeuda = unidades.filter(u=>Number(u.deuda)>0).length;
+    const saldoReserva = (resumen && resumen.totales && resumen.totales.saldoFondoReservaCierre) || 0;
+    const tienePersonal = !!(cfg && cfg.consorcio && String(cfg.consorcio.tienePersonal||'').trim().toLowerCase().indexOf('s') === 0);
+    const juiciosEnTramite = (juicios||[]).filter(j=>String(j.estado||'').toLowerCase().indexOf('trámite')>=0 || String(j.estado||'').toLowerCase().indexOf('tramite')>=0).length;
+
+    // Cada ítem: título, detalle (lo que efectivamente se encontró en el sistema) y un estado.
+    // 'ok' = listo para entregar tal cual está; 'atencion' = falta cargar algo; 'info' = no se
+    // puede verificar solo con datos del sistema (ej: entrega física de claves), es un recordatorio.
+    const items = [
+      {
+        titulo: 'Libro de registro de propietarios',
+        detalle: unidades.length ? `${unidades.length} unidad(es) cargada(s), con titular y coeficiente.` : 'Todavía no hay unidades cargadas en Propietarios / Prorrateo.',
+        estado: unidades.length ? 'ok' : 'atencion'
+      },
+      {
+        titulo: 'Estados financieros y liquidaciones de períodos cerrados',
+        detalle: resumen && resumen.periodo ? `Último período con datos: ${escapeHtml(String(resumen.periodo))}. Cada cierre de mes archiva sola su propia hoja (Prorrateo_MM-AAAA / Estado_Financiero_MM-AAAA), lista para entregar.` : 'Todavía no se cerró ningún mes en este consorcio.',
+        estado: (resumen && resumen.periodo) ? 'ok' : 'atencion'
+      },
+      {
+        titulo: 'Documentación respaldatoria de gastos (facturas)',
+        detalle: 'Se archiva sola en Google Drive al cerrar cada mes ("Facturas archivadas → [período]"), en la misma carpeta de la planilla del consorcio -- alcanza con compartir esa carpeta.',
+        estado: 'info'
+      },
+      {
+        titulo: 'Estado de deudas por unidad',
+        detalle: `${unidadesConDeuda} de ${unidades.length} unidad(es) con deuda registrada, por un total de ${fmt(deudaTotal)}.`,
+        estado: 'ok'
+      },
+      {
+        titulo: 'Legajos del personal',
+        detalle: empleados.length ? `${empleados.length} legajo(s) cargado(s) en "Personal y Liquidación de Sueldos".` : (tienePersonal ? 'El consorcio tiene personal declarado en Config_NAKEN, pero no hay legajos cargados todavía.' : 'Este consorcio no tiene personal en relación de dependencia.'),
+        estado: empleados.length ? 'ok' : (tienePersonal ? 'atencion' : 'info')
+      },
+      {
+        titulo: 'Pólizas de seguro vigentes',
+        detalle: polizas.length ? `${polizas.length} póliza(s) cargada(s) en "Seguros y depósitos".` : 'No hay pólizas cargadas en "Seguros y depósitos" -- si el consorcio tiene seguros vigentes, conviene cargarlos ahí antes de dejar de administrar.',
+        estado: polizas.length ? 'ok' : 'atencion'
+      },
+      {
+        titulo: 'Juicios en trámite (a favor y en contra)',
+        detalle: juicios.length ? `${juicios.length} juicio(s) cargado(s), ${juiciosEnTramite} en trámite.` : 'No hay juicios cargados para este consorcio.',
+        estado: 'ok'
+      },
+      {
+        titulo: 'Fondo de Reserva -- saldo y detalle de movimientos',
+        detalle: `Saldo al último cierre: ${fmt(saldoReserva)}. El detalle completo de ingresos y egresos está en el panel "Fondo de reserva".`,
+        estado: 'ok'
+      },
+      {
+        titulo: 'Documentos legales del consorcio',
+        detalle: (()=>{
+          const faltan = [];
+          if(!documentos || !documentos.manual) faltan.push('Manual de Buenas Prácticas');
+          if(!documentos || !documentos.reglamento) faltan.push('Reglamento de Propiedad Horizontal');
+          if(!documentos || !documentos.reglamentoInterno) faltan.push('Reglamento Interno');
+          return faltan.length ? `Falta cargar: ${faltan.join(', ')} (en "Documentos importantes").` : 'Manual, Reglamento de Propiedad Horizontal y Reglamento Interno están cargados.';
+        })(),
+        estado: (documentos && documentos.reglamento) ? 'ok' : 'atencion'
+      },
+      {
+        titulo: 'Libro Banco y Libro de Caja',
+        detalle: 'El detalle completo de movimientos e ingresos/egresos está siempre disponible en "Libro Banco y Conciliación bancaria" y "Libro de Caja".',
+        estado: 'info'
+      },
+      {
+        titulo: 'Cuentas bancarias, claves de acceso y credenciales digitales',
+        detalle: 'No se puede verificar desde el sistema -- es un recordatorio: al cesar en el cargo hay que entregar también las claves de acceso a home banking, ARCA/AGIP y cualquier otro portal usado para administrar el consorcio, además de los datos de las cuentas bancarias.',
+        estado: 'info'
+      },
+    ];
+
+    const pill = (estado)=>{
+      if(estado==='ok') return `<span class="pill" style="background:#e6f4ea;color:#1e7e34;border:1px solid #b7e2c2;">Listo para entregar</span>`;
+      if(estado==='atencion') return `<span class="pill" style="background:#fdf3e0;color:#9a6300;border:1px solid #f0d9a8;">Revisar antes de entregar</span>`;
+      return `<span class="pill" style="background:#eef1f4;color:#4a5568;border:1px solid #dbe1e8;">Recordatorio</span>`;
+    };
+
+    mount.innerHTML = `
+      <div class="infoblock" style="margin-bottom:16px;">
+        <p style="margin:0;">La Ley 941 (art. 9°) obliga al administrador a rendir cuentas y a poner a disposición toda la documentación del consorcio; en la práctica, al cesar en el cargo (por renuncia, remoción o no renovación) el uso es entregar todo dentro de los <b>15 días hábiles</b> desde el cese, sin poder retener nada -- ni siquiera por honorarios pendientes.</p>
+      </div>
+      <div class="cards" style="margin-bottom:18px;">
+        ${items.map(it=>`
+          <div class="card" style="display:flex;flex-direction:column;gap:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+              <b>${escapeHtml(it.titulo)}</b>
+              ${pill(it.estado)}
+            </div>
+            <p class="panel-note" style="margin:0;">${escapeHtml(it.detalle)}</p>
+          </div>
+        `).join('')}
+      </div>
+      <div class="toolbar">
+        <span class="panel-note" style="margin:0;">El informe compila lo de arriba en un PDF para entregar junto con los libros y comprobantes físicos/digitales.</span>
+        <button class="btn primary" id="${mountId}-btn-informe">Generar Informe de Cierre y Traspaso (PDF)</button>
+      </div>
+    `;
+
+    document.getElementById(mountId+'-btn-informe').addEventListener('click', ()=>{
+      generarPdfCierreTraspaso(spreadsheetId, { resumen, documentos, cfg, juicios, polizas, empleados, items });
+    });
+  }
+
+  async function generarPdfCierreTraspaso(spreadsheetId, d){
+    if(!window.jspdf){ alert('No se pudo cargar el generador de PDF. Revisá tu conexión e intentá de nuevo.'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const M = 14;
+    const ANCHO = 182;
+    let y = 18;
+
+    const NAVY = [11,42,74];
+    const GOLD = [201,169,78];
+    const TEXTO = [51,51,51];
+    const FONDO_ALT = [248,249,250];
+    const AUTOTABLE_BASE = {
+      styles: { fontSize: 8.5, textColor: TEXTO, lineColor: [180,186,194], lineWidth: 0.1 },
+      headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: FONDO_ALT }
+    };
+    const fmt = (n)=> '$ ' + Math.round(Number(n)||0).toLocaleString('es-AR');
+
+    function heading(texto){
+      if(y>270){ doc.addPage(); y=18; }
+      doc.setFillColor(...NAVY);
+      doc.rect(M, y, ANCHO, 7, 'F');
+      doc.setTextColor(255,255,255);
+      doc.setFont('helvetica','bold'); doc.setFontSize(10);
+      doc.text(texto, M+3, y+5);
+      doc.setTextColor(...TEXTO);
+      y += 12;
+    }
+    function parrafo(texto, opts={}){
+      doc.setFont('helvetica', opts.bold?'bold':'normal');
+      doc.setFontSize(opts.size||9);
+      doc.setTextColor(...TEXTO);
+      const lineas = doc.splitTextToSize(texto||'—', ANCHO);
+      if(y + lineas.length*4.4 > 283){ doc.addPage(); y=18; }
+      doc.text(lineas, M, y);
+      y += lineas.length*4.4 + 3;
+    }
+
+    const cfg = (d.cfg) || {};
+    const admin = cfg.administracion || {};
+    const consorcio = cfg.consorcio || {};
+    const formaPago = cfg.formaPago || {};
+    const fondoReserva = cfg.fondoReserva || {};
+    const resumen = d.resumen || {};
+    const unidades = resumen.unidades || [];
+    const documentos = d.documentos || {};
+    const juicios = d.juicios || [];
+    const polizas = d.polizas || [];
+    const empleados = d.empleados || [];
+    const hoy = new Date().toLocaleDateString('es-AR');
+
+    // ---------- Portada ----------
+    doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(...NAVY);
+    doc.text('INFORME DE CIERRE Y TRASPASO DE ADMINISTRACIÓN', M, y, {maxWidth: ANCHO}); y += 10;
+    doc.setFont('helvetica','italic'); doc.setFontSize(10); doc.setTextColor(...GOLD);
+    doc.text('Su consorcio, nuestro legado', M, y); y += 8;
+    doc.setTextColor(...TEXTO);
+    parrafo(`Consorcio: ${consorcio.nombreDireccion||'—'}`, {bold:true, size:11});
+    parrafo(`Fecha de generación de este informe: ${hoy}`);
+    parrafo('Este informe reúne, con base en los datos cargados en el sistema a la fecha indicada, la documentación e información que la Ley 941 (art. 9°) y la práctica habitual exigen entregar a la administración entrante (o al Consejo de Propietarios) al cesar en el cargo -- por renuncia, remoción o no renovación -- dentro de los 15 días hábiles desde el cese, sin poder retener nada bajo ningún concepto, ni siquiera por honorarios pendientes. No reemplaza la entrega física/digital de los libros, comprobantes y demás documentación respaldatoria detallada en cada sección.');
+    y += 2;
+
+    heading('1. DATOS DEL CONSORCIO Y DE LA ADMINISTRACIÓN SALIENTE');
+    doc.autoTable({
+      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+      body: [
+        ['Consorcio', consorcio.nombreDireccion||'—', 'CUIT del consorcio', consorcio.cuit||'—'],
+        ['Administración', admin.nombre||'—', 'Matrícula RPA', admin.rpa||'—'],
+        ['CUIT administración', admin.cuit||'—', 'Teléfono', admin.telefono||'—'],
+        ['Domicilio', admin.domicilio||'—', 'Email', admin.email||'—'],
+      ]
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    heading('2. LIBRO DE REGISTRO DE PROPIETARIOS Y ESTADO DE DEUDAS POR UNIDAD');
+    parrafo(`Período de referencia: ${resumen.periodo||'—'}. Total de unidades: ${unidades.length}. Deuda total registrada: ${fmt(resumen.deudaTotal)}.`);
+    if(unidades.length){
+      doc.autoTable({
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+        head: [['UF', 'Piso/Dpto.', 'Propietario', 'Deuda ($)']],
+        body: unidades.map(u=>[String(u.uf||''), String(u.pisoDpto||''), String(u.propietario||''), fmt(u.deuda)])
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    }
+
+    heading('3. FONDO DE RESERVA Y CUENTAS BANCARIAS DEL CONSORCIO');
+    parrafo(`Saldo del Fondo de Reserva al último cierre: ${fmt(resumen.totales && resumen.totales.saldoFondoReservaCierre)}. El detalle completo de movimientos está en el Libro del Fondo de Reserva del sistema.`);
+    doc.autoTable({
+      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+      head: [['Cuenta', 'Banco', 'Sucursal', 'N° de cuenta', 'CBU', 'Alias']],
+      body: [
+        ['Cuenta Corriente', formaPago.banco||'—', formaPago.sucursal||'—', formaPago.numeroCuenta||'—', formaPago.cbu||'—', formaPago.alias||'—'],
+        ['Fondo de Reserva', fondoReserva.banco||'—', fondoReserva.sucursal||'—', fondoReserva.numeroCuenta||'—', fondoReserva.cbu||'—', fondoReserva.alias||'—'],
+      ]
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    heading('4. LEGAJOS DEL PERSONAL');
+    if(empleados.length){
+      doc.autoTable({
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+        head: [['Nombre', 'CUIL', 'Categoría CCT 589/10', 'Fecha de ingreso']],
+        body: empleados.map(e=>[String(e.nombre||''), String(e.cuil||''), String(e.categoria||''), String(e.fechaIngreso||'')])
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    } else {
+      parrafo('Este consorcio no tiene legajos de personal cargados.');
+    }
+
+    heading('5. PÓLIZAS DE SEGURO VIGENTES');
+    if(polizas.length){
+      doc.autoTable({
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+        head: [['Proveedor', 'N° de póliza', 'Descripción', 'Vencimiento']],
+        body: polizas.map(p=>[String(p.proveedor||''), String(p.numeroPoliza||''), String(p.descripcion||''), String(p.fechaVencimiento||'')])
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    } else {
+      parrafo('No hay pólizas de seguro cargadas para este consorcio.');
+    }
+
+    heading('6. JUICIOS EN TRÁMITE (A FAVOR Y EN CONTRA DEL CONSORCIO)');
+    if(juicios.length){
+      doc.autoTable({
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+        head: [['Carátula', 'Tipo', 'Expediente', 'Juzgado', 'Estado']],
+        body: juicios.map(j=>[String(j.caratula||''), String(j.tipo||''), String(j.expediente||''), String(j.juzgado||''), String(j.estado||'')])
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    } else {
+      parrafo('No hay juicios cargados para este consorcio, ni a favor ni en contra.');
+    }
+
+    heading('7. DOCUMENTOS LEGALES DEL CONSORCIO');
+    doc.autoTable({
+      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+      head: [['Documento', 'Estado']],
+      body: [
+        ['Manual de Buenas Prácticas Consorciales', documentos.manual ? 'Cargado' : 'No cargado'],
+        ['Reglamento de Propiedad Horizontal', documentos.reglamento ? 'Cargado' : 'No cargado'],
+        ['Reglamento Interno / de Comportamiento', documentos.reglamentoInterno ? 'Cargado' : 'No cargado'],
+      ]
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    heading('8. LIBRO BANCO Y LIBRO DE CAJA');
+    parrafo('El detalle completo de movimientos, conciliaciones y arqueos de caja de todo el período administrado está disponible en el sistema, en los paneles "Libro Banco y Conciliación bancaria" y "Libro de Caja", y debe entregarse junto con este informe.');
+
+    heading('9. CLAVES DE ACCESO Y CREDENCIALES DIGITALES');
+    parrafo('Recordatorio: junto con este informe corresponde entregar las claves de acceso a home banking, portales de ARCA/AGIP y cualquier otro sistema usado para administrar este consorcio -- este informe no puede verificar ese punto de forma automática.');
+
+    // Numeración de páginas
+    const totalPaginas = doc.internal.getNumberOfPages();
+    for(let p=1; p<=totalPaginas; p++){
+      doc.setPage(p);
+      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(140,140,140);
+      doc.text(`${p} / ${totalPaginas}`, 105, 292, {align:'center'});
+    }
+
+    const nombreConsorcio = (consorcio.nombreDireccion||'Consorcio').replace(/[^\w\-]+/g,'_');
+    doc.save(`Informe_Cierre_y_Traspaso_${nombreConsorcio}.pdf`);
+  }
+
   /* ---------- Render all modules for current role ---------- */
   /* ---------------------------------------------------------------------
      Montaje BAJO DEMANDA: antes, renderAll() montaba los ~27 paneles de
@@ -11426,6 +11740,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
     },
     remocion: () => {}, // contenido estático, sin datos que montar
+    traspaso: () => { if(role==='admin') mountTraspaso('traspaso-mount'); },
   };
 
   const panelesMontados = new Set();
