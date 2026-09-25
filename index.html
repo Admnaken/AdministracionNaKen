@@ -1566,6 +1566,9 @@
         </div>
         <div class="subhead" style="margin-top:0;">Pólizas de seguros</div>
         <div id="polizas-mount"></div>
+        <div class="subhead">Siniestros</div>
+        <p class="panel-note" style="margin-top:-6px;">Cada vez que se presenta un siniestro (rotura, robo, accidente, etc.) se carga acá para tener el historial completo -- desde el hecho hasta lo cobrado del seguro.</p>
+        <div id="siniestros-mount"></div>
         <div class="subhead">Depósitos no identificados</div>
         <div id="depositos-mount"></div>
       </section>
@@ -1933,6 +1936,17 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(Object.assign({ action:'respaldarLiquidacionSueldo', sessionToken: SESSION_TOKEN }, payload))
+      }));
+    },
+    // Copia pólizas y/o siniestros (payload.polizas y/o payload.siniestros, lo que se mande) a
+    // hojas propias dentro de la planilla del consorcio (payload.spreadsheetId) -- además de
+    // quedar en el almacenamiento de siempre, así viajan con la planilla si el día de mañana se
+    // entrega el consorcio a otra administración.
+    async respaldarSegurosEnPlanilla(payload){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'respaldarSegurosEnPlanilla', sessionToken: SESSION_TOKEN }, payload))
       }));
     },
     async cargarLiquidacionEnGastos(payload){
@@ -5602,12 +5616,18 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
     }
 
+    // opts.onGuardado(rows): hook opcional, se llama después de cada guardado exitoso (automático
+    // o con el botón) con el array recién guardado -- lo usan pólizas y siniestros para mandar
+    // además una copia a una hoja de la planilla propia del consorcio (ver respaldarSegurosEnPlanilla),
+    // así esos datos viajan con la planilla el día que se entregue el consorcio a otra administración.
+    function avisarGuardado(){ if(opts.onGuardado) opts.onGuardado(rows); }
+
     let saveTimer;
     function scheduleSave(){
       if(role!=='admin') return;
       setStatus(statusId,'saving');
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(()=>{ rows = readRows(); saveData(storageKey, rows, statusId); }, 700);
+      saveTimer = setTimeout(()=>{ rows = readRows(); saveData(storageKey, rows, statusId).then(avisarGuardado); }, 700);
     }
 
     if(role==='admin'){
@@ -5625,7 +5645,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body.lastElementChild.querySelector('input,textarea').focus();
       });
       document.getElementById(mountId+'-save').addEventListener('click', ()=>{
-        rows = readRows(); saveData(storageKey, rows, statusId);
+        rows = readRows(); saveData(storageKey, rows, statusId).then(avisarGuardado);
       });
 
       if(!vistaTarjetas){
@@ -11341,12 +11361,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return;
     }
 
-    const [resumen, documentos, cfg, juicios, polizas, empleados] = await Promise.all([
+    const [resumen, documentos, cfg, juicios, polizas, siniestros, empleados] = await Promise.all([
       fetchResumenConsorcio(spreadsheetId),
       fetchDocumentosConsorcio(spreadsheetId),
       fetchConfigConsorcio(spreadsheetId),
       loadData('naken-juicios', []),
       loadData('naken-polizas', []),
+      loadData('naken-siniestros', []),
       loadData('naken-empleados', []),
     ]);
 
@@ -11388,8 +11409,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         estado: empleados.length ? 'ok' : (tienePersonal ? 'atencion' : 'info')
       },
       {
-        titulo: 'Pólizas de seguro vigentes',
-        detalle: polizas.length ? `${polizas.length} póliza(s) cargada(s) en "Seguros y depósitos".` : 'No hay pólizas cargadas en "Seguros y depósitos" -- si el consorcio tiene seguros vigentes, conviene cargarlos ahí antes de dejar de administrar.',
+        titulo: 'Pólizas de seguro vigentes y siniestros',
+        detalle: polizas.length
+          ? `${polizas.length} póliza(s) cargada(s) en "Seguros y depósitos"${siniestros.length ? `, con ${siniestros.length} siniestro(s) en el historial` : ''}.`
+          : 'No hay pólizas cargadas en "Seguros y depósitos" -- si el consorcio tiene seguros vigentes, conviene cargarlos ahí antes de dejar de administrar.',
         estado: polizas.length ? 'ok' : 'atencion'
       },
       {
@@ -11453,7 +11476,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     `;
 
     document.getElementById(mountId+'-btn-informe').addEventListener('click', ()=>{
-      generarPdfCierreTraspaso(spreadsheetId, { resumen, documentos, cfg, juicios, polizas, empleados, items });
+      generarPdfCierreTraspaso(spreadsheetId, { resumen, documentos, cfg, juicios, polizas, siniestros, empleados, items });
     });
   }
 
@@ -11506,6 +11529,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const documentos = d.documentos || {};
     const juicios = d.juicios || [];
     const polizas = d.polizas || [];
+    const siniestros = d.siniestros || [];
     const empleados = d.empleados || [];
     const hoy = new Date().toLocaleDateString('es-AR');
 
@@ -11571,20 +11595,32 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     if(polizas.length){
       doc.autoTable({
         ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-        head: [['Proveedor', 'N° de póliza', 'Descripción', 'Vencimiento']],
-        body: polizas.map(p=>[String(p.proveedor||''), String(p.numeroPoliza||''), String(p.descripcion||''), String(p.fechaVencimiento||'')])
+        head: [['Aseguradora', 'N° de póliza', 'Cobertura / nota', 'Desde', 'Hasta', 'Prima mensual ($)']],
+        body: polizas.map(p=>[String(p.proveedor||''), String(p.numeroPoliza||''), String(p.descripcion||''), String(p.fechaInicio||''), String(p.fechaVencimiento||''), p.primaMensual?fmt(p.primaMensual):''])
       });
       y = doc.lastAutoTable.finalY + 8;
     } else {
       parrafo('No hay pólizas de seguro cargadas para este consorcio.');
     }
 
+    heading('5.1 SINIESTROS -- HISTORIAL');
+    if(siniestros.length){
+      doc.autoTable({
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+        head: [['N° siniestro', 'Póliza', 'Fecha del hecho', 'Descripción', 'Total pagado ($)', 'Franquicia ($)', 'Indemnización ($)', 'Estado']],
+        body: siniestros.map(s=>[String(s.numeroSiniestro||''), String(s.poliza||''), String(s.fechaHecho||''), String(s.descripcion||''), s.totalPagado?fmt(s.totalPagado):'', s.franquicia?fmt(s.franquicia):'', s.indemnizacionEsperada?fmt(s.indemnizacionEsperada):'', String(s.estado||'')])
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    } else {
+      parrafo('No hay siniestros cargados en el historial de este consorcio.');
+    }
+
     heading('6. JUICIOS EN TRÁMITE (A FAVOR Y EN CONTRA DEL CONSORCIO)');
     if(juicios.length){
       doc.autoTable({
         ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-        head: [['Carátula', 'Tipo', 'Expediente', 'Juzgado', 'Estado']],
-        body: juicios.map(j=>[String(j.caratula||''), String(j.tipo||''), String(j.expediente||''), String(j.juzgado||''), String(j.estado||'')])
+        head: [['Carátula', 'Tipo', 'Expediente', 'Juzgado', 'Monto reclamado ($)', 'Estado procesal', 'Letrado/a']],
+        body: juicios.map(j=>[String(j.caratula||''), String(j.tipo||''), String(j.expediente||''), String(j.juzgado||''), j.montoReclamado?fmt(j.montoReclamado):'', String(j.estado||''), String(j.letrado||'')])
       });
       y = doc.lastAutoTable.finalY + 8;
     } else {
@@ -11652,7 +11688,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       {key:'expediente', label:'Expediente', placeholder:'N°'},
       {key:'juzgado', label:'Juzgado', placeholder:''},
       {key:'objeto', label:'Objeto', type:'textarea', placeholder:'Qué se reclama'},
-      {key:'estado', label:'Estado', placeholder:'En trámite / Sentencia / Archivado'},
+      {key:'montoReclamado', label:'Monto reclamado ($)', numeric:true, placeholder:'0'},
+      {key:'estado', label:'Estado procesal', placeholder:'En trámite / Sentencia / Archivado'},
+      {key:'letrado', label:'Letrado/a del consorcio', placeholder:'Nombre y matrícula'},
+      {key:'observaciones', label:'Observaciones', type:'textarea', placeholder:''},
     ], {emptyText:'No hay juicios cargados.', vistaTarjetas:true}),
     reserva: () => mountLibroBancoConciliacion('reserva-mount', 'naken-reserva-movimientos', 'naken-reserva-conciliacion', {
       cuentaKey: 'naken-reserva-cuenta-bancaria',
@@ -11677,13 +11716,42 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }),
     caja: () => mountLibroCaja('caja-mount', 'naken-caja-movimientos', 'naken-caja-arqueos'),
     novedades: () => { if(role==='admin') mountNovedades('novedades-mount', 'naken-novedades'); },
-    segurosdepositos: () => {
+    segurosdepositos: async () => {
+      // El respaldo a la planilla del consorcio es "mejor esfuerzo": si todavía no está vinculada
+      // la planilla (spreadsheetId vacío) o falla la escritura, el dato de todos modos ya quedó
+      // guardado en el almacenamiento de siempre -- respaldarSegurosEnPlanilla nunca bloquea ni
+      // rompe el guardado normal, solo suma una copia extra cuando puede.
+      const spreadsheetId = await getSpreadsheetIdActivo();
+      async function respaldar(datos){
+        if(!spreadsheetId || role!=='admin') return;
+        try{ await window.storage.respaldarSegurosEnPlanilla(Object.assign({ spreadsheetId }, datos)); }
+        catch(e){ console.error('No se pudo respaldar en la planilla del consorcio:', e); }
+      }
+
       mountLedger('polizas-mount', 'naken-polizas', [
-        {key:'proveedor', label:'Proveedor', placeholder:''},
+        {key:'proveedor', label:'Aseguradora', placeholder:''},
         {key:'numeroPoliza', label:'N° de póliza', placeholder:''},
-        {key:'descripcion', label:'Descripción', placeholder:'Ej: Incendio, RC, ABE'},
-        {key:'fechaVencimiento', label:'Vencimiento', placeholder:'DD/MM/AAAA'},
-      ], {emptyText:'Sin pólizas cargadas.'});
+        {key:'fechaInicio', label:'Vigencia desde', placeholder:'DD/MM/AAAA'},
+        {key:'fechaVencimiento', label:'Vigencia hasta', placeholder:'DD/MM/AAAA'},
+        {key:'primaMensual', label:'Prima mensual ($)', numeric:true, placeholder:'0'},
+        {key:'descripcion', label:'Cobertura / nota', type:'textarea', placeholder:'Ej: Incendio, cristales (suma asegurada, franquicia), RC'},
+      ], {emptyText:'Sin pólizas cargadas.', onGuardado: rows => respaldar({ polizas: rows })});
+
+      mountLedger('siniestros-mount', 'naken-siniestros', [
+        {key:'numeroSiniestro', label:'N° de siniestro', placeholder:'Lo asigna la aseguradora'},
+        {key:'poliza', label:'Póliza asociada', placeholder:'Ej: Integral de consorcio'},
+        {key:'fechaHecho', label:'Fecha del hecho', placeholder:'DD/MM/AAAA'},
+        {key:'descripcion', label:'Descripción del hecho', type:'textarea', placeholder:'Qué pasó'},
+        {key:'denunciaPolicial', label:'Denuncia policial', placeholder:'Comisaría y N° de denuncia (si corresponde)'},
+        {key:'fechaDenunciaAseguradora', label:'Fecha de denuncia a la aseguradora', placeholder:'DD/MM/AAAA'},
+        {key:'proveedorReparacion', label:'Proveedor de reparación / reposición', placeholder:''},
+        {key:'detalle', label:'Detalle de lo reparado / repuesto', type:'textarea', placeholder:''},
+        {key:'totalPagado', label:'Total pagado por el consorcio ($)', numeric:true, placeholder:'0'},
+        {key:'franquicia', label:'Franquicia ($)', numeric:true, placeholder:'0'},
+        {key:'indemnizacionEsperada', label:'Indemnización esperada / cobrada ($)', numeric:true, placeholder:'0'},
+        {key:'estado', label:'Estado', placeholder:'Reclamo presentado / Pendiente del liquidador / Cobrado / Rechazado'},
+      ], {emptyText:'No hay siniestros cargados -- ojalá siga así.', vistaTarjetas:true, onGuardado: rows => respaldar({ siniestros: rows })});
+
       mountLedger('depositos-mount', 'naken-depositos-no-identificados', [
         {key:'fecha', label:'Fecha', placeholder:'DD/MM/AAAA'},
         {key:'concepto', label:'Concepto', placeholder:''},
