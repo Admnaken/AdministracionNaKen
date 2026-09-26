@@ -1403,6 +1403,7 @@
       <button class="navbtn admin-only" data-panel="usuarios">Usuarios y accesos</button>
       <button class="navbtn admin-only" data-panel="personal">Personal y Liquidación de Sueldos</button>
       <button class="navbtn admin-only" data-panel="calchonorarios">Calculadora de honorarios</button>
+      <button class="navbtn admin-only" data-panel="retenciones">Retenciones ARCA</button>
       <button class="navbtn admin-only" data-panel="traspaso">Cierre y Traspaso</button>
     </div>
 
@@ -1680,6 +1681,16 @@
 
         <div class="subhead">Nuestro compromiso como administración</div>
         <div id="manual-mount"></div>
+      </section>
+
+      <!-- RETENCIONES ARCA -->
+      <section class="panel" id="panel-retenciones">
+        <div class="panel-head">
+          <span class="eyebrow">Herramientas del administrador</span>
+          <h2>Retenciones ARCA (Ganancias, SUSS, IVA)</h2>
+          <p class="panel-note">Esta pantalla lee directamente la planilla de Retenciones de este consorcio (la que calcula Ganancias RG 830, SUSS RG 1556/1769 e IVA RG 3164/1575) y te muestra los pagos que todavía no registraste acá. Elegís cuáles importar y, con un clic, quedan cargados en <code>Gastos_Mensual</code> (para el prorrateo del mes) y en el registro de retenciones -- sin tener que volver a tipear los montos que esa planilla ya calculó.</p>
+        </div>
+        <div id="retenciones-mount"></div>
       </section>
 
       <!-- CIERRE Y TRASPASO -->
@@ -1975,6 +1986,22 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(Object.assign({ action:'cargarLiquidacionEnGastos', sessionToken: SESSION_TOKEN }, payload))
+      }));
+    },
+    // Puente con la planilla de Retenciones ARCA (RG830/1556/1769/3164/1575) de un consorcio: como
+    // esa planilla no tiene Apps Script propio, es la app principal la que la lee directamente.
+    async getPagosRetencionesPendientes(payload){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'getPagosRetencionesPendientes', sessionToken: SESSION_TOKEN }, payload))
+      }));
+    },
+    async registrarTrabajoContratado(payload){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'registrarTrabajoContratado', sessionToken: SESSION_TOKEN }, payload))
       }));
     },
     async actualizarConflictoPropio(key, casoId, accion, extra){
@@ -4573,6 +4600,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">ID de la planilla de liquidación (Google Sheets)</label>
             <input type="text" data-field="spreadsheetId" data-id="${e.id}" value="${escapeHtml(e.spreadsheetId||'')}" placeholder="Pegá acá el ID de la planilla de este consorcio">
           </div>
+          <div>
+            <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">ID de la planilla de Retenciones ARCA (opcional)</label>
+            <input type="text" data-field="retencionesSpreadsheetId" data-id="${e.id}" value="${escapeHtml(e.retencionesSpreadsheetId||'')}" placeholder="Pegá acá el ID de la planilla de Retenciones de este consorcio, si usás una">
+          </div>
           <div class="toolbar" style="margin-top:2px;">
             <button class="btn ghost" data-action="eliminar" data-id="${e.id}" type="button">Eliminar</button>
             <div style="display:flex;align-items:center;gap:12px;">
@@ -4639,6 +4670,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           item.nombre = card.querySelector('[data-field="nombre"]').value.trim() || item.nombre;
           item.estado = card.querySelector('[data-field="estado"]').value;
           item.spreadsheetId = card.querySelector('[data-field="spreadsheetId"]').value.trim();
+          item.retencionesSpreadsheetId = card.querySelector('[data-field="retencionesSpreadsheetId"]').value.trim();
           await saveData('naken-edificios', lista, statusId);
         }, 700);
       });
@@ -11502,6 +11534,165 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
 
   /* ---------------------------------------------------------------------
+     RETENCIONES ARCA -- puente de lectura con la planilla de Retenciones
+     (Ganancias RG 830, SUSS RG 1556/1769, IVA RG 3164/1575) de este
+     consorcio. Esa planilla NO tiene Apps Script propio, así que en vez de
+     esperar un aviso suyo, esta pantalla la lee directamente cada vez que
+     el admin pide "Buscar pagos nuevos" y ofrece, uno por uno, registrar
+     en Gastos_Mensual + el registro de retenciones (y, si corresponde, el
+     historial de Mantenimiento) los pagos que todavía no se cargaron --
+     ver getPagosRetencionesPendientes_/registrarTrabajoContratado_ en el
+     backend, que hacen el trabajo pesado y la verificación de duplicados.
+     --------------------------------------------------------------------- */
+  async function mountRetenciones(mountId){
+    if(role!=='admin') return;
+    const mount = document.getElementById(mountId);
+    mount.innerHTML = `<div class="empty">Cargando…</div>`;
+
+    const [spreadsheetId, edificios] = await Promise.all([getSpreadsheetIdActivo(), getEdificios()]);
+    if(!spreadsheetId){
+      mount.innerHTML = `<p class="panel-note" style="margin:0;">Este consorcio todavía no tiene la planilla de liquidación vinculada.</p>`;
+      return;
+    }
+    const edificio = edificios.find(e=>e.id===activeConsorcioId);
+    const retencionesSpreadsheetId = edificio ? (edificio.retencionesSpreadsheetId||'') : '';
+    if(!retencionesSpreadsheetId){
+      mount.innerHTML = `<p class="panel-note" style="margin:0;">Este consorcio todavía no tiene vinculada su planilla de Retenciones ARCA. Pegá su ID desde el Panel general ("Todos los consorcios"), en el campo "ID de la planilla de Retenciones ARCA".</p>`;
+      return;
+    }
+
+    const fmt = (n)=> '$ ' + (Number(n)||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+    async function cargarPagos(){
+      mount.innerHTML = `<div class="empty">Buscando pagos en la planilla de Retenciones…</div>`;
+      let res;
+      try{ res = await window.storage.getPagosRetencionesPendientes({ spreadsheetId, retencionesSpreadsheetId }); }
+      catch(e){
+        mount.innerHTML = `<p class="panel-note" style="color:var(--danger,#A03A3A);margin:0;">No se pudo leer la planilla de Retenciones: ${escapeHtml(e.message||String(e))}</p>`;
+        return;
+      }
+      if(!res || !res.ok){
+        mount.innerHTML = `<p class="panel-note" style="color:var(--danger,#A03A3A);margin:0;">${escapeHtml((res&&res.error)||'No se pudo leer la planilla de Retenciones.')}</p>`;
+        return;
+      }
+      render(res.pagos||[]);
+    }
+
+    function render(pagos){
+      const pendientes = pagos.filter(p=>!p.yaCargado);
+      const yaCargados = pagos.filter(p=>p.yaCargado);
+      if(pagos.length===0){
+        mount.innerHTML = `<p class="panel-note" style="margin:0 0 12px;">No se encontró ningún pago cargado todavía en el Panel de Retenciones de esa planilla.</p>
+          <button class="btn ghost" id="${mountId}-refrescar" type="button">Volver a buscar</button>`;
+        document.getElementById(`${mountId}-refrescar`).addEventListener('click', cargarPagos);
+        return;
+      }
+      mount.innerHTML = `
+        <div class="toolbar" style="margin-bottom:12px;">
+          <button class="btn ghost" id="${mountId}-refrescar" type="button">Volver a buscar</button>
+          <span class="panel-note" style="margin:0;">${pendientes.length} pago${pendientes.length===1?'':'s'} pendiente${pendientes.length===1?'':'s'} de importar${yaCargados.length?` · ${yaCargados.length} ya cargado${yaCargados.length===1?'':'s'}`:''}</span>
+        </div>
+        <div id="${mountId}-lista"></div>
+      `;
+      document.getElementById(`${mountId}-refrescar`).addEventListener('click', cargarPagos);
+
+      const lista = document.getElementById(`${mountId}-lista`);
+      if(pendientes.length===0){
+        lista.innerHTML = `<p class="panel-note" style="margin:0;">Ya importaste todos los pagos cargados en esa planilla.</p>`;
+        return;
+      }
+      lista.innerHTML = pendientes.map((p,i)=>`
+        <div class="card" data-idx="${i}" style="margin-bottom:14px;padding:14px;">
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+            <div>
+              <strong>${escapeHtml(p.proveedor)}</strong>${p.cuit?` · CUIT ${escapeHtml(p.cuit)}`:''}
+              <div class="panel-note" style="margin:2px 0 0;">${escapeHtml(p.descripcion||'')}${p.codigoRegimen?` (cód. ${escapeHtml(p.codigoRegimen)})`:''} — ${escapeHtml(p.fecha)}</div>
+            </div>
+            <div style="text-align:right;">
+              <div><strong>${fmt(p.importeTotal)}</strong> total</div>
+              <div class="panel-note" style="margin:0;">Retenido: ${fmt(p.totalRetenido)} · Neto: ${fmt(p.netoFinal)}</div>
+            </div>
+          </div>
+          <div class="config-row" style="grid-template-columns:1fr 1fr;margin-top:10px;">
+            <div>
+              <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Rubro del gasto (como figura en Resumen_Rubros_Mensual)</label>
+              <input type="text" data-field="rubroGastos" placeholder="Ej: 4 - Mantenimiento y Reparaciones">
+            </div>
+            <div>
+              <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Fondo</label>
+              <select data-field="fondo"><option value="A" selected>Fondo A (ordinario)</option><option value="B">Fondo B (extraordinario/reserva)</option></select>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin:8px 0 4px;">N° de expediente en Contrataciones (si se gestionó ahí)</label>
+            <input type="text" data-field="expedienteContrataciones" placeholder="Opcional">
+          </div>
+          <details style="margin-top:8px;">
+            <summary style="cursor:pointer;font-size:12.5px;color:var(--muted);">¿Es un trabajo de mantenimiento? (agregarlo también al historial de Mantenimiento)</summary>
+            <div class="config-row" style="grid-template-columns:1fr 1fr;margin-top:8px;">
+              <div>
+                <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Ubicación / equipo</label>
+                <input type="text" data-field="ubicacionEquipo" placeholder="Ej: Ascensor 1">
+              </div>
+              <div>
+                <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Tipo</label>
+                <select data-field="tipoTrabajo"><option value="Correctivo" selected>Correctivo</option><option value="Preventivo">Preventivo</option></select>
+              </div>
+            </div>
+            <div>
+              <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin:8px 0 4px;">Observaciones de la verificación (soporte del control antes de pagar)</label>
+              <textarea data-field="observacionesVerificacion" rows="2" placeholder="Opcional"></textarea>
+            </div>
+          </details>
+          <div class="toolbar" style="margin-top:10px;">
+            ${statusEl(`${mountId}-status-${i}`)}
+            <button class="btn primary" data-action="importar" data-idx="${i}" type="button">Registrar este pago</button>
+          </div>
+        </div>
+      `).join('');
+
+      lista.querySelectorAll('[data-action="importar"]').forEach(btn=>{
+        btn.addEventListener('click', async ()=>{
+          const idx = Number(btn.dataset.idx);
+          const p = pendientes[idx];
+          const card = lista.querySelector(`.card[data-idx="${idx}"]`);
+          const val = (f)=> card.querySelector(`[data-field="${f}"]`).value.trim();
+          const statusId = `${mountId}-status-${idx}`;
+          setStatus(statusId, 'saving');
+          btn.disabled = true;
+          try{
+            const res = await window.storage.registrarTrabajoContratado({
+              spreadsheetId, consorcioId: activeConsorcioId,
+              periodo: p.periodo, proveedor: p.proveedor, cuit: p.cuit, fecha: p.fecha,
+              comprobante: p.comprobante, descripcion: p.descripcion,
+              importeTotal: p.importeTotal, gananciasRetenido: p.gananciasRetenido,
+              sussRetenido: p.sussRetenido, ivaRetenido: p.ivaRetenido, nCertificado: p.nCertificado,
+              rubroGastos: val('rubroGastos'), fondo: val('fondo') || 'A',
+              expedienteContrataciones: val('expedienteContrataciones'),
+              ubicacionEquipo: val('ubicacionEquipo'), tipoTrabajo: val('tipoTrabajo'),
+              observacionesVerificacion: val('observacionesVerificacion'),
+            });
+            if(!res || !res.ok){
+              setStatus(statusId, 'error');
+              alert((res&&res.error) || 'No se pudo registrar el pago.');
+              btn.disabled = false;
+              return;
+            }
+            setStatus(statusId, 'saved');
+            card.innerHTML = `<p class="panel-note" style="margin:0;">✓ Registrado${res.gastoYaEstabaCargado?' (ya estaba cargado)':''}.</p>`;
+          }catch(e){
+            setStatus(statusId, 'error');
+            alert('No se pudo registrar el pago: ' + (e.message||e));
+            btn.disabled = false;
+          }
+        });
+      });
+    }
+
+    await cargarPagos();
+  }
+
+  /* ---------------------------------------------------------------------
      CIERRE Y TRASPASO DE ADMINISTRACIÓN
      Panel de autoservicio, solo para el administrador, pensado para el día
      en que Sebastián (o cualquier otra administración que use esta app) deja
@@ -11991,6 +12182,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
     },
     remocion: () => {}, // contenido estático, sin datos que montar
+    retenciones: () => { if(role==='admin') mountRetenciones('retenciones-mount'); },
     traspaso: () => { if(role==='admin') mountTraspaso('traspaso-mount'); },
   };
 
