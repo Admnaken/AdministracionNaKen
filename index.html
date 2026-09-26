@@ -1392,6 +1392,7 @@
       <button class="navbtn" data-panel="conciliaciones">Libro Banco y Conciliación bancaria</button>
       <button class="navbtn" data-panel="caja">Libro de Caja</button>
       <button class="navbtn" data-panel="segurosdepositos">Seguros y depósitos</button>
+      <button class="navbtn" data-panel="mantenimiento">Mantenimiento</button>
       <button class="navbtn" data-panel="proveedores">Proveedores y servicios</button>
     </div>
 
@@ -1571,6 +1572,18 @@
         <div id="siniestros-mount"></div>
         <div class="subhead">Depósitos no identificados</div>
         <div id="depositos-mount"></div>
+      </section>
+
+      <!-- MANTENIMIENTO -->
+      <section class="panel" id="panel-mantenimiento">
+        <div class="panel-head">
+          <span class="eyebrow">Transparencia</span>
+          <h2>Mantenimiento -- historial de trabajos</h2>
+          <p class="panel-note">Cada trabajo de mantenimiento preventivo o correctivo que se hace en el edificio, cargado acá con su ubicación o equipo -- para poder ver, con el tiempo, si algo se sigue rompiendo, si un proveedor no está resolviendo de fondo, o si un mantenimiento preventivo quedó vencido. No reemplaza el gasto cargado en Gastos_Mensual (eso sigue igual para la liquidación) -- este historial es para tomar decisiones, no para la contabilidad.</p>
+        </div>
+        <div id="mantenimiento-alertas-mount"></div>
+        <div class="subhead" style="margin-top:0;">Historial de trabajos</div>
+        <div id="mantenimiento-mount"></div>
       </section>
 
       <!-- PROVEEDORES Y SERVICIOS -->
@@ -1947,6 +1960,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(Object.assign({ action:'respaldarSegurosEnPlanilla', sessionToken: SESSION_TOKEN }, payload))
+      }));
+    },
+    // Mismo patrón que respaldarSegurosEnPlanilla, para el historial de Mantenimiento.
+    async respaldarMantenimientoEnPlanilla(payload){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'respaldarMantenimientoEnPlanilla', sessionToken: SESSION_TOKEN }, payload))
       }));
     },
     async cargarLiquidacionEnGastos(payload){
@@ -11339,6 +11360,148 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
 
   /* ---------------------------------------------------------------------
+     MANTENIMIENTO — historial de trabajos preventivos y correctivos
+     No es solo un registro: agrupa los trabajos por ubicación/equipo (texto
+     libre, normalizado para agrupar aunque cambien mayúsculas o tildes) y
+     calcula alertas automáticas -- para poder actuar con más inteligencia
+     que "se contrató un servicio y ya está":
+       1) 3 o más correctivos en la misma ubicación en los últimos 12 meses
+          -- puede convenir evaluar un reemplazo en vez de seguir reparando.
+       2) el mismo proveedor repite un correctivo 2+ veces en 6 meses en la
+          misma ubicación -- señal de que el trabajo anterior no quedó
+          resuelto de fondo (y de que conviene revisar garantía).
+       3) un preventivo con fecha sugerida para el próximo ya vencida, sin
+          que se haya cargado uno posterior -- se venció sin hacerse.
+     Como Seguros y Siniestros, además de guardarse como siempre se manda una
+     copia a una hoja de la propia planilla del consorcio (ver
+     respaldarMantenimientoEnPlanilla_) para que viaje con ella en un Cierre
+     y Traspaso. El campo "N° de expediente en Contrataciones" es una
+     referencia manual -- la app de Contrataciones es un sitio aparte, sin
+     backend ni vínculo con esta planilla, así que hoy no hay forma de
+     cruzarlas automáticamente.
+     --------------------------------------------------------------------- */
+  async function mountMantenimiento(mountId, alertasMountId){
+    const spreadsheetId = await getSpreadsheetIdActivo();
+
+    function normalizarUbicacion(s){
+      return String(s||'').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    }
+    function parseFechaDDMMAAAA(s){
+      const m = String(s||'').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if(!m) return null;
+      const d = new Date(Number(m[3]), Number(m[2])-1, Number(m[1]));
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    function calcularAlertas(trabajos){
+      const grupos = {};
+      trabajos.forEach(t=>{
+        const norm = normalizarUbicacion(t.ubicacionEquipo);
+        if(!norm) return;
+        // El nombre "de vidriera" del grupo queda fijado por la PRIMERA vez que se escribió esa
+        // ubicación (no la última) -- así no cambia de mayúsculas/minúsculas cada vez que alguien
+        // la vuelve a tipear un poco distinto en un trabajo nuevo.
+        if(!grupos[norm]) grupos[norm] = { nombre: t.ubicacionEquipo, trabajos: [] };
+        grupos[norm].trabajos.push(t);
+      });
+
+      const hoy = new Date();
+      const haceMeses = n => new Date(hoy.getFullYear(), hoy.getMonth()-n, hoy.getDate());
+      const desde12m = haceMeses(12);
+      const desde6m = haceMeses(6);
+
+      const alertas = [];
+      const resumen = [];
+
+      Object.values(grupos).forEach(g=>{
+        const conFecha = g.trabajos.map(t=>Object.assign({}, t, { _fecha: parseFechaDDMMAAAA(t.fecha) }));
+        const correctivos = conFecha.filter(t=>String(t.tipo||'').toLowerCase().indexOf('correc')===0);
+        const preventivos = conFecha.filter(t=>String(t.tipo||'').toLowerCase().indexOf('prev')===0);
+        const ultimo = conFecha.filter(t=>t._fecha).sort((a,b)=>b._fecha-a._fecha)[0];
+
+        resumen.push({
+          ubicacion: g.nombre, total: g.trabajos.length, correctivos: correctivos.length,
+          preventivos: preventivos.length, ultimaFecha: ultimo ? ultimo.fecha : '—'
+        });
+
+        const correctivos12m = correctivos.filter(t=>t._fecha && t._fecha >= desde12m);
+        if(correctivos12m.length >= 3){
+          alertas.push({ ubicacion: g.nombre, mensaje: `${correctivos12m.length} trabajos correctivos en los últimos 12 meses -- puede convenir evaluar un reemplazo en vez de seguir reparando.` });
+        }
+
+        const porProveedor = {};
+        correctivos.forEach(t=>{
+          const prov = String(t.proveedor||'').trim().toLowerCase();
+          if(!prov) return;
+          (porProveedor[prov] = porProveedor[prov]||[]).push(t);
+        });
+        Object.values(porProveedor).forEach(lista=>{
+          const en6m = lista.filter(t=>t._fecha && t._fecha >= desde6m);
+          if(en6m.length >= 2){
+            alertas.push({ ubicacion: g.nombre, mensaje: `${lista[0].proveedor} repitió un trabajo correctivo acá ${en6m.length} veces en los últimos 6 meses -- vale la pena revisar si el trabajo anterior quedó bien resuelto (y si corresponde garantía).` });
+          }
+        });
+
+        preventivos.filter(t=>t.proximoPreventivoSugerido).forEach(t=>{
+          const sugerido = parseFechaDDMMAAAA(t.proximoPreventivoSugerido);
+          if(!sugerido || sugerido >= hoy) return;
+          const cumplido = preventivos.some(p => p._fecha && p._fecha >= sugerido && p !== t);
+          if(!cumplido){
+            alertas.push({ ubicacion: g.nombre, mensaje: `El mantenimiento preventivo sugerido para el ${t.proximoPreventivoSugerido} está vencido y no hay uno posterior cargado.` });
+          }
+        });
+      });
+
+      return { alertas, resumen };
+    }
+
+    function renderAlertas(trabajos){
+      const mount = document.getElementById(alertasMountId);
+      if(!mount) return;
+      if(!trabajos.length){ mount.innerHTML = ''; return; }
+      const { alertas, resumen } = calcularAlertas(trabajos);
+      mount.innerHTML = `
+        ${alertas.length ? `
+        <div class="infoblock" style="margin-bottom:14px;border-color:#f0d9a8;">
+          <h3 style="margin-top:0;">⚠ Puntos para revisar</h3>
+          ${alertas.map(a=>`<p style="margin:6px 0;"><b>${escapeHtml(a.ubicacion)}:</b> ${escapeHtml(a.mensaje)}</p>`).join('')}
+        </div>` : ''}
+        <table class="ledger" style="margin-bottom:14px;">
+          <thead><tr><th>Ubicación / equipo</th><th>Trabajos totales</th><th>Correctivos</th><th>Preventivos</th><th>Último trabajo</th></tr></thead>
+          <tbody>
+            ${resumen.sort((a,b)=>b.total-a.total).map(r=>`<tr><td>${escapeHtml(r.ubicacion)}</td><td class="num">${r.total}</td><td class="num">${r.correctivos}</td><td class="num">${r.preventivos}</td><td>${escapeHtml(r.ultimaFecha)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function respaldar(trabajos){
+      if(!spreadsheetId || role!=='admin') return;
+      try{ await window.storage.respaldarMantenimientoEnPlanilla({ spreadsheetId, trabajos }); }
+      catch(e){ console.error('No se pudo respaldar el historial de mantenimiento en la planilla del consorcio:', e); }
+    }
+
+    mountLedger(mountId, 'naken-mantenimiento', [
+      {key:'ubicacionEquipo', label:'Ubicación / equipo', placeholder:'Ej: Ascensor 1, Terraza, Portero eléctrico'},
+      {key:'fecha', label:'Fecha', placeholder:'DD/MM/AAAA'},
+      {key:'tipo', label:'Tipo', placeholder:'Preventivo / Correctivo'},
+      {key:'proveedor', label:'Proveedor', placeholder:''},
+      {key:'descripcion', label:'Descripción del trabajo', type:'textarea', placeholder:'Qué se hizo'},
+      {key:'costo', label:'Costo ($)', numeric:true, placeholder:'0'},
+      {key:'proximoPreventivoSugerido', label:'Próximo preventivo sugerido', placeholder:'DD/MM/AAAA (si aplica)'},
+      {key:'expedienteContrataciones', label:'N° de expediente en Contrataciones', placeholder:'Si se gestionó ahí, para poder ubicarlo'},
+      {key:'observaciones', label:'Observaciones', type:'textarea', placeholder:''},
+    ], {
+      emptyText: 'No hay trabajos de mantenimiento cargados.',
+      vistaTarjetas: true,
+      onGuardado: rows => { renderAlertas(rows); respaldar(rows); }
+    });
+
+    const trabajosIniciales = await loadData('naken-mantenimiento', []);
+    renderAlertas(trabajosIniciales);
+  }
+
+  /* ---------------------------------------------------------------------
      CIERRE Y TRASPASO DE ADMINISTRACIÓN
      Panel de autoservicio, solo para el administrador, pensado para el día
      en que Sebastián (o cualquier otra administración que use esta app) deja
@@ -11361,13 +11524,14 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       return;
     }
 
-    const [resumen, documentos, cfg, juicios, polizas, siniestros, empleados] = await Promise.all([
+    const [resumen, documentos, cfg, juicios, polizas, siniestros, mantenimiento, empleados] = await Promise.all([
       fetchResumenConsorcio(spreadsheetId),
       fetchDocumentosConsorcio(spreadsheetId),
       fetchConfigConsorcio(spreadsheetId),
       loadData('naken-juicios', []),
       loadData('naken-polizas', []),
       loadData('naken-siniestros', []),
+      loadData('naken-mantenimiento', []),
       loadData('naken-empleados', []),
     ]);
 
@@ -11414,6 +11578,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           ? `${polizas.length} póliza(s) cargada(s) en "Seguros y depósitos"${siniestros.length ? `, con ${siniestros.length} siniestro(s) en el historial` : ''}.`
           : 'No hay pólizas cargadas en "Seguros y depósitos" -- si el consorcio tiene seguros vigentes, conviene cargarlos ahí antes de dejar de administrar.',
         estado: polizas.length ? 'ok' : 'atencion'
+      },
+      {
+        titulo: 'Historial de mantenimiento',
+        detalle: mantenimiento.length ? `${mantenimiento.length} trabajo(s) de mantenimiento cargado(s) en el historial (preventivos y correctivos).` : 'No hay trabajos de mantenimiento cargados en el historial todavía.',
+        estado: mantenimiento.length ? 'ok' : 'info'
       },
       {
         titulo: 'Juicios en trámite (a favor y en contra)',
@@ -11476,7 +11645,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     `;
 
     document.getElementById(mountId+'-btn-informe').addEventListener('click', ()=>{
-      generarPdfCierreTraspaso(spreadsheetId, { resumen, documentos, cfg, juicios, polizas, siniestros, empleados, items });
+      generarPdfCierreTraspaso(spreadsheetId, { resumen, documentos, cfg, juicios, polizas, siniestros, mantenimiento, empleados, items });
     });
   }
 
@@ -11530,6 +11699,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     const juicios = d.juicios || [];
     const polizas = d.polizas || [];
     const siniestros = d.siniestros || [];
+    const mantenimiento = d.mantenimiento || [];
     const empleados = d.empleados || [];
     const hoy = new Date().toLocaleDateString('es-AR');
 
@@ -11613,6 +11783,18 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       y = doc.lastAutoTable.finalY + 8;
     } else {
       parrafo('No hay siniestros cargados en el historial de este consorcio.');
+    }
+
+    heading('5.2 HISTORIAL DE MANTENIMIENTO');
+    if(mantenimiento.length){
+      doc.autoTable({
+        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
+        head: [['Ubicación / equipo', 'Fecha', 'Tipo', 'Proveedor', 'Descripción', 'Costo ($)']],
+        body: mantenimiento.map(m=>[String(m.ubicacionEquipo||''), String(m.fecha||''), String(m.tipo||''), String(m.proveedor||''), String(m.descripcion||''), m.costo?fmt(m.costo):''])
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    } else {
+      parrafo('No hay trabajos de mantenimiento cargados en el historial de este consorcio.');
     }
 
     heading('6. JUICIOS EN TRÁMITE (A FAVOR Y EN CONTRA DEL CONSORCIO)');
@@ -11758,6 +11940,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         {key:'importe', label:'Importe ($)', numeric:true, placeholder:'0'},
       ], {emptyText:'No hay depósitos sin identificar.'});
     },
+    mantenimiento: () => mountMantenimiento('mantenimiento-mount', 'mantenimiento-alertas-mount'),
     proveedores: () => {
       mountObleasQR('obleas-qr-mount', 'naken-obleas-qr');
       mountProveedores('proveedores-mount', 'naken-proveedores');
