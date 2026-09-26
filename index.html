@@ -1997,6 +1997,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify(Object.assign({ action:'getPagosRetencionesPendientes', sessionToken: SESSION_TOKEN }, payload))
       }));
     },
+    // Historial que la app de Contrataciones deja SOLA (desde el navegador del admin, sin backend
+    // propio) en la hoja "Contrataciones_Historial" de la planilla de este consorcio -- se usa solo
+    // para sugerir datos en la pantalla de Retenciones ARCA, nunca es obligatorio que exista.
+    async getContratacionesHistorialConsorcio(payload){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'getContratacionesHistorialConsorcio', sessionToken: SESSION_TOKEN }, payload))
+      }));
+    },
     async registrarTrabajoContratado(payload){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -11563,6 +11573,28 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
     const fmt = (n)=> '$ ' + (Number(n)||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
 
+    // Cruce opcional con lo que la app de Contrataciones haya dejado en "Contrataciones_Historial"
+    // de esta misma planilla (ver getContratacionesHistorialConsorcio_ en el backend). Es un
+    // AYUDA -- si esa hoja no existe (el consorcio no usa Contrataciones, o no la vinculó todavía)
+    // simplemente no hay sugerencias, sin mostrar ningún error.
+    function normalizarCuit(c){ return String(c||'').replace(/[^0-9]/g,''); }
+    function buscarEventoContrataciones(p, eventos){
+      const cuitPago = normalizarCuit(p.cuit);
+      if(!cuitPago) return null;
+      const candidatos = eventos.filter(e=>normalizarCuit(e.cuit)===cuitPago);
+      if(candidatos.length===0) return null;
+      // Se prefiere el evento de "Visto Bueno de Pago" (tiene los datos de pago completos) y,
+      // entre varios, el más reciente -- el historial puede tener más de un expediente para el
+      // mismo proveedor a lo largo del tiempo.
+      const parseF = (f)=>{ const m=String(f||'').match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? new Date(+m[3],+m[2]-1,+m[1]).getTime() : 0; };
+      candidatos.sort((a,b)=>{
+        const rango = (e)=> e.evento==='Visto Bueno de Pago' ? 1 : 0;
+        if(rango(a)!==rango(b)) return rango(b)-rango(a);
+        return parseF(b.fecha)-parseF(a.fecha);
+      });
+      return candidatos[0];
+    }
+
     async function cargarPagos(){
       mount.innerHTML = `<div class="empty">Buscando pagos en la planilla de Retenciones…</div>`;
       let res;
@@ -11575,10 +11607,15 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         mount.innerHTML = `<p class="panel-note" style="color:var(--danger,#A03A3A);margin:0;">${escapeHtml((res&&res.error)||'No se pudo leer la planilla de Retenciones.')}</p>`;
         return;
       }
-      render(res.pagos||[]);
+      let eventosContrataciones = [];
+      try{
+        const resHist = await window.storage.getContratacionesHistorialConsorcio({ spreadsheetId });
+        if(resHist && resHist.ok) eventosContrataciones = resHist.eventos||[];
+      }catch(e){ /* opcional -- sin esto, simplemente no hay sugerencias */ }
+      render(res.pagos||[], eventosContrataciones);
     }
 
-    function render(pagos){
+    function render(pagos, eventosContrataciones){
       const pendientes = pagos.filter(p=>!p.yaCargado);
       const yaCargados = pagos.filter(p=>p.yaCargado);
       if(pagos.length===0){
@@ -11601,7 +11638,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         lista.innerHTML = `<p class="panel-note" style="margin:0;">Ya importaste todos los pagos cargados en esa planilla.</p>`;
         return;
       }
-      lista.innerHTML = pendientes.map((p,i)=>`
+      lista.innerHTML = pendientes.map((p,i)=>{
+        const sugerido = buscarEventoContrataciones(p, eventosContrataciones||[]);
+        return `
         <div class="card" data-idx="${i}" style="margin-bottom:14px;padding:14px;">
           <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
             <div>
@@ -11613,6 +11652,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
               <div class="panel-note" style="margin:0;">Retenido: ${fmt(p.totalRetenido)} · Neto: ${fmt(p.netoFinal)}</div>
             </div>
           </div>
+          ${sugerido ? `<p class="panel-note" style="margin:8px 0 0;color:var(--brass,#8a6d2f);">Encontrado en Contrataciones: expediente <strong>${escapeHtml(sugerido.expedienteContrataciones)}</strong>${sugerido.link?` — <a href="${escapeHtml(sugerido.link)}" target="_blank" rel="noopener">ver</a>`:''} (datos precargados abajo, revisalos antes de guardar).</p>` : ''}
           <div class="config-row" style="grid-template-columns:1fr 1fr;margin-top:10px;">
             <div>
               <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Rubro del gasto (como figura en Resumen_Rubros_Mensual)</label>
@@ -11625,23 +11665,26 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           </div>
           <div>
             <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin:8px 0 4px;">N° de expediente en Contrataciones (si se gestionó ahí)</label>
-            <input type="text" data-field="expedienteContrataciones" placeholder="Opcional">
+            <input type="text" data-field="expedienteContrataciones" placeholder="Opcional" value="${escapeHtml(sugerido ? sugerido.expedienteContrataciones : '')}">
           </div>
-          <details style="margin-top:8px;">
+          <details style="margin-top:8px;" ${sugerido && sugerido.ubicacionEquipo ? 'open' : ''}>
             <summary style="cursor:pointer;font-size:12.5px;color:var(--muted);">¿Es un trabajo de mantenimiento? (agregarlo también al historial de Mantenimiento)</summary>
             <div class="config-row" style="grid-template-columns:1fr 1fr;margin-top:8px;">
               <div>
                 <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Ubicación / equipo</label>
-                <input type="text" data-field="ubicacionEquipo" placeholder="Ej: Ascensor 1">
+                <input type="text" data-field="ubicacionEquipo" placeholder="Ej: Ascensor 1" value="${escapeHtml(sugerido ? sugerido.ubicacionEquipo : '')}">
               </div>
               <div>
                 <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Tipo</label>
-                <select data-field="tipoTrabajo"><option value="Correctivo" selected>Correctivo</option><option value="Preventivo">Preventivo</option></select>
+                <select data-field="tipoTrabajo">
+                  <option value="Correctivo" ${!sugerido || sugerido.tipoTrabajo!=='preventivo' ? 'selected' : ''}>Correctivo</option>
+                  <option value="Preventivo" ${sugerido && sugerido.tipoTrabajo==='preventivo' ? 'selected' : ''}>Preventivo</option>
+                </select>
               </div>
             </div>
             <div>
               <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin:8px 0 4px;">Observaciones de la verificación (soporte del control antes de pagar)</label>
-              <textarea data-field="observacionesVerificacion" rows="2" placeholder="Opcional"></textarea>
+              <textarea data-field="observacionesVerificacion" rows="2" placeholder="Opcional">${escapeHtml(sugerido ? sugerido.observaciones : '')}</textarea>
             </div>
           </details>
           <div class="toolbar" style="margin-top:10px;">
@@ -11649,7 +11692,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <button class="btn primary" data-action="importar" data-idx="${i}" type="button">Registrar este pago</button>
           </div>
         </div>
-      `).join('');
+      `;}).join('');
 
       lista.querySelectorAll('[data-action="importar"]').forEach(btn=>{
         btn.addEventListener('click', async ()=>{
