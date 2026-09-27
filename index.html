@@ -1580,7 +1580,7 @@
         <div class="panel-head">
           <span class="eyebrow">Transparencia</span>
           <h2>Mantenimiento -- historial de trabajos</h2>
-          <p class="panel-note">Cada trabajo de mantenimiento preventivo o correctivo que se hace en el edificio, cargado acá con su ubicación o equipo -- para poder ver, con el tiempo, si algo se sigue rompiendo, si un proveedor no está resolviendo de fondo, o si un mantenimiento preventivo quedó vencido. No reemplaza el gasto cargado en Gastos_Mensual (eso sigue igual para la liquidación) -- este historial es para tomar decisiones, no para la contabilidad.</p>
+          <p class="panel-note">Cada trabajo de mantenimiento preventivo o correctivo que se hace en el edificio, cargado acá con su ubicación o equipo -- para poder ver, con el tiempo, si algo se sigue rompiendo, si un proveedor no está resolviendo de fondo, o si un mantenimiento preventivo quedó vencido. Este historial es para tomar decisiones sobre el mantenimiento del edificio, no reemplaza la rendición de gastos de la liquidación mensual.</p>
         </div>
         <div id="mantenimiento-alertas-mount"></div>
         <div class="subhead" style="margin-top:0;">Historial de trabajos</div>
@@ -3696,7 +3696,9 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       if(reglamento) items.push(`<a href="${escapeHtml(reglamento)}" target="_blank" rel="noopener" class="btn ghost" style="text-decoration:none;">Ver Reglamento de Copropiedad ↗</a>`);
       if(interno) items.push(`<a href="${escapeHtml(interno)}" target="_blank" rel="noopener" class="btn ghost" style="text-decoration:none;">Ver Manual interno ↗</a>`);
       if(items.length===0){
-        box.innerHTML = `<p class="panel-note" style="margin:0;">Todavía no hay Reglamento de Copropiedad ni manual interno cargados en la hoja "DocumentosLegales_Ley941" de este consorcio — se agregan desde ahí para tenerlos a mano acá al resolver cada caso.</p>`;
+        box.innerHTML = role==='admin'
+          ? `<p class="panel-note" style="margin:0;">Todavía no hay Reglamento de Copropiedad ni manual interno cargados en la hoja "DocumentosLegales_Ley941" de este consorcio — se agregan desde ahí para tenerlos a mano acá al resolver cada caso.</p>`
+          : `<p class="panel-note" style="margin:0;">Falta cargar el Reglamento de Copropiedad y el manual interno de este consorcio.</p>`;
       } else {
         box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;">${items.join('')}</div>`;
       }
