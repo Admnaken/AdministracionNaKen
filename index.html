@@ -1934,6 +1934,22 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify(Object.assign({ action:'crearConflictoPropio', key, sessionToken: SESSION_TOKEN }, datos))
       }));
     },
+    // Reclamos: el propietario envía uno nuevo, y el admin cambia el estado / responde UNO a la vez.
+    // Ninguno de los dos manda ya la lista completa (eso pisaba los reclamos de los demás).
+    async crearReclamoPropio(key, datos){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'crearReclamoPropio', key, sessionToken: SESSION_TOKEN }, datos))
+      }));
+    },
+    async actualizarReclamoAdmin(key, datos){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'actualizarReclamoAdmin', key, sessionToken: SESSION_TOKEN }, datos))
+      }));
+    },
     async informarPagoPropio(key, datos){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -6053,39 +6069,79 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
       if(role==='admin'){
         cardsEl.querySelectorAll('.ticket-field').forEach(f=>{
-          f.addEventListener('change', persistFromDOM);
-          f.addEventListener('blur', persistFromDOM);
+          f.addEventListener('change', ()=>persistField(f));
+          f.addEventListener('blur', ()=>persistField(f));
         });
       }
     }
 
-    function persistFromDOM(){
-      cardsEl.querySelectorAll('.ticket-field').forEach(f=>{
-        const item = items.find(i=>i.id===f.dataset.id);
-        if(item) item[f.dataset.field] = f.value;
-      });
-      saveData(storageKey, items, statusId);
+    // El admin guarda UN campo de UN reclamo por vez, y el servidor lo aplica sobre la lista
+    // completa y actual. Antes se guardaba la lista entera tal como estaba en pantalla, y si un
+    // propietario había enviado un reclamo en el medio, ese reclamo se perdía.
+    function persistField(f){
+      const campo = f.dataset.field;
+      const valor = f.value;
+      const item = items.find(i=>i.id===f.dataset.id);
+      if(!item || item[campo]===valor) return; // sin cambios (change y blur disparan los dos seguidos)
+      const anterior = item[campo];
+      item[campo] = valor;
+      setStatus(statusId,'saving');
+      window.storage.actualizarReclamoAdmin(nsKey(storageKey), { id: f.dataset.id, campo, valor })
+        .then(res=>{
+          if(!res || !res.ok){
+            item[campo] = anterior;
+            setStatus(statusId,'error');
+            alert((res && res.error) || 'No se pudo guardar el cambio.');
+            return;
+          }
+          setStatus(statusId,'saved');
+        })
+        .catch(e=>{
+          item[campo] = anterior;
+          setStatus(statusId,'error');
+          alert('No se pudo guardar el cambio: ' + (e && e.message ? e.message : e));
+        });
     }
 
     if(role==='propietario'){
-      document.getElementById(mountId+'-submit').addEventListener('click', ()=>{
-        const unidad = document.getElementById(mountId+'-unidad').value.trim();
+      document.getElementById(mountId+'-submit').addEventListener('click', async (ev)=>{
+        const btn = ev.currentTarget;
+        if(btn.disabled) return; // evita enviar el mismo reclamo dos veces con un doble clic
         const tipo = document.getElementById(mountId+'-tipo').value;
-        const asunto = document.getElementById(mountId+'-asunto').value.trim();
-        if(!unidad || !asunto) return;
+        const asuntoEl = document.getElementById(mountId+'-asunto');
+        const asunto = asuntoEl.value.trim();
+        if(!asunto) return;
         const alcanceInput = opts.hasAlcance ? mount.querySelector(`input[name="${mountId}-alcance"]:checked`) : null;
-        items.push({
-          id: uid(),
-          fecha: new Date().toLocaleDateString('es-AR'),
-          unidad, tipo, asunto,
-          alcance: alcanceInput ? alcanceInput.value : '',
-          estado: 'Pendiente', respuesta: ''
-        });
-        document.getElementById(mountId+'-asunto').value='';
-        render();
-        saveData(storageKey, items, statusId);
-        flashButtonSuccess(document.getElementById(mountId+'-submit'), '✓ Enviado');
-        if(storageKey==='naken-asamblea-preguntas') markAsambleaSeen();
+        // La unidad y la fecha las pone el servidor (la unidad sale de la sesión). El idCliente hace
+        // que un reintento automático de red no cree el mismo reclamo dos veces.
+        const idCliente = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+        btn.disabled = true;
+        setStatus(statusId,'saving');
+        let enviado = false;
+        try{
+          const res = await window.storage.crearReclamoPropio(nsKey(storageKey), {
+            tipo, asunto, alcance: alcanceInput ? alcanceInput.value : 'Particular', idCliente
+          });
+          if(!res || !res.ok){
+            setStatus(statusId,'error');
+            alert((res && res.error) || 'No se pudo enviar el reclamo.');
+          } else {
+            enviado = true;
+            if(!items.some(i=>i.id===res.item.id)) items.push(res.item);
+            asuntoEl.value = '';
+            render();
+            setStatus(statusId,'saved');
+          }
+        }catch(e){
+          setStatus(statusId,'error');
+          alert('No se pudo enviar el reclamo: ' + (e && e.message ? e.message : e));
+        } finally {
+          btn.disabled = false;
+        }
+        if(enviado){
+          flashButtonSuccess(btn, '✓ Enviado');
+          if(storageKey==='naken-asamblea-preguntas') markAsambleaSeen();
+        }
       });
     }
 
