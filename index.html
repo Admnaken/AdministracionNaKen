@@ -1392,7 +1392,6 @@
       <button class="navbtn" data-panel="conciliaciones">Libro Banco y Conciliación bancaria</button>
       <button class="navbtn" data-panel="caja">Libro de Caja</button>
       <button class="navbtn" data-panel="segurosdepositos">Seguros y depósitos</button>
-      <button class="navbtn" data-panel="mantenimiento">Mantenimiento</button>
       <button class="navbtn" data-panel="proveedores">Proveedores y servicios</button>
     </div>
 
@@ -1403,8 +1402,6 @@
       <button class="navbtn admin-only" data-panel="usuarios">Usuarios y accesos</button>
       <button class="navbtn admin-only" data-panel="personal">Personal y Liquidación de Sueldos</button>
       <button class="navbtn admin-only" data-panel="calchonorarios">Calculadora de honorarios</button>
-      <button class="navbtn admin-only" data-panel="retenciones">Retenciones ARCA</button>
-      <button class="navbtn admin-only" data-panel="traspaso">Cierre y Traspaso</button>
     </div>
 
     <div class="navgroup">
@@ -1568,23 +1565,8 @@
         </div>
         <div class="subhead" style="margin-top:0;">Pólizas de seguros</div>
         <div id="polizas-mount"></div>
-        <div class="subhead">Siniestros</div>
-        <p class="panel-note" style="margin-top:-6px;">Cada vez que se presenta un siniestro (rotura, robo, accidente, etc.) se carga acá para tener el historial completo -- desde el hecho hasta lo cobrado del seguro.</p>
-        <div id="siniestros-mount"></div>
         <div class="subhead">Depósitos no identificados</div>
         <div id="depositos-mount"></div>
-      </section>
-
-      <!-- MANTENIMIENTO -->
-      <section class="panel" id="panel-mantenimiento">
-        <div class="panel-head">
-          <span class="eyebrow">Transparencia</span>
-          <h2>Mantenimiento -- historial de trabajos</h2>
-          <p class="panel-note">Cada trabajo de mantenimiento preventivo o correctivo que se hace en el edificio, cargado acá con su ubicación o equipo -- para poder ver, con el tiempo, si algo se sigue rompiendo, si un proveedor no está resolviendo de fondo, o si un mantenimiento preventivo quedó vencido. Este historial es para tomar decisiones sobre el mantenimiento del edificio, no reemplaza la rendición de gastos de la liquidación mensual.</p>
-        </div>
-        <div id="mantenimiento-alertas-mount"></div>
-        <div class="subhead" style="margin-top:0;">Historial de trabajos</div>
-        <div id="mantenimiento-mount"></div>
       </section>
 
       <!-- PROVEEDORES Y SERVICIOS -->
@@ -1681,26 +1663,6 @@
 
         <div class="subhead">Nuestro compromiso como administración</div>
         <div id="manual-mount"></div>
-      </section>
-
-      <!-- RETENCIONES ARCA -->
-      <section class="panel" id="panel-retenciones">
-        <div class="panel-head">
-          <span class="eyebrow">Herramientas del administrador</span>
-          <h2>Retenciones ARCA (Ganancias, SUSS, IVA)</h2>
-          <p class="panel-note">Esta pantalla lee directamente la planilla de Retenciones de este consorcio (la que calcula Ganancias RG 830, SUSS RG 1556/1769 e IVA RG 3164/1575) y te muestra los pagos que todavía no registraste acá. Elegís cuáles importar y, con un clic, quedan cargados en <code>Gastos_Mensual</code> (para el prorrateo del mes) y en el registro de retenciones -- sin tener que volver a tipear los montos que esa planilla ya calculó.</p>
-        </div>
-        <div id="retenciones-mount"></div>
-      </section>
-
-      <!-- CIERRE Y TRASPASO -->
-      <section class="panel" id="panel-traspaso">
-        <div class="panel-head">
-          <span class="eyebrow">Herramientas del administrador</span>
-          <h2>Cierre y Traspaso de Administración</h2>
-          <p class="panel-note">Si en algún momento dejás de administrar este consorcio -- por renuncia, remoción o no renovación -- la ley te da un plazo breve para entregar todo al administrador entrante (o al Consejo de Propietarios), sin poder retener nada bajo ningún concepto, ni siquiera por honorarios pendientes. Este panel junta, desde los datos que ya tenés cargados en el sistema, todo lo que se te va a pedir en ese momento, para que nunca te agarre de sorpresa.</p>
-        </div>
-        <div id="traspaso-mount"></div>
       </section>
 
       <!-- REMOCIÓN -->
@@ -1934,22 +1896,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify(Object.assign({ action:'crearConflictoPropio', key, sessionToken: SESSION_TOKEN }, datos))
       }));
     },
-    // Reclamos: el propietario envía uno nuevo, y el admin cambia el estado / responde UNO a la vez.
-    // Ninguno de los dos manda ya la lista completa (eso pisaba los reclamos de los demás).
-    async crearReclamoPropio(key, datos){
-      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(Object.assign({ action:'crearReclamoPropio', key, sessionToken: SESSION_TOKEN }, datos))
-      }));
-    },
-    async actualizarReclamoAdmin(key, datos){
-      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(Object.assign({ action:'actualizarReclamoAdmin', key, sessionToken: SESSION_TOKEN }, datos))
-      }));
-    },
     async informarPagoPropio(key, datos){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -1978,56 +1924,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify(Object.assign({ action:'respaldarLiquidacionSueldo', sessionToken: SESSION_TOKEN }, payload))
       }));
     },
-    // Copia pólizas y/o siniestros (payload.polizas y/o payload.siniestros, lo que se mande) a
-    // hojas propias dentro de la planilla del consorcio (payload.spreadsheetId) -- además de
-    // quedar en el almacenamiento de siempre, así viajan con la planilla si el día de mañana se
-    // entrega el consorcio a otra administración.
-    async respaldarSegurosEnPlanilla(payload){
-      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(Object.assign({ action:'respaldarSegurosEnPlanilla', sessionToken: SESSION_TOKEN }, payload))
-      }));
-    },
-    // Mismo patrón que respaldarSegurosEnPlanilla, para el historial de Mantenimiento.
-    async respaldarMantenimientoEnPlanilla(payload){
-      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(Object.assign({ action:'respaldarMantenimientoEnPlanilla', sessionToken: SESSION_TOKEN }, payload))
-      }));
-    },
     async cargarLiquidacionEnGastos(payload){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(Object.assign({ action:'cargarLiquidacionEnGastos', sessionToken: SESSION_TOKEN }, payload))
-      }));
-    },
-    // Puente con la planilla de Retenciones ARCA (RG830/1556/1769/3164/1575) de un consorcio: como
-    // esa planilla no tiene Apps Script propio, es la app principal la que la lee directamente.
-    async getPagosRetencionesPendientes(payload){
-      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(Object.assign({ action:'getPagosRetencionesPendientes', sessionToken: SESSION_TOKEN }, payload))
-      }));
-    },
-    // Historial que la app de Contrataciones deja SOLA (desde el navegador del admin, sin backend
-    // propio) en la hoja "Contrataciones_Historial" de la planilla de este consorcio -- se usa solo
-    // para sugerir datos en la pantalla de Retenciones ARCA, nunca es obligatorio que exista.
-    async getContratacionesHistorialConsorcio(payload){
-      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(Object.assign({ action:'getContratacionesHistorialConsorcio', sessionToken: SESSION_TOKEN }, payload))
-      }));
-    },
-    async registrarTrabajoContratado(payload){
-      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(Object.assign({ action:'registrarTrabajoContratado', sessionToken: SESSION_TOKEN }, payload))
       }));
     },
     async actualizarConflictoPropio(key, casoId, accion, extra){
@@ -3712,9 +3613,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       if(reglamento) items.push(`<a href="${escapeHtml(reglamento)}" target="_blank" rel="noopener" class="btn ghost" style="text-decoration:none;">Ver Reglamento de Copropiedad ↗</a>`);
       if(interno) items.push(`<a href="${escapeHtml(interno)}" target="_blank" rel="noopener" class="btn ghost" style="text-decoration:none;">Ver Manual interno ↗</a>`);
       if(items.length===0){
-        box.innerHTML = role==='admin'
-          ? `<p class="panel-note" style="margin:0;">Todavía no hay Reglamento de Copropiedad ni manual interno cargados en la hoja "DocumentosLegales_Ley941" de este consorcio — se agregan desde ahí para tenerlos a mano acá al resolver cada caso.</p>`
-          : `<p class="panel-note" style="margin:0;">Falta cargar el Reglamento de Copropiedad y el manual interno de este consorcio.</p>`;
+        box.innerHTML = `<p class="panel-note" style="margin:0;">Todavía no hay Reglamento de Copropiedad ni manual interno cargados en la hoja "DocumentosLegales_Ley941" de este consorcio — se agregan desde ahí para tenerlos a mano acá al resolver cada caso.</p>`;
       } else {
         box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;">${items.join('')}</div>`;
       }
@@ -4628,10 +4527,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
             <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">ID de la planilla de liquidación (Google Sheets)</label>
             <input type="text" data-field="spreadsheetId" data-id="${e.id}" value="${escapeHtml(e.spreadsheetId||'')}" placeholder="Pegá acá el ID de la planilla de este consorcio">
           </div>
-          <div>
-            <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">ID de la planilla de Retenciones ARCA (opcional)</label>
-            <input type="text" data-field="retencionesSpreadsheetId" data-id="${e.id}" value="${escapeHtml(e.retencionesSpreadsheetId||'')}" placeholder="Pegá acá el ID de la planilla de Retenciones de este consorcio, si usás una">
-          </div>
           <div class="toolbar" style="margin-top:2px;">
             <button class="btn ghost" data-action="eliminar" data-id="${e.id}" type="button">Eliminar</button>
             <div style="display:flex;align-items:center;gap:12px;">
@@ -4698,7 +4593,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           item.nombre = card.querySelector('[data-field="nombre"]').value.trim() || item.nombre;
           item.estado = card.querySelector('[data-field="estado"]').value;
           item.spreadsheetId = card.querySelector('[data-field="spreadsheetId"]').value.trim();
-          item.retencionesSpreadsheetId = card.querySelector('[data-field="retencionesSpreadsheetId"]').value.trim();
           await saveData('naken-edificios', lista, statusId);
         }, 700);
       });
@@ -5697,18 +5591,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
     }
 
-    // opts.onGuardado(rows): hook opcional, se llama después de cada guardado exitoso (automático
-    // o con el botón) con el array recién guardado -- lo usan pólizas y siniestros para mandar
-    // además una copia a una hoja de la planilla propia del consorcio (ver respaldarSegurosEnPlanilla),
-    // así esos datos viajan con la planilla el día que se entregue el consorcio a otra administración.
-    function avisarGuardado(){ if(opts.onGuardado) opts.onGuardado(rows); }
-
     let saveTimer;
     function scheduleSave(){
       if(role!=='admin') return;
       setStatus(statusId,'saving');
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(()=>{ rows = readRows(); saveData(storageKey, rows, statusId).then(avisarGuardado); }, 700);
+      saveTimer = setTimeout(()=>{ rows = readRows(); saveData(storageKey, rows, statusId); }, 700);
     }
 
     if(role==='admin'){
@@ -5726,7 +5614,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body.lastElementChild.querySelector('input,textarea').focus();
       });
       document.getElementById(mountId+'-save').addEventListener('click', ()=>{
-        rows = readRows(); saveData(storageKey, rows, statusId).then(avisarGuardado);
+        rows = readRows(); saveData(storageKey, rows, statusId);
       });
 
       if(!vistaTarjetas){
@@ -6069,79 +5957,39 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
       if(role==='admin'){
         cardsEl.querySelectorAll('.ticket-field').forEach(f=>{
-          f.addEventListener('change', ()=>persistField(f));
-          f.addEventListener('blur', ()=>persistField(f));
+          f.addEventListener('change', persistFromDOM);
+          f.addEventListener('blur', persistFromDOM);
         });
       }
     }
 
-    // El admin guarda UN campo de UN reclamo por vez, y el servidor lo aplica sobre la lista
-    // completa y actual. Antes se guardaba la lista entera tal como estaba en pantalla, y si un
-    // propietario había enviado un reclamo en el medio, ese reclamo se perdía.
-    function persistField(f){
-      const campo = f.dataset.field;
-      const valor = f.value;
-      const item = items.find(i=>i.id===f.dataset.id);
-      if(!item || item[campo]===valor) return; // sin cambios (change y blur disparan los dos seguidos)
-      const anterior = item[campo];
-      item[campo] = valor;
-      setStatus(statusId,'saving');
-      window.storage.actualizarReclamoAdmin(nsKey(storageKey), { id: f.dataset.id, campo, valor })
-        .then(res=>{
-          if(!res || !res.ok){
-            item[campo] = anterior;
-            setStatus(statusId,'error');
-            alert((res && res.error) || 'No se pudo guardar el cambio.');
-            return;
-          }
-          setStatus(statusId,'saved');
-        })
-        .catch(e=>{
-          item[campo] = anterior;
-          setStatus(statusId,'error');
-          alert('No se pudo guardar el cambio: ' + (e && e.message ? e.message : e));
-        });
+    function persistFromDOM(){
+      cardsEl.querySelectorAll('.ticket-field').forEach(f=>{
+        const item = items.find(i=>i.id===f.dataset.id);
+        if(item) item[f.dataset.field] = f.value;
+      });
+      saveData(storageKey, items, statusId);
     }
 
     if(role==='propietario'){
-      document.getElementById(mountId+'-submit').addEventListener('click', async (ev)=>{
-        const btn = ev.currentTarget;
-        if(btn.disabled) return; // evita enviar el mismo reclamo dos veces con un doble clic
+      document.getElementById(mountId+'-submit').addEventListener('click', ()=>{
+        const unidad = document.getElementById(mountId+'-unidad').value.trim();
         const tipo = document.getElementById(mountId+'-tipo').value;
-        const asuntoEl = document.getElementById(mountId+'-asunto');
-        const asunto = asuntoEl.value.trim();
-        if(!asunto) return;
+        const asunto = document.getElementById(mountId+'-asunto').value.trim();
+        if(!unidad || !asunto) return;
         const alcanceInput = opts.hasAlcance ? mount.querySelector(`input[name="${mountId}-alcance"]:checked`) : null;
-        // La unidad y la fecha las pone el servidor (la unidad sale de la sesión). El idCliente hace
-        // que un reintento automático de red no cree el mismo reclamo dos veces.
-        const idCliente = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
-        btn.disabled = true;
-        setStatus(statusId,'saving');
-        let enviado = false;
-        try{
-          const res = await window.storage.crearReclamoPropio(nsKey(storageKey), {
-            tipo, asunto, alcance: alcanceInput ? alcanceInput.value : 'Particular', idCliente
-          });
-          if(!res || !res.ok){
-            setStatus(statusId,'error');
-            alert((res && res.error) || 'No se pudo enviar el reclamo.');
-          } else {
-            enviado = true;
-            if(!items.some(i=>i.id===res.item.id)) items.push(res.item);
-            asuntoEl.value = '';
-            render();
-            setStatus(statusId,'saved');
-          }
-        }catch(e){
-          setStatus(statusId,'error');
-          alert('No se pudo enviar el reclamo: ' + (e && e.message ? e.message : e));
-        } finally {
-          btn.disabled = false;
-        }
-        if(enviado){
-          flashButtonSuccess(btn, '✓ Enviado');
-          if(storageKey==='naken-asamblea-preguntas') markAsambleaSeen();
-        }
+        items.push({
+          id: uid(),
+          fecha: new Date().toLocaleDateString('es-AR'),
+          unidad, tipo, asunto,
+          alcance: alcanceInput ? alcanceInput.value : '',
+          estado: 'Pendiente', respuesta: ''
+        });
+        document.getElementById(mountId+'-asunto').value='';
+        render();
+        saveData(storageKey, items, statusId);
+        flashButtonSuccess(document.getElementById(mountId+'-submit'), '✓ Enviado');
+        if(storageKey==='naken-asamblea-preguntas') markAsambleaSeen();
       });
     }
 
@@ -11459,678 +11307,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     })();
   }
 
-  /* ---------------------------------------------------------------------
-     MANTENIMIENTO — historial de trabajos preventivos y correctivos
-     No es solo un registro: agrupa los trabajos por ubicación/equipo (texto
-     libre, normalizado para agrupar aunque cambien mayúsculas o tildes) y
-     calcula alertas automáticas -- para poder actuar con más inteligencia
-     que "se contrató un servicio y ya está":
-       1) 3 o más correctivos en la misma ubicación en los últimos 12 meses
-          -- puede convenir evaluar un reemplazo en vez de seguir reparando.
-       2) el mismo proveedor repite un correctivo 2+ veces en 6 meses en la
-          misma ubicación -- señal de que el trabajo anterior no quedó
-          resuelto de fondo (y de que conviene revisar garantía).
-       3) un preventivo con fecha sugerida para el próximo ya vencida, sin
-          que se haya cargado uno posterior -- se venció sin hacerse.
-     Como Seguros y Siniestros, además de guardarse como siempre se manda una
-     copia a una hoja de la propia planilla del consorcio (ver
-     respaldarMantenimientoEnPlanilla_) para que viaje con ella en un Cierre
-     y Traspaso. El campo "N° de expediente en Contrataciones" es una
-     referencia manual -- la app de Contrataciones es un sitio aparte, sin
-     backend ni vínculo con esta planilla, así que hoy no hay forma de
-     cruzarlas automáticamente.
-     --------------------------------------------------------------------- */
-  async function mountMantenimiento(mountId, alertasMountId){
-    const spreadsheetId = await getSpreadsheetIdActivo();
-
-    function normalizarUbicacion(s){
-      return String(s||'').trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
-    }
-    function parseFechaDDMMAAAA(s){
-      const m = String(s||'').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      if(!m) return null;
-      const d = new Date(Number(m[3]), Number(m[2])-1, Number(m[1]));
-      return isNaN(d.getTime()) ? null : d;
-    }
-
-    function calcularAlertas(trabajos){
-      const grupos = {};
-      trabajos.forEach(t=>{
-        const norm = normalizarUbicacion(t.ubicacionEquipo);
-        if(!norm) return;
-        // El nombre "de vidriera" del grupo queda fijado por la PRIMERA vez que se escribió esa
-        // ubicación (no la última) -- así no cambia de mayúsculas/minúsculas cada vez que alguien
-        // la vuelve a tipear un poco distinto en un trabajo nuevo.
-        if(!grupos[norm]) grupos[norm] = { nombre: t.ubicacionEquipo, trabajos: [] };
-        grupos[norm].trabajos.push(t);
-      });
-
-      const hoy = new Date();
-      const haceMeses = n => new Date(hoy.getFullYear(), hoy.getMonth()-n, hoy.getDate());
-      const desde12m = haceMeses(12);
-      const desde6m = haceMeses(6);
-
-      const alertas = [];
-      const resumen = [];
-
-      Object.values(grupos).forEach(g=>{
-        const conFecha = g.trabajos.map(t=>Object.assign({}, t, { _fecha: parseFechaDDMMAAAA(t.fecha) }));
-        const correctivos = conFecha.filter(t=>String(t.tipo||'').toLowerCase().indexOf('correc')===0);
-        const preventivos = conFecha.filter(t=>String(t.tipo||'').toLowerCase().indexOf('prev')===0);
-        const ultimo = conFecha.filter(t=>t._fecha).sort((a,b)=>b._fecha-a._fecha)[0];
-
-        resumen.push({
-          ubicacion: g.nombre, total: g.trabajos.length, correctivos: correctivos.length,
-          preventivos: preventivos.length, ultimaFecha: ultimo ? ultimo.fecha : '—'
-        });
-
-        const correctivos12m = correctivos.filter(t=>t._fecha && t._fecha >= desde12m);
-        if(correctivos12m.length >= 3){
-          alertas.push({ ubicacion: g.nombre, mensaje: `${correctivos12m.length} trabajos correctivos en los últimos 12 meses -- puede convenir evaluar un reemplazo en vez de seguir reparando.` });
-        }
-
-        const porProveedor = {};
-        correctivos.forEach(t=>{
-          const prov = String(t.proveedor||'').trim().toLowerCase();
-          if(!prov) return;
-          (porProveedor[prov] = porProveedor[prov]||[]).push(t);
-        });
-        Object.values(porProveedor).forEach(lista=>{
-          const en6m = lista.filter(t=>t._fecha && t._fecha >= desde6m);
-          if(en6m.length >= 2){
-            alertas.push({ ubicacion: g.nombre, mensaje: `${lista[0].proveedor} repitió un trabajo correctivo acá ${en6m.length} veces en los últimos 6 meses -- vale la pena revisar si el trabajo anterior quedó bien resuelto (y si corresponde garantía).` });
-          }
-        });
-
-        preventivos.filter(t=>t.proximoPreventivoSugerido).forEach(t=>{
-          const sugerido = parseFechaDDMMAAAA(t.proximoPreventivoSugerido);
-          if(!sugerido || sugerido >= hoy) return;
-          const cumplido = preventivos.some(p => p._fecha && p._fecha >= sugerido && p !== t);
-          if(!cumplido){
-            alertas.push({ ubicacion: g.nombre, mensaje: `El mantenimiento preventivo sugerido para el ${t.proximoPreventivoSugerido} está vencido y no hay uno posterior cargado.` });
-          }
-        });
-      });
-
-      return { alertas, resumen };
-    }
-
-    function renderAlertas(trabajos){
-      const mount = document.getElementById(alertasMountId);
-      if(!mount) return;
-      if(!trabajos.length){ mount.innerHTML = ''; return; }
-      const { alertas, resumen } = calcularAlertas(trabajos);
-      mount.innerHTML = `
-        ${alertas.length ? `
-        <div class="infoblock" style="margin-bottom:14px;border-color:#f0d9a8;">
-          <h3 style="margin-top:0;">⚠ Puntos para revisar</h3>
-          ${alertas.map(a=>`<p style="margin:6px 0;"><b>${escapeHtml(a.ubicacion)}:</b> ${escapeHtml(a.mensaje)}</p>`).join('')}
-        </div>` : ''}
-        <table class="ledger" style="margin-bottom:14px;">
-          <thead><tr><th>Ubicación / equipo</th><th>Trabajos totales</th><th>Correctivos</th><th>Preventivos</th><th>Último trabajo</th></tr></thead>
-          <tbody>
-            ${resumen.sort((a,b)=>b.total-a.total).map(r=>`<tr><td>${escapeHtml(r.ubicacion)}</td><td class="num">${r.total}</td><td class="num">${r.correctivos}</td><td class="num">${r.preventivos}</td><td>${escapeHtml(r.ultimaFecha)}</td></tr>`).join('')}
-          </tbody>
-        </table>
-      `;
-    }
-
-    async function respaldar(trabajos){
-      if(!spreadsheetId || role!=='admin') return;
-      try{ await window.storage.respaldarMantenimientoEnPlanilla({ spreadsheetId, trabajos }); }
-      catch(e){ console.error('No se pudo respaldar el historial de mantenimiento en la planilla del consorcio:', e); }
-    }
-
-    mountLedger(mountId, 'naken-mantenimiento', [
-      {key:'ubicacionEquipo', label:'Ubicación / equipo', placeholder:'Ej: Ascensor 1, Terraza, Portero eléctrico'},
-      {key:'fecha', label:'Fecha', placeholder:'DD/MM/AAAA'},
-      {key:'tipo', label:'Tipo', placeholder:'Preventivo / Correctivo'},
-      {key:'proveedor', label:'Proveedor', placeholder:''},
-      {key:'descripcion', label:'Descripción del trabajo', type:'textarea', placeholder:'Qué se hizo'},
-      {key:'costo', label:'Costo ($)', numeric:true, placeholder:'0'},
-      {key:'proximoPreventivoSugerido', label:'Próximo preventivo sugerido', placeholder:'DD/MM/AAAA (si aplica)'},
-      {key:'expedienteContrataciones', label:'N° de expediente en Contrataciones', placeholder:'Si se gestionó ahí, para poder ubicarlo'},
-      {key:'observaciones', label:'Observaciones', type:'textarea', placeholder:''},
-    ], {
-      emptyText: 'No hay trabajos de mantenimiento cargados.',
-      vistaTarjetas: true,
-      onGuardado: rows => { renderAlertas(rows); respaldar(rows); }
-    });
-
-    const trabajosIniciales = await loadData('naken-mantenimiento', []);
-    renderAlertas(trabajosIniciales);
-  }
-
-  /* ---------------------------------------------------------------------
-     RETENCIONES ARCA -- puente de lectura con la planilla de Retenciones
-     (Ganancias RG 830, SUSS RG 1556/1769, IVA RG 3164/1575) de este
-     consorcio. Esa planilla NO tiene Apps Script propio, así que en vez de
-     esperar un aviso suyo, esta pantalla la lee directamente cada vez que
-     el admin pide "Buscar pagos nuevos" y ofrece, uno por uno, registrar
-     en Gastos_Mensual + el registro de retenciones (y, si corresponde, el
-     historial de Mantenimiento) los pagos que todavía no se cargaron --
-     ver getPagosRetencionesPendientes_/registrarTrabajoContratado_ en el
-     backend, que hacen el trabajo pesado y la verificación de duplicados.
-     --------------------------------------------------------------------- */
-  async function mountRetenciones(mountId){
-    if(role!=='admin') return;
-    const mount = document.getElementById(mountId);
-    mount.innerHTML = `<div class="empty">Cargando…</div>`;
-
-    const [spreadsheetId, edificios] = await Promise.all([getSpreadsheetIdActivo(), getEdificios()]);
-    if(!spreadsheetId){
-      mount.innerHTML = `<p class="panel-note" style="margin:0;">Este consorcio todavía no tiene la planilla de liquidación vinculada.</p>`;
-      return;
-    }
-    const edificio = edificios.find(e=>e.id===activeConsorcioId);
-    const retencionesSpreadsheetId = edificio ? (edificio.retencionesSpreadsheetId||'') : '';
-    if(!retencionesSpreadsheetId){
-      mount.innerHTML = `<p class="panel-note" style="margin:0;">Este consorcio todavía no tiene vinculada su planilla de Retenciones ARCA. Pegá su ID desde el Panel general ("Todos los consorcios"), en el campo "ID de la planilla de Retenciones ARCA".</p>`;
-      return;
-    }
-
-    const fmt = (n)=> '$ ' + (Number(n)||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
-
-    // Cruce opcional con lo que la app de Contrataciones haya dejado en "Contrataciones_Historial"
-    // de esta misma planilla (ver getContratacionesHistorialConsorcio_ en el backend). Es un
-    // AYUDA -- si esa hoja no existe (el consorcio no usa Contrataciones, o no la vinculó todavía)
-    // simplemente no hay sugerencias, sin mostrar ningún error.
-    function normalizarCuit(c){ return String(c||'').replace(/[^0-9]/g,''); }
-    function buscarEventoContrataciones(p, eventos){
-      const cuitPago = normalizarCuit(p.cuit);
-      if(!cuitPago) return null;
-      const candidatos = eventos.filter(e=>normalizarCuit(e.cuit)===cuitPago);
-      if(candidatos.length===0) return null;
-      // Se prefiere el evento de "Visto Bueno de Pago" (tiene los datos de pago completos) y,
-      // entre varios, el más reciente -- el historial puede tener más de un expediente para el
-      // mismo proveedor a lo largo del tiempo.
-      const parseF = (f)=>{ const m=String(f||'').match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? new Date(+m[3],+m[2]-1,+m[1]).getTime() : 0; };
-      candidatos.sort((a,b)=>{
-        const rango = (e)=> e.evento==='Visto Bueno de Pago' ? 1 : 0;
-        if(rango(a)!==rango(b)) return rango(b)-rango(a);
-        return parseF(b.fecha)-parseF(a.fecha);
-      });
-      return candidatos[0];
-    }
-
-    async function cargarPagos(){
-      mount.innerHTML = `<div class="empty">Buscando pagos en la planilla de Retenciones…</div>`;
-      let res;
-      try{ res = await window.storage.getPagosRetencionesPendientes({ spreadsheetId, retencionesSpreadsheetId }); }
-      catch(e){
-        mount.innerHTML = `<p class="panel-note" style="color:var(--danger,#A03A3A);margin:0;">No se pudo leer la planilla de Retenciones: ${escapeHtml(e.message||String(e))}</p>`;
-        return;
-      }
-      if(!res || !res.ok){
-        mount.innerHTML = `<p class="panel-note" style="color:var(--danger,#A03A3A);margin:0;">${escapeHtml((res&&res.error)||'No se pudo leer la planilla de Retenciones.')}</p>`;
-        return;
-      }
-      let eventosContrataciones = [];
-      try{
-        const resHist = await window.storage.getContratacionesHistorialConsorcio({ spreadsheetId });
-        if(resHist && resHist.ok) eventosContrataciones = resHist.eventos||[];
-      }catch(e){ /* opcional -- sin esto, simplemente no hay sugerencias */ }
-      render(res.pagos||[], eventosContrataciones);
-    }
-
-    function render(pagos, eventosContrataciones){
-      const pendientes = pagos.filter(p=>!p.yaCargado);
-      const yaCargados = pagos.filter(p=>p.yaCargado);
-      if(pagos.length===0){
-        mount.innerHTML = `<p class="panel-note" style="margin:0 0 12px;">No se encontró ningún pago cargado todavía en el Panel de Retenciones de esa planilla.</p>
-          <button class="btn ghost" id="${mountId}-refrescar" type="button">Volver a buscar</button>`;
-        document.getElementById(`${mountId}-refrescar`).addEventListener('click', cargarPagos);
-        return;
-      }
-      mount.innerHTML = `
-        <div class="toolbar" style="margin-bottom:12px;">
-          <button class="btn ghost" id="${mountId}-refrescar" type="button">Volver a buscar</button>
-          <span class="panel-note" style="margin:0;">${pendientes.length} pago${pendientes.length===1?'':'s'} pendiente${pendientes.length===1?'':'s'} de importar${yaCargados.length?` · ${yaCargados.length} ya cargado${yaCargados.length===1?'':'s'}`:''}</span>
-        </div>
-        <div id="${mountId}-lista"></div>
-      `;
-      document.getElementById(`${mountId}-refrescar`).addEventListener('click', cargarPagos);
-
-      const lista = document.getElementById(`${mountId}-lista`);
-      if(pendientes.length===0){
-        lista.innerHTML = `<p class="panel-note" style="margin:0;">Ya importaste todos los pagos cargados en esa planilla.</p>`;
-        return;
-      }
-      lista.innerHTML = pendientes.map((p,i)=>{
-        const sugerido = buscarEventoContrataciones(p, eventosContrataciones||[]);
-        return `
-        <div class="card" data-idx="${i}" style="margin-bottom:14px;padding:14px;">
-          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-            <div>
-              <strong>${escapeHtml(p.proveedor)}</strong>${p.cuit?` · CUIT ${escapeHtml(p.cuit)}`:''}
-              <div class="panel-note" style="margin:2px 0 0;">${escapeHtml(p.descripcion||'')}${p.codigoRegimen?` (cód. ${escapeHtml(p.codigoRegimen)})`:''} — ${escapeHtml(p.fecha)}</div>
-            </div>
-            <div style="text-align:right;">
-              <div><strong>${fmt(p.importeTotal)}</strong> total</div>
-              <div class="panel-note" style="margin:0;">Retenido: ${fmt(p.totalRetenido)} · Neto: ${fmt(p.netoFinal)}</div>
-            </div>
-          </div>
-          ${sugerido ? `<p class="panel-note" style="margin:8px 0 0;color:var(--brass,#8a6d2f);">Encontrado en Contrataciones: expediente <strong>${escapeHtml(sugerido.expedienteContrataciones)}</strong>${sugerido.link?` — <a href="${escapeHtml(sugerido.link)}" target="_blank" rel="noopener">ver</a>`:''} (datos precargados abajo, revisalos antes de guardar).</p>` : ''}
-          <div class="config-row" style="grid-template-columns:1fr 1fr;margin-top:10px;">
-            <div>
-              <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Rubro del gasto (como figura en Resumen_Rubros_Mensual)</label>
-              <input type="text" data-field="rubroGastos" placeholder="Ej: 4 - Mantenimiento y Reparaciones">
-            </div>
-            <div>
-              <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Fondo</label>
-              <select data-field="fondo"><option value="A" selected>Fondo A (ordinario)</option><option value="B">Fondo B (extraordinario/reserva)</option></select>
-            </div>
-          </div>
-          <div>
-            <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin:8px 0 4px;">N° de expediente en Contrataciones (si se gestionó ahí)</label>
-            <input type="text" data-field="expedienteContrataciones" placeholder="Opcional" value="${escapeHtml(sugerido ? sugerido.expedienteContrataciones : '')}">
-          </div>
-          <details style="margin-top:8px;" ${sugerido && sugerido.ubicacionEquipo ? 'open' : ''}>
-            <summary style="cursor:pointer;font-size:12.5px;color:var(--muted);">¿Es un trabajo de mantenimiento? (agregarlo también al historial de Mantenimiento)</summary>
-            <div class="config-row" style="grid-template-columns:1fr 1fr;margin-top:8px;">
-              <div>
-                <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Ubicación / equipo</label>
-                <input type="text" data-field="ubicacionEquipo" placeholder="Ej: Ascensor 1" value="${escapeHtml(sugerido ? sugerido.ubicacionEquipo : '')}">
-              </div>
-              <div>
-                <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:4px;">Tipo</label>
-                <select data-field="tipoTrabajo">
-                  <option value="Correctivo" ${!sugerido || sugerido.tipoTrabajo!=='preventivo' ? 'selected' : ''}>Correctivo</option>
-                  <option value="Preventivo" ${sugerido && sugerido.tipoTrabajo==='preventivo' ? 'selected' : ''}>Preventivo</option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label style="font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin:8px 0 4px;">Observaciones de la verificación (soporte del control antes de pagar)</label>
-              <textarea data-field="observacionesVerificacion" rows="2" placeholder="Opcional">${escapeHtml(sugerido ? sugerido.observaciones : '')}</textarea>
-            </div>
-          </details>
-          <div class="toolbar" style="margin-top:10px;">
-            ${statusEl(`${mountId}-status-${i}`)}
-            <button class="btn primary" data-action="importar" data-idx="${i}" type="button">Registrar este pago</button>
-          </div>
-        </div>
-      `;}).join('');
-
-      lista.querySelectorAll('[data-action="importar"]').forEach(btn=>{
-        btn.addEventListener('click', async ()=>{
-          const idx = Number(btn.dataset.idx);
-          const p = pendientes[idx];
-          const card = lista.querySelector(`.card[data-idx="${idx}"]`);
-          const val = (f)=> card.querySelector(`[data-field="${f}"]`).value.trim();
-          const statusId = `${mountId}-status-${idx}`;
-          setStatus(statusId, 'saving');
-          btn.disabled = true;
-          try{
-            const res = await window.storage.registrarTrabajoContratado({
-              spreadsheetId, consorcioId: activeConsorcioId,
-              periodo: p.periodo, proveedor: p.proveedor, cuit: p.cuit, fecha: p.fecha,
-              comprobante: p.comprobante, descripcion: p.descripcion,
-              importeTotal: p.importeTotal, gananciasRetenido: p.gananciasRetenido,
-              sussRetenido: p.sussRetenido, ivaRetenido: p.ivaRetenido, nCertificado: p.nCertificado,
-              rubroGastos: val('rubroGastos'), fondo: val('fondo') || 'A',
-              expedienteContrataciones: val('expedienteContrataciones'),
-              ubicacionEquipo: val('ubicacionEquipo'), tipoTrabajo: val('tipoTrabajo'),
-              observacionesVerificacion: val('observacionesVerificacion'),
-            });
-            if(!res || !res.ok){
-              setStatus(statusId, 'error');
-              alert((res&&res.error) || 'No se pudo registrar el pago.');
-              btn.disabled = false;
-              return;
-            }
-            setStatus(statusId, 'saved');
-            card.innerHTML = `<p class="panel-note" style="margin:0;">✓ Registrado${res.gastoYaEstabaCargado?' (ya estaba cargado)':''}.</p>`;
-          }catch(e){
-            setStatus(statusId, 'error');
-            alert('No se pudo registrar el pago: ' + (e.message||e));
-            btn.disabled = false;
-          }
-        });
-      });
-    }
-
-    await cargarPagos();
-  }
-
-  /* ---------------------------------------------------------------------
-     CIERRE Y TRASPASO DE ADMINISTRACIÓN
-     Panel de autoservicio, solo para el administrador, pensado para el día
-     en que Sebastián (o cualquier otra administración que use esta app) deja
-     de administrar un consorcio puntual -- por renuncia, remoción o no
-     renovación. No agrega ningún dato nuevo: junta, desde los mismos
-     endpoints que ya usan el Resumen y los demás paneles, todo lo que el
-     art. 9° Ley 941 y la práctica habitual exigen entregar al dejar el
-     cargo, para que nunca falte nada a último momento. Fuera de alcance a
-     propósito (decisión explícita del usuario): no genera ninguna carta de
-     renuncia/cese -- eso lo redacta un abogado según el caso concreto.
-     --------------------------------------------------------------------- */
-  async function mountTraspaso(mountId){
-    if(role!=='admin') return;
-    const mount = document.getElementById(mountId);
-    mount.innerHTML = `<div class="empty">Cargando datos del consorcio…</div>`;
-
-    const spreadsheetId = await getSpreadsheetIdActivo();
-    if(!spreadsheetId){
-      mount.innerHTML = `<div class="empty">Elegí un consorcio arriba para ver su estado de cierre y traspaso.</div>`;
-      return;
-    }
-
-    const [resumen, documentos, cfg, juicios, polizas, siniestros, mantenimiento, empleados] = await Promise.all([
-      fetchResumenConsorcio(spreadsheetId),
-      fetchDocumentosConsorcio(spreadsheetId),
-      fetchConfigConsorcio(spreadsheetId),
-      loadData('naken-juicios', []),
-      loadData('naken-polizas', []),
-      loadData('naken-siniestros', []),
-      loadData('naken-mantenimiento', []),
-      loadData('naken-empleados', []),
-    ]);
-
-    const fmt = (n)=> '$ ' + (Number(n)||0).toLocaleString('es-AR',{maximumFractionDigits:0});
-    const unidades = (resumen && resumen.unidades) || [];
-    const deudaTotal = resumen ? (resumen.deudaTotal||0) : 0;
-    const unidadesConDeuda = unidades.filter(u=>Number(u.deuda)>0).length;
-    const saldoReserva = (resumen && resumen.totales && resumen.totales.saldoFondoReservaCierre) || 0;
-    const tienePersonal = !!(cfg && cfg.consorcio && String(cfg.consorcio.tienePersonal||'').trim().toLowerCase().indexOf('s') === 0);
-    const juiciosEnTramite = (juicios||[]).filter(j=>String(j.estado||'').toLowerCase().indexOf('trámite')>=0 || String(j.estado||'').toLowerCase().indexOf('tramite')>=0).length;
-
-    // Cada ítem: título, detalle (lo que efectivamente se encontró en el sistema) y un estado.
-    // 'ok' = listo para entregar tal cual está; 'atencion' = falta cargar algo; 'info' = no se
-    // puede verificar solo con datos del sistema (ej: entrega física de claves), es un recordatorio.
-    const items = [
-      {
-        titulo: 'Libro de registro de propietarios',
-        detalle: unidades.length ? `${unidades.length} unidad(es) cargada(s), con titular y coeficiente.` : 'Todavía no hay unidades cargadas en Propietarios / Prorrateo.',
-        estado: unidades.length ? 'ok' : 'atencion'
-      },
-      {
-        titulo: 'Estados financieros y liquidaciones de períodos cerrados',
-        detalle: resumen && resumen.periodo ? `Último período con datos: ${escapeHtml(String(resumen.periodo))}. Cada cierre de mes archiva sola su propia hoja (Prorrateo_MM-AAAA / Estado_Financiero_MM-AAAA), lista para entregar.` : 'Todavía no se cerró ningún mes en este consorcio.',
-        estado: (resumen && resumen.periodo) ? 'ok' : 'atencion'
-      },
-      {
-        titulo: 'Documentación respaldatoria de gastos (facturas)',
-        detalle: 'Se archiva sola en Google Drive al cerrar cada mes ("Facturas archivadas → [período]"), en la misma carpeta de la planilla del consorcio -- alcanza con compartir esa carpeta.',
-        estado: 'info'
-      },
-      {
-        titulo: 'Estado de deudas por unidad',
-        detalle: `${unidadesConDeuda} de ${unidades.length} unidad(es) con deuda registrada, por un total de ${fmt(deudaTotal)}.`,
-        estado: 'ok'
-      },
-      {
-        titulo: 'Legajos del personal',
-        detalle: empleados.length ? `${empleados.length} legajo(s) cargado(s) en "Personal y Liquidación de Sueldos".` : (tienePersonal ? 'El consorcio tiene personal declarado en Config_NAKEN, pero no hay legajos cargados todavía.' : 'Este consorcio no tiene personal en relación de dependencia.'),
-        estado: empleados.length ? 'ok' : (tienePersonal ? 'atencion' : 'info')
-      },
-      {
-        titulo: 'Pólizas de seguro vigentes y siniestros',
-        detalle: polizas.length
-          ? `${polizas.length} póliza(s) cargada(s) en "Seguros y depósitos"${siniestros.length ? `, con ${siniestros.length} siniestro(s) en el historial` : ''}.`
-          : 'No hay pólizas cargadas en "Seguros y depósitos" -- si el consorcio tiene seguros vigentes, conviene cargarlos ahí antes de dejar de administrar.',
-        estado: polizas.length ? 'ok' : 'atencion'
-      },
-      {
-        titulo: 'Historial de mantenimiento',
-        detalle: mantenimiento.length ? `${mantenimiento.length} trabajo(s) de mantenimiento cargado(s) en el historial (preventivos y correctivos).` : 'No hay trabajos de mantenimiento cargados en el historial todavía.',
-        estado: mantenimiento.length ? 'ok' : 'info'
-      },
-      {
-        titulo: 'Juicios en trámite (a favor y en contra)',
-        detalle: juicios.length ? `${juicios.length} juicio(s) cargado(s), ${juiciosEnTramite} en trámite.` : 'No hay juicios cargados para este consorcio.',
-        estado: 'ok'
-      },
-      {
-        titulo: 'Fondo de Reserva -- saldo y detalle de movimientos',
-        detalle: `Saldo al último cierre: ${fmt(saldoReserva)}. El detalle completo de ingresos y egresos está en el panel "Fondo de reserva".`,
-        estado: 'ok'
-      },
-      {
-        titulo: 'Documentos legales del consorcio',
-        detalle: (()=>{
-          const faltan = [];
-          if(!documentos || !documentos.manual) faltan.push('Manual de Buenas Prácticas');
-          if(!documentos || !documentos.reglamento) faltan.push('Reglamento de Propiedad Horizontal');
-          if(!documentos || !documentos.reglamentoInterno) faltan.push('Reglamento Interno');
-          return faltan.length ? `Falta cargar: ${faltan.join(', ')} (en "Documentos importantes").` : 'Manual, Reglamento de Propiedad Horizontal y Reglamento Interno están cargados.';
-        })(),
-        estado: (documentos && documentos.reglamento) ? 'ok' : 'atencion'
-      },
-      {
-        titulo: 'Libro Banco y Libro de Caja',
-        detalle: 'El detalle completo de movimientos e ingresos/egresos está siempre disponible en "Libro Banco y Conciliación bancaria" y "Libro de Caja".',
-        estado: 'info'
-      },
-      {
-        titulo: 'Cuentas bancarias, claves de acceso y credenciales digitales',
-        detalle: 'No se puede verificar desde el sistema -- es un recordatorio: al cesar en el cargo hay que entregar también las claves de acceso a home banking, ARCA/AGIP y cualquier otro portal usado para administrar el consorcio, además de los datos de las cuentas bancarias.',
-        estado: 'info'
-      },
-    ];
-
-    const pill = (estado)=>{
-      if(estado==='ok') return `<span class="pill" style="background:#e6f4ea;color:#1e7e34;border:1px solid #b7e2c2;">Listo para entregar</span>`;
-      if(estado==='atencion') return `<span class="pill" style="background:#fdf3e0;color:#9a6300;border:1px solid #f0d9a8;">Revisar antes de entregar</span>`;
-      return `<span class="pill" style="background:#eef1f4;color:#4a5568;border:1px solid #dbe1e8;">Recordatorio</span>`;
-    };
-
-    mount.innerHTML = `
-      <div class="infoblock" style="margin-bottom:16px;">
-        <p style="margin:0;">La Ley 941 (art. 9°) obliga al administrador a rendir cuentas y a poner a disposición toda la documentación del consorcio; en la práctica, al cesar en el cargo (por renuncia, remoción o no renovación) el uso es entregar todo dentro de los <b>15 días hábiles</b> desde el cese, sin poder retener nada -- ni siquiera por honorarios pendientes.</p>
-      </div>
-      <div class="cards" style="margin-bottom:18px;">
-        ${items.map(it=>`
-          <div class="card" style="display:flex;flex-direction:column;gap:6px;">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
-              <b>${escapeHtml(it.titulo)}</b>
-              ${pill(it.estado)}
-            </div>
-            <p class="panel-note" style="margin:0;">${escapeHtml(it.detalle)}</p>
-          </div>
-        `).join('')}
-      </div>
-      <div class="toolbar">
-        <span class="panel-note" style="margin:0;">El informe compila lo de arriba en un PDF para entregar junto con los libros y comprobantes físicos/digitales.</span>
-        <button class="btn primary" id="${mountId}-btn-informe">Generar Informe de Cierre y Traspaso (PDF)</button>
-      </div>
-    `;
-
-    document.getElementById(mountId+'-btn-informe').addEventListener('click', ()=>{
-      generarPdfCierreTraspaso(spreadsheetId, { resumen, documentos, cfg, juicios, polizas, siniestros, mantenimiento, empleados, items });
-    });
-  }
-
-  async function generarPdfCierreTraspaso(spreadsheetId, d){
-    if(!window.jspdf){ alert('No se pudo cargar el generador de PDF. Revisá tu conexión e intentá de nuevo.'); return; }
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF();
-    const M = 14;
-    const ANCHO = 182;
-    let y = 18;
-
-    const NAVY = [11,42,74];
-    const GOLD = [201,169,78];
-    const TEXTO = [51,51,51];
-    const FONDO_ALT = [248,249,250];
-    const AUTOTABLE_BASE = {
-      styles: { fontSize: 8.5, textColor: TEXTO, lineColor: [180,186,194], lineWidth: 0.1 },
-      headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: FONDO_ALT }
-    };
-    const fmt = (n)=> '$ ' + Math.round(Number(n)||0).toLocaleString('es-AR');
-
-    function heading(texto){
-      if(y>270){ doc.addPage(); y=18; }
-      doc.setFillColor(...NAVY);
-      doc.rect(M, y, ANCHO, 7, 'F');
-      doc.setTextColor(255,255,255);
-      doc.setFont('helvetica','bold'); doc.setFontSize(10);
-      doc.text(texto, M+3, y+5);
-      doc.setTextColor(...TEXTO);
-      y += 12;
-    }
-    function parrafo(texto, opts={}){
-      doc.setFont('helvetica', opts.bold?'bold':'normal');
-      doc.setFontSize(opts.size||9);
-      doc.setTextColor(...TEXTO);
-      const lineas = doc.splitTextToSize(texto||'—', ANCHO);
-      if(y + lineas.length*4.4 > 283){ doc.addPage(); y=18; }
-      doc.text(lineas, M, y);
-      y += lineas.length*4.4 + 3;
-    }
-
-    const cfg = (d.cfg) || {};
-    const admin = cfg.administracion || {};
-    const consorcio = cfg.consorcio || {};
-    const formaPago = cfg.formaPago || {};
-    const fondoReserva = cfg.fondoReserva || {};
-    const resumen = d.resumen || {};
-    const unidades = resumen.unidades || [];
-    const documentos = d.documentos || {};
-    const juicios = d.juicios || [];
-    const polizas = d.polizas || [];
-    const siniestros = d.siniestros || [];
-    const mantenimiento = d.mantenimiento || [];
-    const empleados = d.empleados || [];
-    const hoy = new Date().toLocaleDateString('es-AR');
-
-    // ---------- Portada ----------
-    doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(...NAVY);
-    doc.text('INFORME DE CIERRE Y TRASPASO DE ADMINISTRACIÓN', M, y, {maxWidth: ANCHO}); y += 10;
-    doc.setFont('helvetica','italic'); doc.setFontSize(10); doc.setTextColor(...GOLD);
-    doc.text('Su consorcio, nuestro legado', M, y); y += 8;
-    doc.setTextColor(...TEXTO);
-    parrafo(`Consorcio: ${consorcio.nombreDireccion||'—'}`, {bold:true, size:11});
-    parrafo(`Fecha de generación de este informe: ${hoy}`);
-    parrafo('Este informe reúne, con base en los datos cargados en el sistema a la fecha indicada, la documentación e información que la Ley 941 (art. 9°) y la práctica habitual exigen entregar a la administración entrante (o al Consejo de Propietarios) al cesar en el cargo -- por renuncia, remoción o no renovación -- dentro de los 15 días hábiles desde el cese, sin poder retener nada bajo ningún concepto, ni siquiera por honorarios pendientes. No reemplaza la entrega física/digital de los libros, comprobantes y demás documentación respaldatoria detallada en cada sección.');
-    y += 2;
-
-    heading('1. DATOS DEL CONSORCIO Y DE LA ADMINISTRACIÓN SALIENTE');
-    doc.autoTable({
-      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-      body: [
-        ['Consorcio', consorcio.nombreDireccion||'—', 'CUIT del consorcio', consorcio.cuit||'—'],
-        ['Administración', admin.nombre||'—', 'Matrícula RPA', admin.rpa||'—'],
-        ['CUIT administración', admin.cuit||'—', 'Teléfono', admin.telefono||'—'],
-        ['Domicilio', admin.domicilio||'—', 'Email', admin.email||'—'],
-      ]
-    });
-    y = doc.lastAutoTable.finalY + 8;
-
-    heading('2. LIBRO DE REGISTRO DE PROPIETARIOS Y ESTADO DE DEUDAS POR UNIDAD');
-    parrafo(`Período de referencia: ${resumen.periodo||'—'}. Total de unidades: ${unidades.length}. Deuda total registrada: ${fmt(resumen.deudaTotal)}.`);
-    if(unidades.length){
-      doc.autoTable({
-        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-        head: [['UF', 'Piso/Dpto.', 'Propietario', 'Deuda ($)']],
-        body: unidades.map(u=>[String(u.uf||''), String(u.pisoDpto||''), String(u.propietario||''), fmt(u.deuda)])
-      });
-      y = doc.lastAutoTable.finalY + 8;
-    }
-
-    heading('3. FONDO DE RESERVA Y CUENTAS BANCARIAS DEL CONSORCIO');
-    parrafo(`Saldo del Fondo de Reserva al último cierre: ${fmt(resumen.totales && resumen.totales.saldoFondoReservaCierre)}. El detalle completo de movimientos está en el Libro del Fondo de Reserva del sistema.`);
-    doc.autoTable({
-      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-      head: [['Cuenta', 'Banco', 'Sucursal', 'N° de cuenta', 'CBU', 'Alias']],
-      body: [
-        ['Cuenta Corriente', formaPago.banco||'—', formaPago.sucursal||'—', formaPago.numeroCuenta||'—', formaPago.cbu||'—', formaPago.alias||'—'],
-        ['Fondo de Reserva', fondoReserva.banco||'—', fondoReserva.sucursal||'—', fondoReserva.numeroCuenta||'—', fondoReserva.cbu||'—', fondoReserva.alias||'—'],
-      ]
-    });
-    y = doc.lastAutoTable.finalY + 8;
-
-    heading('4. LEGAJOS DEL PERSONAL');
-    if(empleados.length){
-      doc.autoTable({
-        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-        head: [['Nombre', 'CUIL', 'Categoría CCT 589/10', 'Fecha de ingreso']],
-        body: empleados.map(e=>[String(e.nombre||''), String(e.cuil||''), String(e.categoria||''), String(e.fechaIngreso||'')])
-      });
-      y = doc.lastAutoTable.finalY + 8;
-    } else {
-      parrafo('Este consorcio no tiene legajos de personal cargados.');
-    }
-
-    heading('5. PÓLIZAS DE SEGURO VIGENTES');
-    if(polizas.length){
-      doc.autoTable({
-        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-        head: [['Aseguradora', 'N° de póliza', 'Cobertura / nota', 'Desde', 'Hasta', 'Prima mensual ($)']],
-        body: polizas.map(p=>[String(p.proveedor||''), String(p.numeroPoliza||''), String(p.descripcion||''), String(p.fechaInicio||''), String(p.fechaVencimiento||''), p.primaMensual?fmt(p.primaMensual):''])
-      });
-      y = doc.lastAutoTable.finalY + 8;
-    } else {
-      parrafo('No hay pólizas de seguro cargadas para este consorcio.');
-    }
-
-    heading('5.1 SINIESTROS -- HISTORIAL');
-    if(siniestros.length){
-      doc.autoTable({
-        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-        head: [['N° siniestro', 'Póliza', 'Fecha del hecho', 'Descripción', 'Total pagado ($)', 'Franquicia ($)', 'Indemnización ($)', 'Estado']],
-        body: siniestros.map(s=>[String(s.numeroSiniestro||''), String(s.poliza||''), String(s.fechaHecho||''), String(s.descripcion||''), s.totalPagado?fmt(s.totalPagado):'', s.franquicia?fmt(s.franquicia):'', s.indemnizacionEsperada?fmt(s.indemnizacionEsperada):'', String(s.estado||'')])
-      });
-      y = doc.lastAutoTable.finalY + 8;
-    } else {
-      parrafo('No hay siniestros cargados en el historial de este consorcio.');
-    }
-
-    heading('5.2 HISTORIAL DE MANTENIMIENTO');
-    if(mantenimiento.length){
-      doc.autoTable({
-        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-        head: [['Ubicación / equipo', 'Fecha', 'Tipo', 'Proveedor', 'Descripción', 'Costo ($)']],
-        body: mantenimiento.map(m=>[String(m.ubicacionEquipo||''), String(m.fecha||''), String(m.tipo||''), String(m.proveedor||''), String(m.descripcion||''), m.costo?fmt(m.costo):''])
-      });
-      y = doc.lastAutoTable.finalY + 8;
-    } else {
-      parrafo('No hay trabajos de mantenimiento cargados en el historial de este consorcio.');
-    }
-
-    heading('6. JUICIOS EN TRÁMITE (A FAVOR Y EN CONTRA DEL CONSORCIO)');
-    if(juicios.length){
-      doc.autoTable({
-        ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-        head: [['Carátula', 'Tipo', 'Expediente', 'Juzgado', 'Monto reclamado ($)', 'Estado procesal', 'Letrado/a']],
-        body: juicios.map(j=>[String(j.caratula||''), String(j.tipo||''), String(j.expediente||''), String(j.juzgado||''), j.montoReclamado?fmt(j.montoReclamado):'', String(j.estado||''), String(j.letrado||'')])
-      });
-      y = doc.lastAutoTable.finalY + 8;
-    } else {
-      parrafo('No hay juicios cargados para este consorcio, ni a favor ni en contra.');
-    }
-
-    heading('7. DOCUMENTOS LEGALES DEL CONSORCIO');
-    doc.autoTable({
-      ...AUTOTABLE_BASE, startY:y, margin:{left:M,right:M}, theme:'grid',
-      head: [['Documento', 'Estado']],
-      body: [
-        ['Manual de Buenas Prácticas Consorciales', documentos.manual ? 'Cargado' : 'No cargado'],
-        ['Reglamento de Propiedad Horizontal', documentos.reglamento ? 'Cargado' : 'No cargado'],
-        ['Reglamento Interno / de Comportamiento', documentos.reglamentoInterno ? 'Cargado' : 'No cargado'],
-      ]
-    });
-    y = doc.lastAutoTable.finalY + 8;
-
-    heading('8. LIBRO BANCO Y LIBRO DE CAJA');
-    parrafo('El detalle completo de movimientos, conciliaciones y arqueos de caja de todo el período administrado está disponible en el sistema, en los paneles "Libro Banco y Conciliación bancaria" y "Libro de Caja", y debe entregarse junto con este informe.');
-
-    heading('9. CLAVES DE ACCESO Y CREDENCIALES DIGITALES');
-    parrafo('Recordatorio: junto con este informe corresponde entregar las claves de acceso a home banking, portales de ARCA/AGIP y cualquier otro sistema usado para administrar este consorcio -- este informe no puede verificar ese punto de forma automática.');
-
-    // Numeración de páginas
-    const totalPaginas = doc.internal.getNumberOfPages();
-    for(let p=1; p<=totalPaginas; p++){
-      doc.setPage(p);
-      doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(140,140,140);
-      doc.text(`${p} / ${totalPaginas}`, 105, 292, {align:'center'});
-    }
-
-    const nombreConsorcio = (consorcio.nombreDireccion||'Consorcio').replace(/[^\w\-]+/g,'_');
-    doc.save(`Informe_Cierre_y_Traspaso_${nombreConsorcio}.pdf`);
-  }
-
   /* ---------- Render all modules for current role ---------- */
   /* ---------------------------------------------------------------------
      Montaje BAJO DEMANDA: antes, renderAll() montaba los ~27 paneles de
@@ -12162,10 +11338,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       {key:'expediente', label:'Expediente', placeholder:'N°'},
       {key:'juzgado', label:'Juzgado', placeholder:''},
       {key:'objeto', label:'Objeto', type:'textarea', placeholder:'Qué se reclama'},
-      {key:'montoReclamado', label:'Monto reclamado ($)', numeric:true, placeholder:'0'},
-      {key:'estado', label:'Estado procesal', placeholder:'En trámite / Sentencia / Archivado'},
-      {key:'letrado', label:'Letrado/a del consorcio', placeholder:'Nombre y matrícula'},
-      {key:'observaciones', label:'Observaciones', type:'textarea', placeholder:''},
+      {key:'estado', label:'Estado', placeholder:'En trámite / Sentencia / Archivado'},
     ], {emptyText:'No hay juicios cargados.', vistaTarjetas:true}),
     reserva: () => mountLibroBancoConciliacion('reserva-mount', 'naken-reserva-movimientos', 'naken-reserva-conciliacion', {
       cuentaKey: 'naken-reserva-cuenta-bancaria',
@@ -12190,49 +11363,19 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     }),
     caja: () => mountLibroCaja('caja-mount', 'naken-caja-movimientos', 'naken-caja-arqueos'),
     novedades: () => { if(role==='admin') mountNovedades('novedades-mount', 'naken-novedades'); },
-    segurosdepositos: async () => {
-      // El respaldo a la planilla del consorcio es "mejor esfuerzo": si todavía no está vinculada
-      // la planilla (spreadsheetId vacío) o falla la escritura, el dato de todos modos ya quedó
-      // guardado en el almacenamiento de siempre -- respaldarSegurosEnPlanilla nunca bloquea ni
-      // rompe el guardado normal, solo suma una copia extra cuando puede.
-      const spreadsheetId = await getSpreadsheetIdActivo();
-      async function respaldar(datos){
-        if(!spreadsheetId || role!=='admin') return;
-        try{ await window.storage.respaldarSegurosEnPlanilla(Object.assign({ spreadsheetId }, datos)); }
-        catch(e){ console.error('No se pudo respaldar en la planilla del consorcio:', e); }
-      }
-
+    segurosdepositos: () => {
       mountLedger('polizas-mount', 'naken-polizas', [
-        {key:'proveedor', label:'Aseguradora', placeholder:''},
+        {key:'proveedor', label:'Proveedor', placeholder:''},
         {key:'numeroPoliza', label:'N° de póliza', placeholder:''},
-        {key:'fechaInicio', label:'Vigencia desde', placeholder:'DD/MM/AAAA'},
-        {key:'fechaVencimiento', label:'Vigencia hasta', placeholder:'DD/MM/AAAA'},
-        {key:'primaMensual', label:'Prima mensual ($)', numeric:true, placeholder:'0'},
-        {key:'descripcion', label:'Cobertura / nota', type:'textarea', placeholder:'Ej: Incendio, cristales (suma asegurada, franquicia), RC'},
-      ], {emptyText:'Sin pólizas cargadas.', onGuardado: rows => respaldar({ polizas: rows })});
-
-      mountLedger('siniestros-mount', 'naken-siniestros', [
-        {key:'numeroSiniestro', label:'N° de siniestro', placeholder:'Lo asigna la aseguradora'},
-        {key:'poliza', label:'Póliza asociada', placeholder:'Ej: Integral de consorcio'},
-        {key:'fechaHecho', label:'Fecha del hecho', placeholder:'DD/MM/AAAA'},
-        {key:'descripcion', label:'Descripción del hecho', type:'textarea', placeholder:'Qué pasó'},
-        {key:'denunciaPolicial', label:'Denuncia policial', placeholder:'Comisaría y N° de denuncia (si corresponde)'},
-        {key:'fechaDenunciaAseguradora', label:'Fecha de denuncia a la aseguradora', placeholder:'DD/MM/AAAA'},
-        {key:'proveedorReparacion', label:'Proveedor de reparación / reposición', placeholder:''},
-        {key:'detalle', label:'Detalle de lo reparado / repuesto', type:'textarea', placeholder:''},
-        {key:'totalPagado', label:'Total pagado por el consorcio ($)', numeric:true, placeholder:'0'},
-        {key:'franquicia', label:'Franquicia ($)', numeric:true, placeholder:'0'},
-        {key:'indemnizacionEsperada', label:'Indemnización esperada / cobrada ($)', numeric:true, placeholder:'0'},
-        {key:'estado', label:'Estado', placeholder:'Reclamo presentado / Pendiente del liquidador / Cobrado / Rechazado'},
-      ], {emptyText:'No hay siniestros cargados -- ojalá siga así.', vistaTarjetas:true, onGuardado: rows => respaldar({ siniestros: rows })});
-
+        {key:'descripcion', label:'Descripción', placeholder:'Ej: Incendio, RC, ABE'},
+        {key:'fechaVencimiento', label:'Vencimiento', placeholder:'DD/MM/AAAA'},
+      ], {emptyText:'Sin pólizas cargadas.'});
       mountLedger('depositos-mount', 'naken-depositos-no-identificados', [
         {key:'fecha', label:'Fecha', placeholder:'DD/MM/AAAA'},
         {key:'concepto', label:'Concepto', placeholder:''},
         {key:'importe', label:'Importe ($)', numeric:true, placeholder:'0'},
       ], {emptyText:'No hay depósitos sin identificar.'});
     },
-    mantenimiento: () => mountMantenimiento('mantenimiento-mount', 'mantenimiento-alertas-mount'),
     proveedores: () => {
       mountObleasQR('obleas-qr-mount', 'naken-obleas-qr');
       mountProveedores('proveedores-mount', 'naken-proveedores');
@@ -12283,8 +11426,6 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       });
     },
     remocion: () => {}, // contenido estático, sin datos que montar
-    retenciones: () => { if(role==='admin') mountRetenciones('retenciones-mount'); },
-    traspaso: () => { if(role==='admin') mountTraspaso('traspaso-mount'); },
   };
 
   const panelesMontados = new Set();
