@@ -1957,6 +1957,13 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         body: JSON.stringify({ action:'actualizarEdificio', id, campos, sessionToken: SESSION_TOKEN })
       }));
     },
+    async repararPlantilla(spreadsheetId){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'repararPlantilla', spreadsheetId, sessionToken: SESSION_TOKEN })
+      }));
+    },
     async informarPagoPropio(key, datos){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -7596,6 +7603,11 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         </div>
         <div id="${mountId}-preparar-facturas-msg" style="margin-bottom:14px;"></div>
         <div class="toolbar" style="margin-bottom:10px;">
+          <span style="font-size:12.5px;color:var(--gray-600);">Completa fórmulas faltantes de la planilla (saldo anterior, totales, Fondo de Reserva y datos de administración de unidades que no los tengan). Seguro de repetir; hacelo antes de generar los documentos con AutoCrat.</span>
+          <button class="btn ghost" id="${mountId}-reparar-planilla-btn">Reparar planilla</button>
+        </div>
+        <div id="${mountId}-reparar-planilla-msg" style="margin-bottom:14px;"></div>
+        <div class="toolbar" style="margin-bottom:10px;">
           <span style="font-size:12.5px;color:var(--gray-600);">Trae el saldo actual de la cuenta corriente (Libro Banco) a Estado_Financiero_Mensual.</span>
           <button class="btn ghost" id="${mountId}-traer-saldo-banco-btn">Traer saldo del banco</button>
         </div>
@@ -7613,6 +7625,19 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           const res = await window.storage.prepararCarpetaFacturasDelPeriodo(spreadsheetId);
           if(!res.ok){ msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error||'No se pudo preparar la carpeta.')}</div>`; return; }
           msg.innerHTML = `<div class="gate-msg ok">✓ Carpeta lista para ${escapeHtml(res.periodo)} (${res.comprobantesYaSumados||0} comprobante(s) ya sumado(s)): <a href="${escapeHtml(res.carpetaUrl)}" target="_blank" rel="noopener">${escapeHtml(res.carpetaUrl)}</a></div>`;
+        });
+      });
+      document.getElementById(mountId+'-reparar-planilla-btn').addEventListener('click', async (e)=>{
+        const btn = e.currentTarget;
+        const msg = document.getElementById(mountId+'-reparar-planilla-msg');
+        await withLoading(btn, 'Reparando…', async ()=>{
+          const res = await window.storage.repararPlantilla(spreadsheetId);
+          if(!res.ok){ msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error||'No se pudo reparar.')}</div>`; return; }
+          const r = res.reparaciones||{};
+          const total = (r.saldoAnterior||0)+(r.totales||0)+(r.patrimonial||0)+(r.resumenRubros||0)+(r.columnasUnidades||0);
+          msg.innerHTML = total===0
+            ? `<div class="gate-msg ok">✓ La planilla ya estaba completa, no hubo nada para reparar.</div>`
+            : `<div class="gate-msg ok">✓ Reparado: ${r.columnasUnidades||0} unidad(es) completada(s) con Fondo de Reserva y datos de administración, ${r.saldoAnterior||0} saldo(s) anterior, ${r.totales||0} total(es), ${(r.patrimonial||0)+(r.resumenRubros||0)} fórmula(s) de estado patrimonial/rubros.</div>`;
         });
       });
       document.getElementById(mountId+'-traer-saldo-banco-btn').addEventListener('click', async (e)=>{
@@ -7654,12 +7679,12 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           // variaciones extremas contra el mes anterior. Si hay algo, exige un check explícito
           // antes de habilitar el cierre (no alcanza con solo mostrarlo de pasada).
           const anomalias = preview.anomalias || [];
-          const bloqueTexto = (t)=>({monto_cero_o_negativo:'⚠ Monto en $0 o negativo',variacion_extrema:'📊 Variación fuera de lo normal'}[t] || t);
+          const bloqueTexto = (t)=>({monto_cero_o_negativo:'⚠ Monto en $0 o negativo',variacion_extrema:'📊 Variación fuera de lo normal',porcentuales_fondo_a:'⚖ Los porcentuales del Fondo A no suman 100%',porcentuales_fondo_b:'⚖ Gastos de Fondo B sin porcentuales que sumen 100%'}[t] || t);
           const lineaAnomalias = anomalias.length>0 ? `
             <div style="margin-top:10px;padding:10px 12px;background:#fff3f0;border-left:3px solid var(--danger,#c0392b);border-radius:4px;">
-              <b>Antes de cerrar, revisá esto — ${anomalias.length} unidad(es) con algo fuera de lo esperado:</b>
+              <b>Antes de cerrar, revisá esto — ${anomalias.length} aviso(s) con algo fuera de lo esperado:</b>
               <ul style="margin:8px 0 0 18px;padding:0;">
-                ${anomalias.map(a=>`<li><b>${escapeHtml(bloqueTexto(a.tipo))}</b> — Unidad ${escapeHtml(a.unidad)}: ${escapeHtml(a.detalle)}</li>`).join('')}
+                ${anomalias.map(a=>`<li><b>${escapeHtml(bloqueTexto(a.tipo))}</b> — ${a.unidad==='General' ? 'General' : 'Unidad '+escapeHtml(a.unidad)}: ${escapeHtml(a.detalle)}</li>`).join('')}
               </ul>
               <label style="display:block;margin-top:10px;font-size:12.5px;">
                 <input type="checkbox" id="${mountId}-anomalias-ack"> Revisé estas anomalías y quiero cerrar el mes igual.
