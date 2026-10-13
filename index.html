@@ -1346,6 +1346,15 @@
   @media (prefers-reduced-motion: reduce) {
     * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
   }
+
+  /* Celular: las tablas anchas (Expensas, Libro Banco, Libro de Caja…) quedaban cortadas porque la
+     página no se desplaza de costado (body con overflow-x:hidden): un propietario no veía Fondo A,
+     Fondo B ni el total a pagar. Ahora cada tabla se desplaza de costado dentro de su propia caja. */
+  @media (max-width: 820px){
+    .panel table{ display:block; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .panel table th, .panel table td{ white-space:nowrap; }
+    .panel table td input, .panel table td select{ min-width:90px; }
+  }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -1775,7 +1784,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    Sin esto, los navegadores seguían usando el index.html anterior aunque
    se recargara la página, y una corrección publicada no llegaba a nadie.
    ===================================================================== */
-const APP_VERSION = '2026-10-13.8';
+const APP_VERSION = '2026-10-13.10';
 (function avisoVersionNueva(){
   async function revisar(){
     try{
@@ -2843,7 +2852,9 @@ const APP_VERSION = '2026-10-13.8';
     // Franja sólida navy con texto blanco centrado -- así se ven todos los títulos de sección en
     // el modelo de referencia, con un subtítulo opcional chico debajo (para citar la normativa).
     function bannerSeccion(texto, subtitulo){
-      saltoSiHaceFalta(subtitulo ? 16 : 11);
+      // Lugar para el título + unas filas de contenido: antes el título podía quedar solo al pie
+      // de una página y su contenido arrancar en la siguiente.
+      saltoSiHaceFalta(subtitulo ? 45 : 40);
       doc.setFillColor(...NAVY);
       doc.rect(M, y, ANCHO_UTIL, subtitulo ? 12 : 7.5, 'F');
       doc.setTextColor(255,255,255);
@@ -3123,8 +3134,26 @@ const APP_VERSION = '2026-10-13.8';
       didParseCell:(d)=>{ if(d.row.index===2){ d.cell.styles.fillColor=FILA_TOTAL; d.cell.styles.fontStyle='bold'; } },
     });
 
-    // ---------- ESTADO FINANCIERO Y PATRIMONIAL (individual de esta unidad) ----------
-    bannerSeccion('ESTADO FINANCIERO Y PATRIMONIAL (Art. 10 inc. c e i Ley 941)');
+    // ---------- ESTADO FINANCIERO Y PATRIMONIAL DEL CONSORCIO (Ley 941) ----------
+    // Antes esta sección mostraba solo la cuota de la unidad con este título. El servidor ya
+    // manda el estado financiero real del consorcio (Estado_Financiero del período); se muestra acá.
+    const ef = data.estadoFinanciero;
+    if(ef){
+      bannerSeccion('ESTADO FINANCIERO Y PATRIMONIAL (Art. 10 inc. c e i Ley 941)');
+      const bloques = [['Movimientos del período', ef.financiero], ['Banco', ef.banco], ['Situación patrimonial', ef.patrimonial]];
+      bloques.forEach(([titulo, filas])=>{
+        const filasValidas = (filas||[]).filter(f=>f && String(f.concepto||'').trim());
+        if(!filasValidas.length) return;
+        tablaConBordes({
+          head: [[titulo, '']],
+          body: filasValidas.map(f=>[String(f.concepto), fmt(f.importe)]),
+          columnStyles:{ 0:{cellWidth:'auto'}, 1:{halign:'right',cellWidth:35} },
+        });
+      });
+    }
+
+    // ---------- DETALLE DE LA LIQUIDACIÓN DE ESTA UNIDAD ----------
+    bannerSeccion('DETALLE DE TU LIQUIDACIÓN' + (mu && mu.pisoDpto ? ' — ' + mu.pisoDpto : ''));
     tablaConBordes({
       body: mu ? [
         ['Fondo A (cuota del período)', fmt(mu.importeFondoA)],
@@ -3195,12 +3224,18 @@ const APP_VERSION = '2026-10-13.8';
     y += 7.5 + 6;
     doc.setTextColor(...TEXTO);
     const unidadesTabla = data.unidades || [];
-    const sumar = (campo) => unidadesTabla.reduce((s,u)=>s+(Number(u[campo])||0), 0);
+    // Un dato que el servidor no le manda a este usuario (deuda de otra unidad, para un propietario)
+    // llega como null: se muestra "—", nunca "$ 0" (parecería que nadie debe). Si una columna tiene
+    // datos ocultos, su total también es "—", salvo la deuda, cuyo total sí es público.
+    const oculto = (v)=> v===null || v===undefined;
+    const fmtO = (v)=> oculto(v) ? '—' : fmt(v);
+    const sumar = (campo) => unidadesTabla.some(u=>oculto(u[campo])) ? null : unidadesTabla.reduce((s,u)=>s+(Number(u[campo])||0), 0);
+    const totalDeuda = unidadesTabla.some(u=>oculto(u.deuda)) ? data.deudaTotal : sumar('deuda');
     const filaTotalUnidades = [
       '', '', 'TOTAL',
-      fmt(sumar('saldoAnterior')), fmt(sumar('pagoRecibido')), fmt(sumar('deuda')), fmt(sumar('interesesPunitorios')),
-      (sumar('pctFondoA')*100).toFixed(0)+'%', fmt(sumar('importeFondoA')), fmt(sumar('importeFondoB')), fmt(sumar('redondeo')),
-      fmt(sumar('totalPrimerVto')), fmt(sumar('totalSegundoVto')),
+      fmtO(sumar('saldoAnterior')), fmtO(sumar('pagoRecibido')), fmtO(totalDeuda), fmtO(sumar('interesesPunitorios')),
+      (sumar('pctFondoA')*100).toFixed(0)+'%', fmt(sumar('importeFondoA')), fmt(sumar('importeFondoB')), fmt(sumar('importeFondoReserva')), fmt(sumar('redondeo')),
+      fmtO(sumar('totalPrimerVto')), fmtO(sumar('totalSegundoVto')),
     ];
     doc.autoTable({
       // Ancho de cada columna fijado a mano -- con ancho automático, un monto como "$ 1.000.000"
@@ -3210,16 +3245,18 @@ const APP_VERSION = '2026-10-13.8';
       headStyles:{ fillColor:[240,241,243], textColor:TEXTO, fontStyle:'bold', fontSize:6.8 },
       columnStyles:{
         0:{cellWidth:10}, 1:{cellWidth:16}, 2:{cellWidth:32},
-        3:{halign:'right',cellWidth:20}, 4:{halign:'right',cellWidth:18}, 5:{halign:'right',cellWidth:20}, 6:{halign:'right',cellWidth:18},
-        7:{halign:'right',cellWidth:12}, 8:{halign:'right',cellWidth:20}, 9:{halign:'right',cellWidth:20}, 10:{halign:'right',cellWidth:18},
-        11:{halign:'right',cellWidth:24}, 12:{halign:'right',cellWidth:24},
+        3:{halign:'right',cellWidth:19}, 4:{halign:'right',cellWidth:16}, 5:{halign:'right',cellWidth:19}, 6:{halign:'right',cellWidth:16},
+        7:{halign:'right',cellWidth:12}, 8:{halign:'right',cellWidth:19}, 9:{halign:'right',cellWidth:17}, 10:{halign:'right',cellWidth:18}, 11:{halign:'right',cellWidth:15},
+        12:{halign:'right',cellWidth:22}, 13:{halign:'right',cellWidth:22},
       },
-      head: [['UF','Piso/Dpto.','Propietario/a','Saldo Ant.','Pago','Deuda','Intereses','%','EXP A','EXP B','Redondeo','Total 1° Vto.','Total 2° Vto.']],
+      // "F. Reserva": antes faltaba esta columna y la fila no cerraba (EXP A + deuda + intereses
+      // no daba el total): no se veía de dónde salía la diferencia.
+      head: [['UF','Piso/Dpto.','Propietario/a','Saldo Ant.','Pago','Deuda','Intereses','%','EXP A','EXP B','F. Reserva','Redondeo','Total 1° Vto.','Total 2° Vto.']],
       body: [
         ...unidadesTabla.map(u=>[
-          u.uf||'', u.pisoDpto||'', u.propietario||'', fmt(u.saldoAnterior), fmt(u.pagoRecibido), fmt(u.deuda), fmt(u.interesesPunitorios),
-          u.pctFondoA ? (u.pctFondoA*100).toFixed(2)+'%' : '0%', fmt(u.importeFondoA), fmt(u.importeFondoB), fmt(u.redondeo),
-          fmt(u.totalPrimerVto), fmt(u.totalSegundoVto)
+          u.uf||'', u.pisoDpto||'', oculto(u.propietario) ? '—' : (u.propietario||''), fmtO(u.saldoAnterior), fmtO(u.pagoRecibido), fmtO(u.deuda), fmtO(u.interesesPunitorios),
+          u.pctFondoA ? (u.pctFondoA*100).toFixed(2)+'%' : '0%', fmt(u.importeFondoA), fmt(u.importeFondoB), fmt(u.importeFondoReserva), fmt(u.redondeo),
+          fmtO(u.totalPrimerVto), fmtO(u.totalSegundoVto)
         ]),
         filaTotalUnidades,
       ],
@@ -5213,8 +5250,10 @@ const APP_VERSION = '2026-10-13.8';
   /* ---------- Edificios administrados (para el selector del alta de propietarios) ---------- */
   const _cache = { edificios: null, edificiosAt: 0, resumen: {}, config: {} };
   const CACHE_TTL_MS = 20000;
+  let _frescoHasta = 0; // durante unos segundos después de "Actualizar", el servidor no usa su caché
   function clearAppCache(){
     _cache.edificios = null; _cache.edificiosAt = 0; _cache.resumen = {}; _cache.config = {};
+    _frescoHasta = Date.now() + 20000;
   }
   async function getEdificios(){
     const now = Date.now();
@@ -5256,7 +5295,7 @@ const APP_VERSION = '2026-10-13.8';
     const now = Date.now();
     const cached = _cache.resumen[cacheKey];
     if(cached && (now - cached.at) < CACHE_TTL_MS) return cached.data;
-    const url = `${APPS_SCRIPT_URL}?action=resumenConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&periodo=${encodeURIComponent(periodo||'')}&sessionToken=${encodeURIComponent(window.storage.getSessionToken()||'')}`;
+    const url = `${APPS_SCRIPT_URL}?action=resumenConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&periodo=${encodeURIComponent(periodo||'')}&sessionToken=${encodeURIComponent(window.storage.getSessionToken()||'')}${Date.now() < _frescoHasta ? '&fresh=1' : ''}`;
     try{
       const data = await window.storage.conCupo(()=>fetch(url).then(r=>r.json()));
       const result = data && data.ok ? data : null;
