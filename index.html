@@ -4505,7 +4505,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
 
         const res = await window.storage.solicitarAcceso({
           consorcio, consorcioId: edificioRegistrado ? edificioRegistrado.id : null,
-          nombreCompleto, unidad, username, password, porcentual, estado
+          nombreCompleto, unidad, username, password, codigo
         });
         if(!res.ok){
           msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error || 'No se pudo enviar la solicitud.')}</div>`;
@@ -4951,10 +4951,16 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   }
 
   /* ---------- Helpers ---------- */
+  // Escapa también las comillas: este resultado se usa dentro de atributos (value="..."), y sin
+  // escaparlas un texto con " cortaba el valor al recargar (se perdía el resto del dato al volver
+  // a guardar) y permitía agregar atributos con código, por ejemplo onfocus="...".
   function escapeHtml(str){
-    const d = document.createElement('div');
-    d.textContent = str == null ? '' : str;
-    return d.innerHTML;
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
   function uid(){ return Math.random().toString(36).slice(2,9); }
 
@@ -5328,7 +5334,8 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
       mount.innerHTML = `<div class="empty">No se pudo leer la planilla de este consorcio. Puede que el ID esté mal cargado o que la hoja "Prorrateo_Mensual" no tenga datos todavía.</div>`;
       return;
     }
-    const fmtN = (v)=> '$ ' + (Number(v)||0).toLocaleString('es-AR',{maximumFractionDigits:0});
+    // null = dato que el servidor no le muestra a este usuario (deuda de otra unidad): "—", no "$ 0".
+    const fmtN = (v)=> (v===null || v===undefined) ? '—' : '$ ' + (Number(v)||0).toLocaleString('es-AR',{maximumFractionDigits:0});
     const fmtF = (v)=> v ? new Date(v).toLocaleDateString('es-AR') : '—';
     const unidades = data.unidades || [];
     // El botón genérico de arriba solo tiene sentido para un propietario (descarga la suya con
