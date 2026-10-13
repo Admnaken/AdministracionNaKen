@@ -1784,7 +1784,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    Sin esto, los navegadores seguían usando el index.html anterior aunque
    se recargara la página, y una corrección publicada no llegaba a nadie.
    ===================================================================== */
-const APP_VERSION = '2026-10-13.10';
+const APP_VERSION = '2026-10-13.11';
 (function avisoVersionNueva(){
   async function revisar(){
     try{
@@ -1861,7 +1861,7 @@ const APP_VERSION = '2026-10-13.10';
     });
   }
 
-  async function fetchConReintento(hacerFetch, intentos=4){
+  async function fetchConReintento(hacerFetch, intentos=4, timeoutMs=30000){
     return conCupo(async ()=>{
       let ultimoError;
       for(let i=0; i<intentos; i++){
@@ -1873,7 +1873,7 @@ const APP_VERSION = '2026-10-13.10';
           // Uso Promise.race en vez de pasar un AbortSignal para no tener que tocar los
           // decenas de llamados existentes a fetchConReintento en todo el archivo.
           const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => reject(new Error('TIMEOUT_30S')), 30000);
+            setTimeout(() => reject(new Error('TIMEOUT_30S')), timeoutMs);
           });
           const res = await Promise.race([hacerFetch(), timeoutPromise]);
           if(!res.ok) throw new Error('HTTP ' + res.status);
@@ -1889,7 +1889,7 @@ const APP_VERSION = '2026-10-13.10';
           }
           return datos;
         }catch(err){
-          ultimoError = (err && err.message === 'TIMEOUT_30S') ? new Error('El servidor tardó demasiado en responder (más de 30 segundos).') : err;
+          ultimoError = (err && err.message === 'TIMEOUT_30S') ? new Error('El servidor tardó demasiado en responder (más de ' + Math.round(timeoutMs/1000) + ' segundos).') : err;
           if(i < intentos-1){
             const espera = 400 * Math.pow(2, i) + Math.random()*200; // 400ms, 800ms, 1600ms + jitter
             await new Promise(r=>setTimeout(r, espera));
@@ -1937,12 +1937,15 @@ const APP_VERSION = '2026-10-13.10';
         body: JSON.stringify({ action:'restablecerPasswordUsuario', usuarioId, password, sessionToken: SESSION_TOKEN })
       }));
     },
-    async cerrarMes(spreadsheetId, confirmar, consorcioId){
+    async cerrarMes(spreadsheetId, confirmar, consorcioId, periodoEsperado){
+      // El cierre real se manda UNA sola vez y espera hasta 5 minutos: antes, si tardaba más de
+      // 30 s (edificio grande), se reintentaba solo y podía cerrar el mes siguiente. Además viaja
+      // el mes que se quiere cerrar, y el servidor rechaza el pedido si ese mes ya se cerró.
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action:'cerrarMes', spreadsheetId, confirmar: !!confirmar, consorcioId, sessionToken: SESSION_TOKEN })
-      }));
+        body: JSON.stringify({ action:'cerrarMes', spreadsheetId, confirmar: !!confirmar, consorcioId, periodoEsperado: periodoEsperado || '', sessionToken: SESSION_TOKEN })
+      }), confirmar ? 1 : 4, confirmar ? 330000 : 60000);
     },
     async prepararCarpetaFacturasDelPeriodo(spreadsheetId){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
@@ -7901,7 +7904,7 @@ const APP_VERSION = '2026-10-13.10';
           document.getElementById(mountId+'-cerrar-mes-confirmar').addEventListener('click', async ()=>{
             const btnConfirmar = document.getElementById(mountId+'-cerrar-mes-confirmar');
             await withLoading(btnConfirmar, 'Cerrando el mes…', async ()=>{
-              const res = await window.storage.cerrarMes(spreadsheetId, true, getActiveConsorcioId());
+              const res = await window.storage.cerrarMes(spreadsheetId, true, getActiveConsorcioId(), preview.periodoActual);
               if(!res.ok){ msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error||'No se pudo cerrar el mes.')}</div>`; return; }
               const fa = res.facturasArchivadas;
               let lineaFacturas = '';
