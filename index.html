@@ -1784,7 +1784,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    Sin esto, los navegadores seguían usando el index.html anterior aunque
    se recargara la página, y una corrección publicada no llegaba a nadie.
    ===================================================================== */
-const APP_VERSION = '2026-10-13.12';
+const APP_VERSION = '2026-10-13.13';
 (function avisoVersionNueva(){
   async function revisar(){
     try{
@@ -2523,6 +2523,16 @@ const APP_VERSION = '2026-10-13.12';
                   <div class="kpi highlight"><div class="label">Total al 1er vencimiento (${fmtF(u.fechaPrimerVto)})</div><div class="value">${fmtN(u.totalPrimerVto)}</div></div>
                   <div class="kpi"><div class="label">Total al 2do vencimiento (${fmtF(u.fechaSegundoVto)})</div><div class="value">${fmtN(u.totalSegundoVto)}</div></div>
                 </div>
+                ${(()=>{
+                  // Estado al día: los pagos verificados después del cierre del mes. Sin esto, el
+                  // propietario seguía viendo el total original aunque ya se le hubiera acreditado el pago.
+                  const ea = liq.estadoActual;
+                  if(!ea || !(Number(ea.pagoVerificado)>0)) return '';
+                  const fmt2 = (n)=>'$ ' + Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+                  return Number(ea.saldoPendiente)<=0
+                    ? `<div class="gate-msg ok" style="margin-top:12px;">✓ Pago acreditado: ${fmt2(ea.pagoVerificado)}. <b>Estás al día</b> con lo liquidado hasta ${escapeHtml(formatPeriodo(liq.periodo))}.</div>`
+                    : `<div class="gate-msg pending" style="margin-top:12px;">Pagos acreditados: ${fmt2(ea.pagoVerificado)}. <b>Saldo pendiente hoy: ${fmt2(ea.saldoPendiente)}</b> (incluye intereses, si corresponden).</div>`;
+                })()}
                 <p class="panel-note" style="margin-top:10px;font-size:12px;">¿Querés ver en qué se gastó este mes, factura por factura? Andá a "Facturas del mes" en el menú.</p>
               </div>
             `;
@@ -6785,7 +6795,12 @@ const APP_VERSION = '2026-10-13.12';
                         const desgloseInteres = (resDeuda.interesPagado>0)
                           ? ` (de los cuales $${fmt2(resDeuda.interesPagado)} se imputaron a intereses pendientes y $${fmt2(resDeuda.capitalPagado)} a capital)`
                           : '';
-                        p.notaAdmin = notaCorreccion + `Deuda actualizada sola: nuevo saldo pagado $${fmt2(resDeuda.pagoRecibidoAcumulado)}${desgloseInteres}.`;
+                        // Lo que importa al propietario y al admin: cuánto queda pendiente después de este pago.
+                        const pendiente = Math.max(0, (Number(resDeuda.deudaResultante)||0) + (Number(resDeuda.interesRestante)||0));
+                        const lineaSaldo = pendiente < 0.01
+                          ? ' Quedó al día: saldo pendiente $ 0,00.'
+                          : ` Saldo pendiente después de este pago: $${fmt2(pendiente)}.`;
+                        p.notaAdmin = notaCorreccion + `Pago acreditado por $${fmt2(monto)}${desgloseInteres}.` + lineaSaldo;
                       } else if(resDeuda && resDeuda.aviso){
                         p.notaAdmin = notaCorreccion + resDeuda.aviso;
                       } else if(resDeuda && !resDeuda.ok){
