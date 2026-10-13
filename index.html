@@ -1775,7 +1775,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    Sin esto, los navegadores seguían usando el index.html anterior aunque
    se recargara la página, y una corrección publicada no llegaba a nadie.
    ===================================================================== */
-const APP_VERSION = '2026-10-13.7';
+const APP_VERSION = '2026-10-13.8';
 (function avisoVersionNueva(){
   async function revisar(){
     try{
@@ -5109,6 +5109,7 @@ const APP_VERSION = '2026-10-13.7';
   function parseMontoFlexible(v){
     if(typeof v==='number') return isNaN(v)?0:v;
     let t = String(v==null?'':v).replace(/[$\s]/g,'');
+    if(/[^0-9.,-]/.test(t)) return 0; // con letras no es un monto: no se suma ("50000abc" antes contaba como 50.000)
     if(t.indexOf(',')!==-1) t = t.replace(/\./g,'').replace(',','.');
     else if(!/^-?\d+\.\d{1,2}$/.test(t)) t = t.replace(/\./g,'');
     const n = parseFloat(t);
