@@ -4511,7 +4511,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error || 'No se pudo enviar la solicitud.')}</div>`;
           return;
         }
-        msg.innerHTML = verificado
+        // Manda lo que decidió el servidor (res.estado); el chequeo de arriba es solo para avisar
+        // antes si el código está mal. Si el servidor es viejo y no devuelve estado, se usa el local.
+        const habilitadoReal = res.estado ? res.estado === 'habilitado' : verificado;
+        msg.innerHTML = habilitadoReal
           ? `<div class="gate-msg ok">¡Listo! Tu acceso ya está habilitado — entrá con tu usuario y clave desde "Ya tengo mi acceso".</div>`
           : `<div class="gate-msg ok">Solicitud enviada. Vas a poder ingresar cuando la administración la habilite.</div>`;
         document.getElementById('req-consorcio').value='';
@@ -6713,15 +6716,23 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
         }
         st.textContent = `Subiendo (${sizeMB} MB)...`;
         st.style.color = 'var(--brass)';
-        try{
-          const url = await window.uploadFileToDrive(file, currentUser ? currentUser.consorcio : '');
-          document.getElementById('cp-comprobante-link').value = url;
-          st.textContent = 'Comprobante subido ✓';
-          st.style.color = 'var(--ok)';
-        }catch(err){
-          st.textContent = 'No se pudo subir: ' + (err && err.message ? err.message : 'error desconocido');
-          st.style.color = 'var(--danger)';
-        }
+        document.getElementById('cp-comprobante-link').value = '';
+        // "Informar" espera esta promesa: antes, si se tocaba Informar mientras el archivo todavía
+        // subía, el pago se guardaba SIN comprobante, y el link terminaba pegándose al pago siguiente.
+        window.__cpSubidaEnCurso = (async ()=>{
+          try{
+            const url = await window.uploadFileToDrive(file, currentUser ? currentUser.consorcio : '');
+            document.getElementById('cp-comprobante-link').value = url;
+            st.textContent = 'Comprobante subido ✓';
+            st.style.color = 'var(--ok)';
+            return url;
+          }catch(err){
+            st.textContent = 'No se pudo subir: ' + (err && err.message ? err.message : 'error desconocido');
+            st.style.color = 'var(--danger)';
+            return '';
+          }
+        })();
+        await window.__cpSubidaEnCurso;
       });
 
       document.getElementById('cp-submit').addEventListener('click', async (e)=>{
@@ -6733,12 +6744,21 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           : periodoSelect.value==='__total__' ? 'Pago total (cubre toda la deuda pendiente)'
           : periodoSelect.value;
         const observaciones = document.getElementById('cp-observaciones').value.trim();
-        const comprobante = document.getElementById('cp-comprobante-link').value;
-        if(!monto){ setStatus(statusId,'error'); return; }
+        const montoNum = Number(String(monto).replace(/\./g,'').replace(',','.'));
+        if(!monto || !(montoNum > 0)){ setStatus(statusId,'error'); alert('Escribí el monto que pagaste.'); return; }
         btn.disabled = true;
         const textoOriginal = btn.textContent;
         btn.textContent = 'Enviando…';
         try{
+          if(window.__cpSubidaEnCurso){
+            btn.textContent = 'Esperando el comprobante…';
+            await window.__cpSubidaEnCurso;
+            btn.textContent = 'Enviando…';
+          }
+          const comprobante = document.getElementById('cp-comprobante-link').value;
+          if(!comprobante && !confirm('No adjuntaste comprobante. La administración puede tardar más en identificar tu pago. ¿Informarlo igual?')){
+            return;
+          }
           setStatus(statusId,'saving');
           const res = await window.storage.informarPagoPropio(nsKey('naken-pagos-informados'), { monto, periodo, comprobante, observaciones });
           if(!res.ok){
@@ -6754,6 +6774,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
           document.getElementById('cp-periodo-manual').style.display = 'none';
           document.getElementById('cp-observaciones').value = '';
           document.getElementById('cp-comprobante-link').value = '';
+          window.__cpSubidaEnCurso = null;
           document.getElementById('cp-file').value = '';
           document.getElementById('cp-file-status').textContent = '';
           document.getElementById('cp-file-nombre').textContent = 'Ningún archivo elegido todavía';
