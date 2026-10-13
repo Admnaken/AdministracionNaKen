@@ -5208,7 +5208,10 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
   /* ---------- Unidades funcionales de un consorcio: para el desplegable del formulario de alta ---------- */
   async function fetchUnidadesConsorcio(spreadsheetId){
     if(!spreadsheetId) return null;
-    const url = `${APPS_SCRIPT_URL}?action=unidadesConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}`;
+    // Con sesión de admin, el servidor agrega el nombre del titular (para comparar contra las
+    // solicitudes de acceso); sin sesión (formulario público) sigue sin devolver nombres.
+    const tok = (window.storage && window.storage.getSessionToken && window.storage.getSessionToken()) || '';
+    const url = `${APPS_SCRIPT_URL}?action=unidadesConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}${tok ? '&sessionToken='+encodeURIComponent(tok) : ''}`;
     try{
       const data = await window.storage.conCupo(()=>fetch(url).then(r=>r.json()));
       return data && data.ok ? data : null;
@@ -8042,6 +8045,19 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
     renderAltaWizard();
 
     refreshLists();
+    // La lista de solicitudes se armaba UNA sola vez al cargar la página: una solicitud nueva no
+    // aparecía hasta recargar todo (ni con "Actualizar" ni cambiando de consorcio), así que el
+    // admin no tenía cómo habilitar a nadie. Ahora se vuelve a pedir al abrir esta solapa y al
+    // tocar "Actualizar". Se registra una sola vez y siempre llama a la última versión montada.
+    window.__usuariosRefreshLists = refreshLists;
+    if(!window.__usuariosRefreshHook){
+      window.__usuariosRefreshHook = true;
+      const disparar = ()=>{ try{ window.__usuariosRefreshLists && window.__usuariosRefreshLists(); }catch(e){} };
+      const navU = document.querySelector('.navbtn[data-panel="usuarios"]');
+      if(navU) navU.addEventListener('click', disparar);
+      const btnAct = document.getElementById('global-refresh-btn');
+      if(btnAct) btnAct.addEventListener('click', ()=>setTimeout(disparar, 1500));
+    }
   }
 
   /* ---------- Libro Banco + Conciliación bancaria (módulo unificado) ----------
