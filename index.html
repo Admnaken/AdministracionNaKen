@@ -1784,7 +1784,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    Sin esto, los navegadores seguían usando el index.html anterior aunque
    se recargara la página, y una corrección publicada no llegaba a nadie.
    ===================================================================== */
-const APP_VERSION = '2026-10-13.11';
+const APP_VERSION = '2026-10-13.12';
 (function avisoVersionNueva(){
   async function revisar(){
     try{
@@ -2659,8 +2659,11 @@ const APP_VERSION = '2026-10-13.11';
     });
     const aporteReserva = resumen && resumen.totales ? num(resumen.totales.aporteFondoReservaGeneral) : 0;
     if(aporteReserva > 0) porRubroActual['Fondo de Reserva'] = (porRubroActual['Fondo de Reserva']||0) + aporteReserva;
-    const rubros = Object.entries(porRubroActual).filter(([,v])=>v>0).map(([rubro,total])=>({rubro,total}));
-    const bucketColors = ['#2EB7E5','#5B8DB8','#E8952C','#8D5BB8','#C9A84C','#6EA37A','#B8615B','#9AA39C'];
+    // De mayor a menor: la torta y su lista se leen en el orden que importa.
+    const rubros = Object.entries(porRubroActual).filter(([,v])=>v>0).map(([rubro,total])=>({rubro,total})).sort((a,b)=>num(b.total)-num(a.total));
+    // 11 colores distintos (10 rubros + Fondo de Reserva): antes eran 8 y, con 10 categorías, dos
+    // pares de rubros compartían color y no se distinguían en la torta.
+    const bucketColors = ['#2EB7E5','#0B3D5C','#E8952C','#8D5BB8','#C9A84C','#6EA37A','#B8615B','#5B8DB8','#D96BA8','#7A6F5A','#9AA39C'];
     const catLabels = rubros.map(r=>r.rubro);
     const catValues = rubros.map(r=>num(r.total));
     const catColors = rubros.map((r,i)=>bucketColors[i % bucketColors.length]);
@@ -2672,6 +2675,7 @@ const APP_VERSION = '2026-10-13.11';
     if(ctx1 && window.Chart){
       if(catLabels.length===0){
         ctx1.getContext('2d').clearRect(0,0,ctx1.width,ctx1.height);
+        const leyendaVacia = document.getElementById('chart-gastos-leyenda'); if(leyendaVacia) leyendaVacia.innerHTML = '';
         if(captionEl) captionEl.textContent = spreadsheetIdActivo ? 'Todavía no hay datos cargados este período.' : 'Este consorcio todavía no tiene la planilla de liquidación vinculada.';
       } else {
         chartGastos = new Chart(ctx1, {
@@ -2679,25 +2683,30 @@ const APP_VERSION = '2026-10-13.11';
           data: { labels: catLabels, datasets: [{ data: catValues, backgroundColor: catColors, borderWidth: 2, borderColor: '#fff' }] },
           options: {
             plugins: {
-              legend: {
-                position: 'bottom',
-                labels: {
-                  font: { size: 12, weight: '600' },
-                  padding: 14,
-                  generateLabels: (chart)=> chart.data.labels.map((label,i)=>{
-                    const pct = Math.round(chart.data.datasets[0].data[i]/total*100);
-                    return {
-                      text: `${label} — ${pct}%`,
-                      fillStyle: chart.data.datasets[0].backgroundColor[i],
-                      strokeStyle: '#fff', lineWidth: 1, index: i
-                    };
-                  })
-                }
-              },
+              // Las referencias van como lista HTML debajo (ver más abajo): dentro del gráfico no se
+              // parten en dos líneas, y la más larga ("1 - Remuneraciones al Personal y Cargas
+              // Sociales", justo la de mayor porcentaje) quedaba fuera en pantallas angostas.
+              legend: { display: false },
               tooltip: { callbacks: { label: (ctx)=> `${ctx.label}: ${fmt(ctx.parsed)} (${Math.round(ctx.parsed/total*100)}%)` } }
             }
           }
         });
+        let leyenda = document.getElementById('chart-gastos-leyenda');
+        if(!leyenda){
+          leyenda = document.createElement('ul');
+          leyenda.id = 'chart-gastos-leyenda';
+          leyenda.style.cssText = 'list-style:none;margin:14px 0 0;padding:0;display:grid;gap:6px;font-size:13px;';
+          ctx1.parentElement.insertBefore(leyenda, captionEl || null);
+        }
+        leyenda.innerHTML = catLabels.map((label,i)=>{
+          const pct = total>0 ? catValues[i]/total*100 : 0;
+          const pctTxt = pct>0 && pct<1 ? '<1%' : Math.round(pct)+'%';
+          return `<li style="display:grid;grid-template-columns:12px 1fr auto;gap:8px;align-items:start;">
+            <span style="width:12px;height:12px;border-radius:3px;margin-top:3px;background:${catColors[i]};"></span>
+            <span>${escapeHtml(label)}</span>
+            <span style="text-align:right;white-space:nowrap;"><b>${pctTxt}</b> · ${fmt(catValues[i])}</span>
+          </li>`;
+        }).join('');
         if(captionEl) captionEl.textContent = 'Así se sostiene la seguridad, el mantenimiento y el funcionamiento del edificio donde vivís.';
       }
     }
@@ -2716,9 +2725,33 @@ const APP_VERSION = '2026-10-13.11';
           type: 'bar',
           data: {
             labels: porPeriodo.map(p=>formatPeriodo(p.periodo)),
-            datasets: [{ label: 'Gasto total', data: porPeriodo.map(p=>num(p.total)), backgroundColor: '#2EB7E5' }]
+            // maxBarThickness: con uno o dos meses cargados, la barra ocupaba todo el ancho.
+            datasets: [{ label: 'Gasto total', data: porPeriodo.map(p=>num(p.total)), backgroundColor: '#2EB7E5', maxBarThickness: 56, borderRadius: 4 }]
           },
-          options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+          options: {
+            layout: { padding: { top: 22 } },
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: (c)=> 'Gasto total: ' + fmt(c.parsed.y) } }
+            },
+            scales: {
+              y: { beginAtZero: true, ticks: { callback: (v)=> v===0 ? '$ 0' : v>=1e6 ? '$ ' + (v/1e6).toLocaleString('es-AR',{maximumFractionDigits:1}) + ' M' : '$ ' + Math.round(v/1000).toLocaleString('es-AR') + ' mil' } }
+            }
+          },
+          // Monto escrito arriba de cada barra, para leerlo sin pasar el cursor (en el celular no hay cursor).
+          plugins: [{
+            id: 'montoSobreBarra',
+            afterDatasetsDraw(chart){
+              const g = chart.ctx; const meta = chart.getDatasetMeta(0);
+              g.save(); g.font = '600 11px Inter, system-ui, sans-serif'; g.fillStyle = '#14213d'; g.textAlign = 'center';
+              meta.data.forEach((bar,i)=>{
+                const v = chart.data.datasets[0].data[i];
+                const txt = v>=1e6 ? '$ ' + (v/1e6).toLocaleString('es-AR',{maximumFractionDigits:2}) + ' M' : fmt(v);
+                g.fillText(txt, bar.x, bar.y - 6);
+              });
+              g.restore();
+            }
+          }]
         });
         if(captionEl2) captionEl2.textContent = porPeriodo.length===1
           ? 'Todavía hay un solo período cargado — el gráfico va a empezar a mostrar la evolución apenas se publique el próximo mes.'
