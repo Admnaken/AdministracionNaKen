@@ -1786,7 +1786,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    Sin esto, los navegadores seguían usando el index.html anterior aunque
    se recargara la página, y una corrección publicada no llegaba a nadie.
    ===================================================================== */
-const APP_VERSION = '2026-10-15.12';
+const APP_VERSION = '2026-10-15.13';
 (function avisoVersionNueva(){
   async function revisar(){
     try{
@@ -12804,6 +12804,16 @@ const APP_VERSION = '2026-10-15.12';
         return;
       }
       lista.innerHTML = pendientes.map((p,i)=>{
+        // Pago gestionado en Contrataciones: se registra desde allá ("Registrar pago realizado"),
+        // que carga el gasto, las retenciones, el mantenimiento y el proveedor. Acá no se ofrece,
+        // para que el mismo pago no entre dos veces a la liquidación.
+        if(p.expediente){
+          return `
+          <div class="card" data-idx="${i}" style="margin-bottom:14px;padding:14px;border-left:3px solid var(--ok);">
+            <strong>${escapeHtml(p.proveedor)}</strong>${p.cuit?` · CUIT ${escapeHtml(p.cuit)}`:''} — ${fmt(p.importeTotal)} — ${escapeHtml(p.fecha)}
+            <p class="panel-note" style="margin:6px 0 0;">Tiene expediente en Contrataciones (<strong>${escapeHtml(p.expediente.servicio||p.expediente.id)}</strong>). Cuando se haga la transferencia, registrá el pago desde <a href="https://contrataciones.administracionnaken.com.ar/#/expediente/${encodeURIComponent(p.expediente.id)}?tab=vb" target="_blank" rel="noopener">Contrataciones</a>: el gasto se carga solo en la liquidación.</p>
+          </div>`;
+        }
         const sugerido = buscarEventoContrataciones(p, eventosContrataciones||[]);
         return `
         <div class="card" data-idx="${i}" style="margin-bottom:14px;padding:14px;">
@@ -12817,6 +12827,7 @@ const APP_VERSION = '2026-10-15.12';
               <div class="panel-note" style="margin:0;">Retenido: ${fmt(p.totalRetenido)} · Neto: ${fmt(p.netoFinal)}</div>
             </div>
           </div>
+          <p class="panel-note" style="margin:8px 0 0;color:var(--danger,#A03A3A);"><strong>⚠ Este pago no tiene expediente en Contrataciones.</strong> No pasó por los controles de contratación (presupuestos, documentación, vistos buenos). Registralo acá solo si es un gasto que no requiere expediente.</p>
           ${sugerido ? `<p class="panel-note" style="margin:8px 0 0;color:var(--brass,#8a6d2f);">Encontrado en Contrataciones: expediente <strong>${escapeHtml(sugerido.expedienteContrataciones)}</strong>${sugerido.link?` — <a href="${escapeHtml(sugerido.link)}" target="_blank" rel="noopener">ver</a>`:''} (datos precargados abajo, revisalos antes de guardar).</p>` : ''}
           <div class="config-row" style="grid-template-columns:1fr 1fr;margin-top:10px;">
             <div>
@@ -12863,6 +12874,7 @@ const APP_VERSION = '2026-10-15.12';
         btn.addEventListener('click', async ()=>{
           const idx = Number(btn.dataset.idx);
           const p = pendientes[idx];
+          if(!confirm(`Este pago a ${p.proveedor} por ${fmt(p.importeTotal)} no tiene expediente en Contrataciones. ¿Registrarlo igual en la liquidación?`)) return;
           const card = lista.querySelector(`.card[data-idx="${idx}"]`);
           const val = (f)=> card.querySelector(`[data-field="${f}"]`).value.trim();
           const statusId = `${mountId}-status-${idx}`;
