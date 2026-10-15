@@ -1784,7 +1784,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    Sin esto, los navegadores seguían usando el index.html anterior aunque
    se recargara la página, y una corrección publicada no llegaba a nadie.
    ===================================================================== */
-const APP_VERSION = '2026-10-13.13';
+const APP_VERSION = '2026-10-15.1';
 (function avisoVersionNueva(){
   async function revisar(){
     try{
@@ -1967,6 +1967,15 @@ const APP_VERSION = '2026-10-13.13';
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action:'registrarPagoVerificado', spreadsheetId, unidad, monto, periodo, idPago, consorcioId, fecha, sessionToken: SESSION_TOKEN })
       }));
+    },
+    async verificarPagosLote(spreadsheetId, consorcioId, items){
+      // Un solo envío, con espera larga: verificar 30 pagos lleva un par de minutos y no conviene
+      // que se reintente solo a mitad de camino (igual, cada pago es idempotente en el servidor).
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'verificarPagosLote', spreadsheetId, consorcioId, items, sessionToken: SESSION_TOKEN })
+      }), 1, 330000);
     },
     async perdonarInteresUnidad(spreadsheetId, unidad){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
@@ -6496,6 +6505,419 @@ const APP_VERSION = '2026-10-13.13';
     mount.innerHTML = cfg ? contactBlockHtml(cfg) : '';
   }
 
+  /* =======================================================================
+     VERIFICACIÓN RÁPIDA DE PAGOS — lógica (sin pantalla), para poder probarla aparte.
+     ======================================================================= */
+
+  // Fecha desde lo que traiga un extracto: Date, número de serie de Excel, "dd/mm/aaaa",
+  // "dd/mm/aa", "dd-mm-aaaa" o "aaaa-mm-dd". Devuelve un Date al mediodía (sin problemas de huso).
+  function parseFechaFlexible(v){
+    if(v instanceof Date && !isNaN(v)) return new Date(v.getFullYear(), v.getMonth(), v.getDate(), 12);
+    if(typeof v === 'number' && v > 20000 && v < 80000){ // serie de Excel (días desde 1899-12-30)
+      const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
+      return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12);
+    }
+    const t = String(v == null ? '' : v).trim();
+    let m = t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})(?:\s|$)/);
+    if(m){
+      let a = +m[3]; if(a < 100) a += 2000;
+      const d = new Date(a, +m[2]-1, +m[1], 12);
+      return (d.getDate() === +m[1] && d.getMonth() === +m[2]-1) ? d : null;
+    }
+    m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(m){ const d = new Date(+m[1], +m[2]-1, +m[3], 12); return isNaN(d) ? null : d; }
+    return null;
+  }
+  function fechaCorta(d){ return d ? String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear() : ''; }
+
+  // Importe de una celda de extracto: número, "1.234,56", "$ -1.234,56", "(1.234,56)" (negativo).
+  function importeExtracto(v){
+    if(typeof v === 'number') return v;
+    let t = String(v == null ? '' : v).trim();
+    if(!t) return 0;
+    let neg = false;
+    if(/^\(.*\)$/.test(t)){ neg = true; t = t.slice(1, -1); }
+    t = t.replace(/[$\s]|ARS/gi, '');
+    if(t.startsWith('-')){ neg = !neg; t = t.slice(1); }
+    if(t.endsWith('-')){ neg = !neg; t = t.slice(0, -1); }
+    const n = parseMontoFlexible(t);
+    return neg ? -n : n;
+  }
+
+  // Texto (CSV, TSV o filas copiadas del homebanking) → filas. Detecta el separador y respeta comillas.
+  function leerTablaTexto(texto){
+    const lineas = String(texto || '').replace(/\r\n?/g, '\n').split('\n').filter(l => l.trim() !== '');
+    if(!lineas.length) return [];
+    const muestra = lineas.slice(0, 15).join('\n');
+    const cuenta = (c)=> (muestra.match(new RegExp(c === '\t' ? '\t' : '\\' + c, 'g')) || []).length;
+    const sep = ['\t', ';', ','].map(c => [c, cuenta(c)]).sort((a,b)=> b[1]-a[1])[0][0];
+    return lineas.map(linea => {
+      const celdas = []; let actual = '', enComillas = false;
+      for(let i = 0; i < linea.length; i++){
+        const ch = linea[i];
+        if(ch === '"'){ if(enComillas && linea[i+1] === '"'){ actual += '"'; i++; } else enComillas = !enComillas; }
+        else if(ch === sep && !enComillas){ celdas.push(actual.trim()); actual = ''; }
+        else actual += ch;
+      }
+      celdas.push(actual.trim());
+      return celdas;
+    });
+  }
+
+  // Busca la fila de encabezados y adivina qué columna es cada cosa (el admin puede corregirlo).
+  function detectarColumnasExtracto(filas){
+    const norm = (s)=> String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    for(let f = 0; f < Math.min(filas.length, 25); f++){
+      const fila = filas[f].map(norm);
+      const col = (re)=> fila.findIndex(c => re.test(c));
+      const fecha = col(/fecha/);
+      const credito = col(/credito|haber|deposito|ingreso/);
+      const debito = col(/debito|debe|egreso|retiro/);
+      const importe = col(/importe|monto|valor/);
+      if(fecha >= 0 && (credito >= 0 || importe >= 0)){
+        return { filaEncabezado: f, fecha, credito, debito, importe: credito >= 0 ? -1 : importe,
+                 descripcion: col(/descrip|concepto|detalle|referencia|movimiento|leyenda|operacion/) };
+      }
+    }
+    return { filaEncabezado: -1, fecha: 0, credito: -1, debito: -1, importe: 1, descripcion: 2 };
+  }
+
+  // Filas + columnas → créditos (entradas de plata) del extracto.
+  function creditosDelExtracto(filas, map){
+    const out = [];
+    for(let f = map.filaEncabezado + 1; f < filas.length; f++){
+      const fila = filas[f] || [];
+      const fecha = parseFechaFlexible(fila[map.fecha]);
+      if(!fecha) continue;
+      const importe = map.credito >= 0 ? importeExtracto(fila[map.credito]) : importeExtracto(fila[map.importe]);
+      if(!(importe > 0)) continue; // solo entradas de plata
+      out.push({ idx: f, fecha, importe: Math.round(importe * 100) / 100, descripcion: map.descripcion >= 0 ? String(fila[map.descripcion] || '').trim() : '' });
+    }
+    return out;
+  }
+
+  /* Clasifica los pagos pendientes.
+     pagos: lista completa de pagos informados (se usan los verificados para no repetir créditos).
+     unidades: unidades del prorrateo (uf, pisoDpto, totalPrimerVto, totalSegundoVto).
+     creditos: créditos del extracto, o null si no se cargó ninguno. */
+  function clasificarPagosPendientes(pagos, unidades, creditos){
+    const TOL = 1; // $1 de tolerancia contra lo liquidado (la gente redondea)
+    const norm = (s)=> String(s == null ? '' : s).trim().toLowerCase();
+    const unidadDe = (u)=> unidades.find(x => norm(x.uf) === norm(u) || norm(x.pisoDpto) === norm(u)) || null;
+    const fmt = (n)=> '$ ' + Number(n || 0).toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2});
+    const dias = (a, b)=> Math.round((a - b) / 86400000);
+    const usados = new Set();
+    const buscarCredito = (monto, fechaInformado, tolerancia)=>{
+      if(!creditos) return null;
+      let mejor = null;
+      creditos.forEach((c, i)=>{
+        if(usados.has(i) || Math.abs(c.importe - monto) > tolerancia) return;
+        const d = fechaInformado ? dias(c.fecha, fechaInformado) : 0;
+        if(fechaInformado && (d < -20 || d > 3)) return; // depositado hasta 20 días antes de informarlo, o 3 después
+        const puntaje = Math.abs(c.importe - monto) * 100 + Math.abs(d);
+        if(!mejor || puntaje < mejor.puntaje) mejor = { i, puntaje };
+      });
+      if(!mejor) return null;
+      usados.add(mejor.i);
+      return creditos[mejor.i];
+    };
+
+    // 1) Los créditos que corresponden a pagos YA verificados no se vuelven a ofrecer.
+    let yaVerificados = 0;
+    pagos.filter(p => p.estado === 'Verificado').forEach(p => {
+      if(buscarCredito(parseMontoFlexible(p.monto), parseFechaFlexible(p.fecha), 0.01)) yaVerificados++;
+    });
+
+    // 2) Pendientes, del más viejo al más nuevo.
+    const pendientes = pagos.filter(p => p.estado === 'Pendiente de verificar')
+      .sort((a, b)=> (parseFechaFlexible(a.fecha) || 0) - (parseFechaFlexible(b.fecha) || 0));
+    const filas = pendientes.map(p => {
+      const monto = parseMontoFlexible(p.monto);
+      const u = unidadDe(p.unidad);
+      const t1 = u ? Number(u.totalPrimerVto) || 0 : 0, t2 = u ? Number(u.totalSegundoVto) || 0 : 0;
+      let contraDeuda = '';
+      if(!u) contraDeuda = 'No se encontró la unidad en el prorrateo.';
+      else if(Math.abs(monto - t1) <= TOL) contraDeuda = 'Coincide con el total al 1er vencimiento.';
+      else if(Math.abs(monto - t2) <= TOL) contraDeuda = 'Coincide con el total al 2do vencimiento.';
+      else if(monto < t1) contraDeuda = 'Pago parcial: faltan ' + fmt(t1 - monto) + ' para el total al 1er vencimiento.';
+      else if(monto > t2 + TOL) contraDeuda = 'Pagó ' + fmt(monto - t2) + ' más que el total al 2do vencimiento.';
+      else contraDeuda = 'Entre el 1er y el 2do vencimiento.';
+      const coincide = /^Coincide/.test(contraDeuda);
+
+      if(creditos){
+        const c = buscarCredito(monto, parseFechaFlexible(p.fecha), TOL);
+        if(c){
+          const corrige = Math.abs(c.importe - monto) > 0.01;
+          return { p, estado: 'extracto', preseleccion: true, monto: c.importe, fechaBanco: fechaCorta(c.fecha), credito: c,
+            detalle: 'Está en el extracto: ' + fechaCorta(c.fecha) + ' por ' + fmt(c.importe) + (corrige ? ' (declaró ' + fmt(monto) + ': se acredita lo del banco)' : '') + '. ' + contraDeuda };
+        }
+        return { p, estado: 'no-extracto', preseleccion: false, monto, detalle: 'No aparece en el extracto. ' + contraDeuda };
+      }
+      return { p, estado: coincide ? 'coincide' : 'revisar', preseleccion: coincide, monto, detalle: contraDeuda };
+    });
+
+    // 3) Créditos del extracto que nadie informó: se sugiere la unidad si el importe coincide con
+    //    lo que debe UNA sola unidad (que no tenga ya un pago pendiente).
+    const sinAviso = [];
+    if(creditos){
+      const conPendiente = new Set(pendientes.map(p => norm(p.unidad)));
+      creditos.forEach((c, i)=>{
+        if(usados.has(i)) return;
+        const candidatas = unidades.filter(u => !conPendiente.has(norm(u.uf)) && !conPendiente.has(norm(u.pisoDpto)) &&
+          (Math.abs((Number(u.totalPrimerVto) || 0) - c.importe) <= TOL || Math.abs((Number(u.totalSegundoVto) || 0) - c.importe) <= TOL));
+        sinAviso.push({ credito: c, sugerida: candidatas.length === 1 ? String(candidatas[0].uf) : '', candidatas: candidatas.map(u => String(u.uf)) });
+      });
+    }
+    return { filas, sinAviso, yaVerificados };
+  }
+
+  /* =======================================================================
+     VERIFICACIÓN RÁPIDA DE PAGOS — pantalla (admin, solapa "Forma de pago").
+     1) Clasifica los pagos pendientes contra lo que debe cada unidad y permite verificar en lote.
+     2) Opcional: cruza con el extracto del banco (CSV, Excel o filas pegadas). El extracto se lee
+        en el navegador y no se guarda ni se sube a ningún lado.
+     ======================================================================= */
+  async function cargarLectorExcel(){
+    if(window.XLSX) return;
+    await new Promise((resolve, reject)=>{
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = resolve;
+      s.onerror = ()=> reject(new Error('No se pudo cargar el lector de Excel. Revisá la conexión, o guardá el extracto como CSV.'));
+      document.head.appendChild(s);
+    });
+  }
+  async function filasDeArchivoExtracto(file){
+    const nombre = (file.name || '').toLowerCase();
+    if(/\.(xlsx|xls|ods)$/.test(nombre)){
+      await cargarLectorExcel();
+      const libro = window.XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+      const hoja = libro.Sheets[libro.SheetNames[0]];
+      return window.XLSX.utils.sheet_to_json(hoja, { header: 1, raw: true, defval: '' });
+    }
+    const buf = await file.arrayBuffer();
+    let texto;
+    try{ texto = new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+    catch(e){ texto = new TextDecoder('windows-1252').decode(buf); } // muchos bancos exportan en Latin-1
+    return leerTablaTexto(texto);
+  }
+
+  function mountVerificacionRapida(cont, alTerminar){
+    const fmt = (n)=> '$ ' + Number(n || 0).toLocaleString('es-AR', {minimumFractionDigits:2, maximumFractionDigits:2});
+    let creditos = null, filasExtracto = null, mapa = null, nombreExtracto = '';
+    let datos = null; // { spreadsheetId, consorcioId, pagos, unidades }
+
+    async function cargarDatos(){
+      const spreadsheetId = await getSpreadsheetIdActivo();
+      const consorcioId = getActiveConsorcioId();
+      const [pagos, resumen] = await Promise.all([
+        loadData('naken-pagos-informados', []),
+        spreadsheetId ? fetchResumenConsorcio(spreadsheetId) : Promise.resolve(null)
+      ]);
+      datos = { spreadsheetId, consorcioId, pagos: pagos || [], unidades: (resumen && resumen.unidades) || [] };
+    }
+
+    function render(){
+      const r = clasificarPagosPendientes(datos.pagos, datos.unidades, creditos);
+      const n = r.filas.length;
+      const listos = r.filas.filter(f => f.preseleccion).length;
+      const etiqueta = { extracto: ['resuelto','En el extracto'], coincide: ['resuelto','Coincide'], revisar: ['pendiente','Revisar'], 'no-extracto': ['escalado','No está en el extracto'] };
+      if(n === 0 && !creditos){
+        cont.innerHTML = `<div class="infoblock"><h3>Verificación rápida</h3><p class="panel-note" style="margin:0;">No hay pagos pendientes de verificar. Igual podés cruzar el extracto del banco para encontrar depósitos que nadie informó.</p>${bloqueExtracto()}</div>`;
+        conectarExtracto();
+        return;
+      }
+      cont.innerHTML = `
+        <div class="infoblock">
+          <h3>Verificación rápida</h3>
+          <p class="panel-note" style="margin:0 0 10px;">
+            ${n} pago(s) pendiente(s)${creditos ? ` · extracto: <b>${escapeHtml(nombreExtracto)}</b> (${creditos.length} entradas de plata${r.yaVerificados ? `, ${r.yaVerificados} ya verificadas antes` : ''})` : ''}.
+            ${creditos ? 'Se marcan solos los que aparecen en el extracto.' : 'Se marcan solos los que coinciden con lo que debe la unidad. Para más seguridad, cruzalos con el extracto del banco (abajo).'}
+            Revisá y tocá <b>Verificar seleccionados</b>.
+          </p>
+          ${n ? `
+          <table class="ledger" style="margin-bottom:10px;">
+            <thead><tr><th></th><th>Unidad</th><th>Informado</th><th>Declaró</th><th>Estado</th><th>Monto a acreditar ($)</th></tr></thead>
+            <tbody>
+              ${r.filas.map((f, i)=>`
+                <tr data-i="${i}">
+                  <td><input type="checkbox" class="vr-sel" ${f.preseleccion ? 'checked' : ''}></td>
+                  <td>${escapeHtml(String(f.p.unidad))}<div class="card-meta">${escapeHtml(f.p.propietario || '')}</div></td>
+                  <td>${escapeHtml(f.p.fecha || '')}</td>
+                  <td>${fmt(parseMontoFlexible(f.p.monto))}${f.p.comprobante ? `<br><a href="${escapeHtml(f.p.comprobante)}" target="_blank" rel="noopener" style="font-size:11px;">Ver comprobante ↗</a>` : '<br><span class="card-meta">Sin comprobante</span>'}</td>
+                  <td><span class="badge ${etiqueta[f.estado][0]}">${etiqueta[f.estado][1]}</span><div class="card-meta" style="white-space:normal;min-width:220px;">${escapeHtml(f.detalle)}</div></td>
+                  <td><input type="text" class="vr-monto" value="${escapeHtml(String(f.monto).replace('.', ','))}" style="max-width:130px;"></td>
+                </tr>`).join('')}
+            </tbody>
+          </table>` : ''}
+          ${r.sinAviso.length ? `
+          <div class="subhead" style="margin-top:6px;">Depósitos del extracto que nadie informó (${r.sinAviso.length})</div>
+          <p class="panel-note" style="margin:0 0 8px;">Si sabés de quién es, elegí la unidad y marcalo: se registra el pago y el propietario lo ve en su lista. Los que no reconozcas, pasalos a "Depósitos no identificados".</p>
+          <table class="ledger" style="margin-bottom:10px;">
+            <thead><tr><th></th><th>Fecha</th><th>Descripción del banco</th><th>Importe</th><th>Unidad</th></tr></thead>
+            <tbody>
+              ${r.sinAviso.map((s, i)=>`
+                <tr data-s="${i}">
+                  <td><input type="checkbox" class="vr-sel-sa" ${s.sugerida ? 'checked' : ''}></td>
+                  <td>${fechaCorta(s.credito.fecha)}</td>
+                  <td style="white-space:normal;min-width:180px;">${escapeHtml(s.credito.descripcion || '—')}</td>
+                  <td>${fmt(s.credito.importe)}</td>
+                  <td><select class="vr-uf"><option value="">Elegí…</option>${datos.unidades.map(u => `<option value="${escapeHtml(String(u.uf))}" ${String(u.uf) === s.sugerida ? 'selected' : ''}>${escapeHtml(String(u.uf))} · ${escapeHtml(u.pisoDpto || '')}</option>`).join('')}</select>
+                    ${s.sugerida ? '<div class="card-meta">Sugerida: el importe coincide con lo que debe</div>' : (s.candidatas.length > 1 ? `<div class="card-meta">Coincide con varias: ${s.candidatas.map(escapeHtml).join(', ')}</div>` : '')}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>` : ''}
+          <div class="toolbar" style="margin-top:6px;">
+            <span id="vr-msg" class="card-meta"></span>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              ${r.sinAviso.length ? '<button class="btn ghost" id="vr-a-depositos">Pasar los no marcados a Depósitos no identificados</button>' : ''}
+              <button class="btn primary" id="vr-verificar">Verificar seleccionados (${listos + r.sinAviso.filter(s => s.sugerida).length})</button>
+            </div>
+          </div>
+          <div id="vr-resultado"></div>
+          ${bloqueExtracto()}
+        </div>`;
+
+      const actualizarContador = ()=>{
+        const c = cont.querySelectorAll('.vr-sel:checked, .vr-sel-sa:checked').length;
+        const b = cont.querySelector('#vr-verificar'); if(b) b.textContent = `Verificar seleccionados (${c})`;
+      };
+      cont.querySelectorAll('.vr-sel, .vr-sel-sa').forEach(cb => cb.addEventListener('change', actualizarContador));
+      cont.querySelectorAll('.vr-uf').forEach(sel => sel.addEventListener('change', ()=>{
+        const cb = sel.closest('tr').querySelector('.vr-sel-sa'); cb.checked = !!sel.value; actualizarContador();
+      }));
+
+      cont.querySelector('#vr-verificar').addEventListener('click', async (e)=>{
+        const items = [];
+        const errores = [];
+        cont.querySelectorAll('tr[data-i]').forEach(tr => {
+          if(!tr.querySelector('.vr-sel').checked) return;
+          const f = r.filas[+tr.dataset.i];
+          const monto = parseMontoFlexible(tr.querySelector('.vr-monto').value);
+          if(!(monto > 0)){ errores.push('UF ' + f.p.unidad + ': monto inválido'); return; }
+          items.push({ idPago: f.p.id, unidad: f.p.unidad, monto, periodo: f.p.periodo || '', fecha: f.fechaBanco || f.p.fecha || '', origen: f.estado === 'extracto' ? 'extracto' : '' });
+        });
+        cont.querySelectorAll('tr[data-s]').forEach(tr => {
+          if(!tr.querySelector('.vr-sel-sa').checked) return;
+          const s = r.sinAviso[+tr.dataset.s];
+          const uf = tr.querySelector('.vr-uf').value;
+          if(!uf){ errores.push('Depósito del ' + fechaCorta(s.credito.fecha) + ': falta elegir la unidad'); return; }
+          items.push({ unidad: uf, monto: s.credito.importe, fecha: fechaCorta(s.credito.fecha), origen: 'extracto',
+            observaciones: 'Registrado por la administración a partir del extracto bancario' + (s.credito.descripcion ? ' ("' + s.credito.descripcion.slice(0, 80) + '")' : '') + '.' });
+        });
+        const msg = cont.querySelector('#vr-msg');
+        if(errores.length){ msg.textContent = errores.join(' · '); msg.style.color = 'var(--danger)'; return; }
+        if(!items.length){ msg.textContent = 'No hay nada seleccionado.'; msg.style.color = ''; return; }
+        const total = items.reduce((s, it)=> s + it.monto, 0);
+        if(!confirm(`Se van a acreditar ${items.length} pago(s) por un total de ${fmt(total)}. Cada uno se descuenta de la deuda de su unidad (primero intereses, después capital) y se anota en el Libro Banco. ¿Confirmás?`)) return;
+        const btn = e.currentTarget;
+        await withLoading(btn, `Verificando ${items.length}…`, async ()=>{
+          let res;
+          try{ res = await window.storage.verificarPagosLote(datos.spreadsheetId, datos.consorcioId, items); }
+          catch(err){ res = { ok: false, error: err.message }; }
+          const out = cont.querySelector('#vr-resultado');
+          if(!res || !res.ok){
+            out.innerHTML = `<div class="gate-msg error">${escapeHtml((res && res.error) || 'No se pudo verificar.')} Los pagos que ya se habían aplicado no se repiten si volvés a intentar.</div>`;
+            return;
+          }
+          const lineas = res.resultados.map(x => x.ok
+            ? `✓ UF ${escapeHtml(String(x.unidad))}: ${fmt(x.monto)} — ${x.pendiente === 0 ? 'quedó al día' : 'saldo pendiente ' + fmt(x.pendiente)}${x.nuevo ? ' (registrado desde el extracto)' : ''}`
+            : `✗ UF ${escapeHtml(String(x.unidad))}: ${escapeHtml(x.error || 'no se pudo aplicar')}`);
+          clearAppCache();
+          await cargarDatos();
+          render();
+          cont.querySelector('#vr-resultado').innerHTML = `<div class="gate-msg ${res.verificados === res.resultados.length ? 'ok' : 'pending'}" style="margin-top:10px;">${res.verificados} de ${res.resultados.length} pago(s) acreditado(s):<br>${lineas.join('<br>')}</div>`;
+          if(typeof alTerminar === 'function') alTerminar();
+        });
+      });
+
+      const btnDep = cont.querySelector('#vr-a-depositos');
+      if(btnDep) btnDep.addEventListener('click', async ()=>{
+        const aPasar = [];
+        cont.querySelectorAll('tr[data-s]').forEach(tr => { if(!tr.querySelector('.vr-sel-sa').checked) aPasar.push(r.sinAviso[+tr.dataset.s].credito); });
+        if(!aPasar.length){ alert('No hay depósitos sin marcar para pasar.'); return; }
+        await withLoading(btnDep, 'Guardando…', async ()=>{
+          const lista = await loadData('naken-depositos-no-identificados', []);
+          const clave = (f, imp)=> f + '|' + Number(parseMontoFlexible(imp)).toFixed(2);
+          const existentes = new Set(lista.map(d => clave(d.fecha, d.importe)));
+          let agregados = 0;
+          aPasar.forEach(c => {
+            const f = fechaCorta(c.fecha);
+            if(existentes.has(clave(f, c.importe))) return;
+            lista.push({ fecha: f, concepto: c.descripcion || 'Depósito sin identificar (extracto)', importe: String(c.importe).replace('.', ',') });
+            agregados++;
+          });
+          await saveData('naken-depositos-no-identificados', lista);
+          cont.querySelector('#vr-msg').textContent = `${agregados} depósito(s) pasado(s) a "Seguros y depósitos" → Depósitos no identificados${aPasar.length > agregados ? ` (${aPasar.length - agregados} ya estaban)` : ''}.`;
+        });
+      });
+      conectarExtracto();
+    }
+
+    function bloqueExtracto(){
+      const opciones = (sel)=> `<option value="-1">(ninguna)</option>` + (filasExtracto && mapa ? (filasExtracto[mapa.filaEncabezado] || filasExtracto[0] || []).map((c, i)=> `<option value="${i}" ${i === sel ? 'selected' : ''}>${escapeHtml(String(c || 'Columna ' + (i + 1)).slice(0, 30))}</option>`).join('') : '');
+      return `
+        <details style="margin-top:14px;" ${filasExtracto ? 'open' : ''}>
+          <summary style="cursor:pointer;font-weight:600;">Cruzar con el extracto del banco</summary>
+          <p class="panel-note" style="margin:8px 0;">Descargá los movimientos de la cuenta del consorcio desde el homebanking (Excel o CSV) y subilos acá, o copiá las filas de la tabla del homebanking y pegalas. Se leen en tu navegador: el extracto no se guarda ni se sube a ningún lado.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+            <label class="btn" for="vr-file" style="cursor:pointer;margin:0;">Elegir archivo del extracto</label>
+            <input type="file" id="vr-file" accept=".csv,.txt,.tsv,.xls,.xlsx,.ods" style="display:none;">
+            ${creditos ? '<button class="btn ghost" id="vr-quitar">Quitar extracto</button>' : ''}
+          </div>
+          <textarea id="vr-pegado" rows="3" placeholder="…o pegá acá las filas copiadas del homebanking (con la fila de títulos)" style="width:100%;margin-top:8px;"></textarea>
+          <button class="btn ghost" id="vr-leer-pegado" style="margin-top:6px;">Leer lo pegado</button>
+          ${filasExtracto ? `
+            <div class="field-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-top:10px;">
+              <div><label>Columna de fecha</label><select class="vr-map" data-k="fecha">${opciones(mapa.fecha)}</select></div>
+              <div><label>Columna de créditos / haber</label><select class="vr-map" data-k="credito">${opciones(mapa.credito)}</select></div>
+              <div><label>…o importe con signo</label><select class="vr-map" data-k="importe">${opciones(mapa.importe)}</select></div>
+              <div><label>Columna de descripción</label><select class="vr-map" data-k="descripcion">${opciones(mapa.descripcion)}</select></div>
+            </div>
+            <p class="card-meta" style="margin-top:6px;">${creditos && creditos.length ? `Se leyeron ${creditos.length} entradas de plata, del ${fechaCorta(creditos.reduce((a, c)=> c.fecha < a ? c.fecha : a, creditos[0].fecha))} al ${fechaCorta(creditos.reduce((a, c)=> c.fecha > a ? c.fecha : a, creditos[0].fecha))}. Si no coincide con lo que ves en el banco, corregí las columnas.` : 'No se encontraron entradas de plata con estas columnas: elegí cuál es la de fecha y cuál la de créditos.'}</p>
+          ` : ''}
+          <div id="vr-ext-msg" class="card-meta"></div>
+        </details>`;
+    }
+
+    function aplicarExtracto(filas, nombre){
+      filasExtracto = filas; nombreExtracto = nombre;
+      mapa = detectarColumnasExtracto(filas);
+      creditos = creditosDelExtracto(filas, mapa);
+      render();
+    }
+    function conectarExtracto(){
+      const fi = cont.querySelector('#vr-file');
+      if(fi) fi.addEventListener('change', async ()=>{
+        const file = fi.files[0]; if(!file) return;
+        const m = cont.querySelector('#vr-ext-msg'); m.textContent = 'Leyendo el extracto…';
+        try{ aplicarExtracto(await filasDeArchivoExtracto(file), file.name); }
+        catch(err){ m.textContent = 'No se pudo leer el archivo: ' + (err.message || err); m.style.color = 'var(--danger)'; }
+      });
+      const bp = cont.querySelector('#vr-leer-pegado');
+      if(bp) bp.addEventListener('click', ()=>{
+        const t = cont.querySelector('#vr-pegado').value;
+        if(!t.trim()){ cont.querySelector('#vr-ext-msg').textContent = 'Pegá primero las filas.'; return; }
+        aplicarExtracto(leerTablaTexto(t), 'filas pegadas');
+      });
+      const bq = cont.querySelector('#vr-quitar');
+      if(bq) bq.addEventListener('click', ()=>{ creditos = null; filasExtracto = null; mapa = null; render(); });
+      cont.querySelectorAll('.vr-map').forEach(sel => sel.addEventListener('change', ()=>{
+        mapa[sel.dataset.k] = +sel.value;
+        if(sel.dataset.k === 'credito' && +sel.value >= 0) mapa.importe = -1;
+        if(sel.dataset.k === 'importe' && +sel.value >= 0) mapa.credito = -1;
+        creditos = creditosDelExtracto(filasExtracto, mapa);
+        render();
+      }));
+    }
+
+    cont.innerHTML = `<div class="infoblock"><h3>Verificación rápida</h3><div class="empty">Cargando pagos pendientes…</div></div>`;
+    cargarDatos().then(render).catch(err => {
+      cont.innerHTML = `<div class="infoblock"><h3>Verificación rápida</h3><div class="gate-msg error">No se pudieron cargar los pagos: ${escapeHtml(err.message || String(err))}</div></div>`;
+    });
+    return { recargar: async ()=>{ await cargarDatos(); render(); } };
+  }
+
   function mountFormaPago(mountId){
     const mount = document.getElementById(mountId);
     const statusId = mountId+'-status';
@@ -6528,6 +6950,14 @@ const APP_VERSION = '2026-10-13.13';
               <div class="kpi highlight"><div class="label">Total pagando antes del 1er vencimiento (${fmtF(u.fechaPrimerVto)})</div><div class="value">${fmtN(u.totalPrimerVto)}</div></div>
               <div class="kpi"><div class="label">Total pagando después, hasta el 2do vencimiento (${fmtF(u.fechaSegundoVto)})</div><div class="value">${fmtN(u.totalSegundoVto)}</div></div>
             </div>
+            ${(()=>{
+              const ea = liq.estadoActual;
+              if(!ea || !(Number(ea.pagoVerificado)>0)) return '';
+              const f2 = (n)=>'$ ' + Number(n||0).toLocaleString('es-AR',{minimumFractionDigits:2,maximumFractionDigits:2});
+              return Number(ea.saldoPendiente)<=0
+                ? `<div class="gate-msg ok" style="margin-top:10px;">✓ Ya se acreditaron ${f2(ea.pagoVerificado)}. <b>Estás al día</b>: no tenés que pagar nada más de este período.</div>`
+                : `<div class="gate-msg pending" style="margin-top:10px;">Ya se acreditaron ${f2(ea.pagoVerificado)}. <b>Te falta pagar ${f2(ea.saldoPendiente)}</b>.</div>`;
+            })()}
           </div>
         `;
       })();
@@ -6999,6 +7429,7 @@ const APP_VERSION = '2026-10-13.13';
     } else {
       document.getElementById(formMountId).innerHTML = '';
       listWrap.innerHTML = `
+        <div id="${listMountId}-verificacion-rapida" style="margin-bottom:18px;"></div>
         <div class="subhead">Pagos informados por propietarios</div>
         <div id="${listMountId}-filtros"></div>
         <div class="cards" id="${listMountId}-lista"></div>
@@ -7006,6 +7437,10 @@ const APP_VERSION = '2026-10-13.13';
     }
 
     renderLista();
+    if(role==='admin'){
+      const vrCont = document.getElementById(listMountId+'-verificacion-rapida');
+      if(vrCont) mountVerificacionRapida(vrCont, ()=>renderLista());
+    }
   }
 
   /* ---------- Registro de asistencia a asamblea (doble cómputo + mayorías CCyCN) ---------- */
