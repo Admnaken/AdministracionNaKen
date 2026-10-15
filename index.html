@@ -1786,7 +1786,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    Sin esto, los navegadores seguían usando el index.html anterior aunque
    se recargara la página, y una corrección publicada no llegaba a nadie.
    ===================================================================== */
-const APP_VERSION = '2026-10-15.9';
+const APP_VERSION = '2026-10-15.10';
 (function avisoVersionNueva(){
   async function revisar(){
     try{
@@ -9020,15 +9020,39 @@ const APP_VERSION = '2026-10-15.9';
   const RESERVA_NOTA_INTRO = 'El Fondo de Reserva se rige por el Código Civil y Comercial: los propietarios deben contribuir a su integración (art. 2046 inc. d), y su constitución y porcentaje los define la asamblea (arts. 2056, 2058 y 2060). Para que el administrador disponga total o parcialmente del fondo ante gastos imprevistos y mayores que los ordinarios, necesita autorización previa del Consejo de Propietarios (arts. 2064 inc. c y 2067) — dejá esa autorización documentada (acta del Consejo) antes de registrar el egreso.';
   const RESERVA_NOTA_LEGAL_PDF = 'Nota: este período incluye egresos del Fondo de Reserva. Conforme a los arts. 2064 inc. c) y 2067 del Código Civil y Comercial, la disposición del fondo ante gastos imprevistos y mayores que los ordinarios requiere autorización previa del Consejo de Propietarios — verificar que esa autorización esté documentada en el acta correspondiente.';
 
-  /* ----- Vista simplificada para propietarios: saldo + último resultado, sin el detalle operativo ----- */
+  /* ----- Vista para propietarios: cada mes conciliado y archivado, completo; nada en vivo -----
+     El propietario ve el cierre de cada mes (saldo inicial, movimientos, partidas, saldo según
+     banco y explicación de cualquier diferencia) recién cuando la administración lo archiva.
+     No se muestra el saldo del día ni la conciliación en curso: es trabajo en proceso y daría
+     una imagen equivocada (diferencias todavía sin explicar, o días sin movimiento). */
+  const DIA_PUBLICACION_CONCILIACION = 10;
+
+  // Mes (año y número 0-11) al que corresponde un período archivado: por la fecha del extracto
+  // o, si no la tiene, por el texto del período ("Septiembre 2026", "09/2026").
+  function mesDePeriodo(fechaTxt, periodoTxt){
+    const d = parseFechaFlexible(fechaTxt);
+    if(d) return {anio: d.getFullYear(), mes: d.getMonth()};
+    const t = String(periodoTxt||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+    let m = t.match(/(\d{1,2})\s*[\/\-]\s*(\d{4})/);
+    if(m) return {anio: +m[2], mes: +m[1]-1};
+    const idx = MESES_ES.findIndex(nm => t.includes(nm));
+    m = t.match(/(\d{4})/);
+    if(idx >= 0 && m) return {anio: +m[1], mes: idx};
+    return null;
+  }
+  function movimientosDelMes(movRows, ym){
+    if(!ym) return [];
+    return movRows.filter(r=>{ const d = parseFechaFlexible(r.fecha); return d && d.getFullYear()===ym.anio && d.getMonth()===ym.mes; })
+      .sort((a,b)=> parseFechaFlexible(a.fecha) - parseFechaFlexible(b.fecha));
+  }
+  function nombreMes(ym){ return ym ? (MESES_ES[ym.mes].charAt(0).toUpperCase() + MESES_ES[ym.mes].slice(1)) + ' ' + ym.anio : ''; }
+
   function mountCuentaResumenPropietario(mountId, movKey, concKey, opts={}){
     const mount = document.getElementById(mountId);
     function num(v){ return parseMontoFlexible(v); }
     function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{minimumFractionDigits:2, maximumFractionDigits:2}); } // siempre 2 decimales: "7.800.000,50", no "7.800.000,5"
-    function calcDiferencia(p){
-      const partidasSum = (p.partidas||[]).reduce((acc,it)=> acc + (it.signo==='-' ? -num(it.importe) : num(it.importe)), 0);
-      return num(p.saldoExtracto) - (num(p.saldoLibroBanco) + partidasSum);
-    }
+    function sumaPartidas(p){ return (p.partidas||[]).reduce((acc,it)=> acc + (it.signo==='-' ? -num(it.importe) : num(it.importe)), 0); }
+    function calcDiferencia(p){ return num(p.saldoExtracto) - (num(p.saldoLibroBanco) + sumaPartidas(p)); }
     const cuentaKey = opts.cuentaKey || (movKey+'-cuenta');
     const nombreCuenta = opts.nombreCuenta || 'Cuenta Corriente';
 
@@ -9038,42 +9062,61 @@ const APP_VERSION = '2026-10-15.9';
       mount.innerHTML = `<div class="empty">Está tardando más de lo normal en cargar. <button class="btn ghost" id="${mountId}-retry" style="margin-left:8px;">Reintentar</button></div>`;
       const retryBtn = document.getElementById(mountId+'-retry');
       if(retryBtn) retryBtn.addEventListener('click', ()=>mountCuentaResumenPropietario(mountId, movKey, concKey, opts));
-    }, 15000);
+    }, 25000);
 
-    Promise.all([
-      loadData(movKey, []), loadData(concKey, []), loadData(cuentaKey, {}),
-      opts.mostrarSaldoInicial ? loadData(opts.saldoInicialKey || (movKey+'-saldo-inicial'), 0) : Promise.resolve(0),
-    ]).then(([movRows, periodos, cuenta, si])=>{
+    Promise.all([ loadData(movKey, []), loadData(concKey, []), loadData(cuentaKey, {}) ]).then(([movRows, periodos, cuenta])=>{
       clearTimeout(timeoutId);
-      const saldo = num(si) + movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0);
-      const archivadas = periodos.filter(p=>p.cerrado);
-      const ultima = archivadas.length ? archivadas[archivadas.length-1] : null;
+      const archivadas = (periodos||[]).filter(p=>p.cerrado).slice().reverse(); // la más reciente primero
+      const ultima = archivadas[0] || null;
+      const ymUltima = ultima ? mesDePeriodo(ultima.fechaExtracto, ultima.periodo) : null;
 
-      let cartelUltima = '';
-      if(ultima){
-        const ok = Math.abs(calcDiferencia(ultima)) < 0.01;
-        cartelUltima = `
-          <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:16px 18px;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;">
-            <div>
-              <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Última conciliación realizada</div>
-              <div style="font-family:'Playfair Display',serif;font-size:17px;color:var(--primary);">N° ${ultima.numero||'—'} — ${escapeHtml(ultima.periodo||'—')}</div>
-              <div style="font-size:12px;color:var(--muted);margin-top:2px;">Archivada el ${escapeHtml(ultima.fechaCierre||'—')}</div>
+      const bloque = (p, abierto)=>{
+        const ym = mesDePeriodo(p.fechaExtracto, p.periodo);
+        const movs = movimientosDelMes(movRows||[], ym);
+        const ingresos = movs.reduce((a,r)=>a+num(r.ingreso),0), egresos = movs.reduce((a,r)=>a+num(r.egreso),0);
+        const saldoFinal = num(p.saldoLibroBanco);
+        const saldoInicial = saldoFinal - ingresos + egresos;
+        const dif = calcDiferencia(p), ok = Math.abs(dif) < 0.01;
+        const titulo = escapeHtml(p.periodo || nombreMes(ym) || ('Conciliación N° ' + (p.numero||'')));
+        return `
+          <details class="conc-mes" ${abierto?'open':''} style="border:1px solid var(--gray-200);border-radius:var(--radius);background:#fff;margin-bottom:12px;">
+            <summary style="cursor:pointer;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+              <span><b style="font-family:'Playfair Display',serif;font-size:16px;color:var(--primary);">${titulo}</b>
+                <span style="font-size:12px;color:var(--muted);margin-left:8px;">Publicada el ${escapeHtml(String(p.fechaCierre||'—').split(',')[0])}</span></span>
+              <span class="badge ${ok?'resuelto':'pendiente'}" style="font-size:11.5px;">${ok?'✓ Concilia con el banco':'Diferencia explicada'}</span>
+            </summary>
+            <div style="padding:0 16px 16px;">
+              <div class="kpi-row" style="margin:6px 0 12px;">
+                <div class="kpi"><div class="label">Saldo inicial</div><div class="value" style="font-size:16px;">${fmt(saldoInicial)}</div></div>
+                <div class="kpi"><div class="label">Ingresos del mes</div><div class="value" style="font-size:16px;">${fmt(ingresos)}</div></div>
+                <div class="kpi"><div class="label">Egresos del mes</div><div class="value" style="font-size:16px;">${fmt(egresos)}</div></div>
+                <div class="kpi highlight"><div class="label">Saldo al cierre (Libro Banco)</div><div class="value" style="font-size:16px;">${fmt(saldoFinal)}</div></div>
+              </div>
+              ${movs.length ? `
+                <table class="ledger"><thead><tr><th>Fecha</th><th>Concepto</th><th class="num">Ingreso</th><th class="num">Egreso</th></tr></thead><tbody>
+                ${movs.map(r=>`<tr><td>${escapeHtml(fechaCorta(parseFechaFlexible(r.fecha)))}</td><td>${escapeHtml(r.concepto||r.tipo||'')}</td><td class="num">${num(r.ingreso)?fmt(num(r.ingreso)):''}</td><td class="num">${num(r.egreso)?fmt(num(r.egreso)):''}</td></tr>`).join('')}
+                </tbody></table>` : `<p class="panel-note" style="margin:0;">Sin movimientos registrados en el mes.</p>`}
+              <div class="subhead" style="margin-top:14px;">Control contra el extracto bancario</div>
+              <table class="ledger"><tbody>
+                <tr><td>Saldo según Libro Banco</td><td class="num">${fmt(saldoFinal)}</td></tr>
+                ${(p.partidas||[]).map(it=>`<tr><td>${it.signo==='-'?'Menos':'Más'}: ${escapeHtml(it.concepto||it.tipo||'')} <span style="color:var(--muted);font-size:11.5px;">(${escapeHtml(it.tipo||'')})</span></td><td class="num">${it.signo==='-'?'− ':''}${fmt(num(it.importe))}</td></tr>`).join('')}
+                <tr><td><b>Saldo según extracto del banco${p.fechaExtracto ? ' al ' + escapeHtml(p.fechaExtracto) : ''}</b></td><td class="num"><b>${fmt(num(p.saldoExtracto))}</b></td></tr>
+                ${ok ? '' : `<tr><td>Diferencia</td><td class="num">${fmt(dif)}</td></tr>`}
+              </tbody></table>
+              ${(p.partidas||[]).length ? `<p class="panel-note" style="margin:6px 0 0;font-size:11.5px;">Las partidas son movimientos que todavía no figuraban en uno de los dos registros al cierre (por ejemplo, un cheque emitido que el proveedor aún no cobró).</p>` : ''}
+              ${ok ? '' : `<div style="margin-top:10px;padding:10px 12px;background:var(--paper-deep,#f8f9fa);border-left:3px solid var(--gold);border-radius:4px;font-size:13px;"><b>Explicación de la administración:</b> ${escapeHtml(p.explicacionDiferencia || 'La administración está revisando esta diferencia con el banco.')}</div>`}
             </div>
-            <span class="badge ${ok?'resuelto':'escalado'}" style="font-size:11.5px;">${ok?'✓ Concilia':'⚠ Con diferencia'}</span>
-          </div>
-        `;
-      } else {
-        cartelUltima = `<div class="empty">Todavía no hay conciliaciones archivadas para ${escapeHtml(nombreCuenta)}.</div>`;
-      }
+          </details>`;
+      };
 
       mount.innerHTML = `
         <div class="kpi-row" style="margin-bottom:18px;">
-          <div class="kpi highlight"><div class="label">Saldo actual s/Libro Banco — ${escapeHtml(nombreCuenta)}</div><div class="value">${fmt(saldo)}</div></div>
-          ${cuenta.banco ? `<div class="kpi"><div class="label">Banco</div><div class="value" style="font-size:15px;">${escapeHtml(cuenta.banco)}${cuenta.tipoCuenta?' — '+escapeHtml(cuenta.tipoCuenta):''}</div></div>` : ''}
-          <div class="kpi"><div class="label">Conciliaciones archivadas</div><div class="value">${archivadas.length}</div></div>
+          <div class="kpi highlight"><div class="label">${ultima ? 'Saldo al cierre de ' + escapeHtml(ultima.periodo || nombreMes(ymUltima)) : 'Saldo al cierre'} — ${escapeHtml(nombreCuenta)}</div><div class="value">${ultima ? fmt(num(ultima.saldoLibroBanco)) : '—'}</div></div>
+          ${cuenta && cuenta.banco ? `<div class="kpi"><div class="label">Banco</div><div class="value" style="font-size:15px;">${escapeHtml(cuenta.banco)}${cuenta.tipoCuenta?' — '+escapeHtml(cuenta.tipoCuenta):''}</div></div>` : ''}
+          <div class="kpi"><div class="label">Meses conciliados</div><div class="value">${archivadas.length}</div></div>
         </div>
-        ${cartelUltima}
-        <p class="panel-note" style="margin-top:14px;">La administración controla y concilia esta cuenta contra el extracto bancario todos los meses. Si el Consejo de Propietarios necesita el detalle completo (movimientos, partidas y extracto), la administración lo provee bajo pedido.</p>
+        <p class="panel-note" style="margin:0 0 14px;">La conciliación de cada mes se publica acá antes del día ${DIA_PUBLICACION_CONCILIACION} del mes siguiente, ya controlada contra el extracto del banco.</p>
+        ${archivadas.length ? archivadas.map((p,i)=>bloque(p, i===0)).join('') : `<div class="empty">Todavía no hay meses conciliados publicados para ${escapeHtml(nombreCuenta)}.</div>`}
       `;
     }).catch((err)=>{
       clearTimeout(timeoutId);
@@ -9829,8 +9872,17 @@ const APP_VERSION = '2026-10-15.9';
       });
 
       document.getElementById(mountId+'-p-cerrar').addEventListener('click', ()=>{
-        if(!confirm('¿Cerrar y archivar esta conciliación? Va a quedar marcada como firmada por la administración y no se va a poder editar sin reabrirla.')) return;
         syncPeriodoFromDom();
+        // Los propietarios ven la conciliación archivada: si hay diferencia, tiene que ir explicada.
+        if(Math.abs(calcDiferencia(p)) >= 0.01){
+          const motivo = prompt('Esta conciliación tiene una diferencia de ' + fmt(calcDiferencia(p)) + '. Los propietarios la van a ver: escribí la explicación (ej: "Comisión bancaria del 30/9, se imputa en octubre").', p.explicacionDiferencia || '');
+          if(motivo === null) return;
+          if(!motivo.trim()){ alert('Para archivar con diferencia hace falta la explicación.'); return; }
+          p.explicacionDiferencia = motivo.trim();
+        } else {
+          p.explicacionDiferencia = '';
+        }
+        if(!confirm('¿Cerrar y archivar esta conciliación? Se publica para los propietarios y no se va a poder editar sin reabrirla.')) return;
         p.cerrado = true;
         p.fechaCierre = new Date().toLocaleString('es-AR');
         savePeriodos();
@@ -10163,44 +10215,59 @@ const APP_VERSION = '2026-10-15.9';
   ];
   const CAJA_NOTA_INTRO = 'El Libro de Caja es uno de los libros obligatorios del administrador según la Ley 941 de CABA (junto con los de Administración, Sueldos, Actas de Asamblea, Actas del Consejo, Registro de Firmas e Inventario). A diferencia del Libro Banco, el efectivo no tiene un extracto bancario que lo respalde — el control se hace con arqueos periódicos: contar el efectivo físico y compararlo contra el saldo que arroja este libro a esa fecha. Ojo: este libro es independiente de Gastos_Mensual — un gasto pagado con caja no se prorratea solo entre los propietarios, hay que cargarlo también, aparte, en la planilla (marcá el casillero "¿En Gastos_Mensual?" de cada egreso para no olvidarte ni cargarlo dos veces).';
 
+  // Vista para propietarios: cada arqueo archivado, con los movimientos de efectivo desde el
+  // arqueo anterior y la explicación de cualquier diferencia. Nada en vivo (ver Libro Banco).
   function mountCajaResumenPropietario(mountId, movKey, arqueoKey){
     const mount = document.getElementById(mountId);
     function num(v){ return parseMontoFlexible(v); }
-    function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{minimumFractionDigits:2, maximumFractionDigits:2}); } // siempre 2 decimales: "7.800.000,50", no "7.800.000,5"
+    function fmt(n){ return '$ ' + n.toLocaleString('es-AR',{minimumFractionDigits:2, maximumFractionDigits:2}); }
     function calcDiferenciaArqueo(a){ return num(a.efectivoContado) - num(a.saldoLibroCaja); }
 
     mount.innerHTML = `<div class="empty">Cargando…</div>`;
 
-    Promise.all([loadData(movKey, []), loadData(arqueoKey, []), loadData(movKey+'-saldo-inicial', 0)]).then(([movRows, arqueos, si])=>{
-      const saldo = num(si) + movRows.reduce((acc,r)=>acc+num(r.ingreso)-num(r.egreso),0);
-      const archivados = arqueos.filter(a=>a.cerrado);
-      const ultimo = archivados.length ? archivados[archivados.length-1] : null;
+    Promise.all([loadData(movKey, []), loadData(arqueoKey, [])]).then(([movRows, arqueos])=>{
+      const archivados = (arqueos||[]).filter(a=>a.cerrado);
+      const ordenados = archivados.slice().sort((x,y)=> (parseFechaFlexible(x.fecha)||0) - (parseFechaFlexible(y.fecha)||0));
+      const ultimo = ordenados[ordenados.length-1] || null;
 
-      let cartelUltimo = '';
-      if(ultimo){
-        const ok = Math.abs(calcDiferenciaArqueo(ultimo)) < 0.01;
-        cartelUltimo = `
-          <div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:16px 18px;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;">
-            <div>
-              <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;">Último arqueo de caja realizado</div>
-              <div style="font-family:'Playfair Display',serif;font-size:17px;color:var(--primary);">N° ${ultimo.numero||'—'} — ${escapeHtml(ultimo.fecha||'—')}</div>
-              <div style="font-size:12px;color:var(--muted);margin-top:2px;">Archivado el ${escapeHtml(ultimo.fechaCierre||'—')}</div>
+      const bloque = (a, idx, abierto)=>{
+        const hasta = parseFechaFlexible(a.fecha);
+        const desde = idx > 0 ? parseFechaFlexible(ordenados[idx-1].fecha) : null;
+        const movs = (movRows||[]).filter(r=>{ const d = parseFechaFlexible(r.fecha); return d && hasta && d <= hasta && (!desde || d > desde); })
+          .sort((x,y)=> parseFechaFlexible(x.fecha) - parseFechaFlexible(y.fecha));
+        const dif = calcDiferenciaArqueo(a), ok = Math.abs(dif) < 0.01;
+        return `
+          <details ${abierto?'open':''} style="border:1px solid var(--gray-200);border-radius:var(--radius);background:#fff;margin-bottom:12px;">
+            <summary style="cursor:pointer;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+              <span><b style="font-family:'Playfair Display',serif;font-size:16px;color:var(--primary);">Arqueo del ${escapeHtml(a.fecha||'—')}</b>
+                <span style="font-size:12px;color:var(--muted);margin-left:8px;">Publicado el ${escapeHtml(String(a.fechaCierre||'—').split(',')[0])}</span></span>
+              <span class="badge ${ok?'resuelto':'pendiente'}" style="font-size:11.5px;">${ok?'✓ El efectivo coincide':'Diferencia explicada'}</span>
+            </summary>
+            <div style="padding:0 16px 16px;">
+              <div class="kpi-row" style="margin:6px 0 12px;">
+                <div class="kpi"><div class="label">Saldo según Libro de Caja</div><div class="value" style="font-size:16px;">${fmt(num(a.saldoLibroCaja))}</div></div>
+                <div class="kpi highlight"><div class="label">Efectivo contado</div><div class="value" style="font-size:16px;">${fmt(num(a.efectivoContado))}</div></div>
+                ${ok ? '' : `<div class="kpi"><div class="label">Diferencia</div><div class="value" style="font-size:16px;">${fmt(dif)}</div></div>`}
+              </div>
+              ${movs.length ? `
+                <table class="ledger"><thead><tr><th>Fecha</th><th>Concepto</th><th class="num">Ingreso</th><th class="num">Egreso</th></tr></thead><tbody>
+                ${movs.map(r=>`<tr><td>${escapeHtml(fechaCorta(parseFechaFlexible(r.fecha)))}</td><td>${escapeHtml(r.concepto||r.tipo||'')}</td><td class="num">${num(r.ingreso)?fmt(num(r.ingreso)):''}</td><td class="num">${num(r.egreso)?fmt(num(r.egreso)):''}</td></tr>`).join('')}
+                </tbody></table>` : `<p class="panel-note" style="margin:0;">Sin movimientos de efectivo en el período.</p>`}
+              ${ok ? '' : `<div style="margin-top:10px;padding:10px 12px;background:var(--paper-deep,#f8f9fa);border-left:3px solid var(--gold);border-radius:4px;font-size:13px;"><b>Explicación de la administración:</b> ${escapeHtml(a.observaciones || 'La administración está revisando esta diferencia.')}</div>`}
             </div>
-            <span class="badge ${ok?'resuelto':'escalado'}" style="font-size:11.5px;">${ok?'✓ Coincide':'⚠ Con diferencia'}</span>
-          </div>
-        `;
-      } else {
-        cartelUltimo = `<div class="empty">Todavía no hay arqueos de caja archivados.</div>`;
-      }
+          </details>`;
+      };
 
       mount.innerHTML = `
         <div class="kpi-row" style="margin-bottom:18px;">
-          <div class="kpi highlight"><div class="label">Saldo actual en Caja</div><div class="value">${fmt(saldo)}</div></div>
-          <div class="kpi"><div class="label">Arqueos archivados</div><div class="value">${archivados.length}</div></div>
+          <div class="kpi highlight"><div class="label">${ultimo ? 'Efectivo en caja al ' + escapeHtml(ultimo.fecha||'') : 'Efectivo en caja'}</div><div class="value">${ultimo ? fmt(num(ultimo.efectivoContado)) : '—'}</div></div>
+          <div class="kpi"><div class="label">Arqueos publicados</div><div class="value">${archivados.length}</div></div>
         </div>
-        ${cartelUltimo}
-        <p class="panel-note" style="margin-top:14px;">La administración controla el efectivo en caja con arqueos periódicos. Si el Consejo de Propietarios necesita el detalle completo, la administración lo provee bajo pedido.</p>
+        <p class="panel-note" style="margin:0 0 14px;">El efectivo se controla con arqueos (se cuenta y se compara con el libro). Cada arqueo se publica acá antes del día ${DIA_PUBLICACION_CONCILIACION} del mes siguiente.</p>
+        ${ordenados.length ? ordenados.map((a,i)=>({a,i})).reverse().map(({a,i},k)=>bloque(a, i, k===0)).join('') : `<div class="empty">Todavía no hay arqueos de caja publicados.</div>`}
       `;
+    }).catch(err=>{
+      mount.innerHTML = `<div class="empty">No se pudo cargar esta sección: ${escapeHtml(err && err.message ? err.message : 'error de conexión')}.</div>`;
     });
   }
 
@@ -10580,8 +10647,13 @@ const APP_VERSION = '2026-10-15.9';
       });
 
       document.getElementById(mountId+'-a-cerrar').addEventListener('click', ()=>{
-        if(!confirm('¿Cerrar y archivar este arqueo? No se va a poder editar sin reabrirlo.')) return;
         syncArqueoFromDom();
+        if(Math.abs(num(a.efectivoContado) - num(a.saldoLibroCaja)) >= 0.01 && !String(a.observaciones||'').trim()){
+          alert('El efectivo contado no coincide con el Libro de Caja. Los propietarios ven el arqueo archivado: escribí en "Observaciones" la explicación de la diferencia antes de archivarlo.');
+          const obs = document.getElementById(mountId+'-a-observaciones'); if(obs) obs.focus();
+          return;
+        }
+        if(!confirm('¿Cerrar y archivar este arqueo? Se publica para los propietarios y no se va a poder editar sin reabrirlo.')) return;
         a.cerrado = true;
         a.fechaCierre = new Date().toLocaleString('es-AR');
         saveArqueos();
