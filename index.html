@@ -1786,7 +1786,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    Sin esto, los navegadores seguían usando el index.html anterior aunque
    se recargara la página, y una corrección publicada no llegaba a nadie.
    ===================================================================== */
-const APP_VERSION = '2026-10-15.10';
+const APP_VERSION = '2026-10-15.12';
 (function avisoVersionNueva(){
   async function revisar(){
     try{
@@ -3719,9 +3719,13 @@ const APP_VERSION = '2026-10-15.10';
       ? `${admin.nombre}${admin.rpa ? ' - Mat. RPA '+admin.rpa : ''}`
       : 'Administrador del consorcio';
     const usuariosConsorcio = usuarios.filter(u=>!consorcioId || u.consorcioId===consorcioId);
-    const buscarUsuario = (unidad)=> usuariosConsorcio.find(u=>(u.unidad||'').trim().toLowerCase()===(unidad||'').trim().toLowerCase());
-    const parteA = buscarUsuario(c.unidadDenunciante);
-    const parteB = buscarUsuario(c.unidadDenunciada);
+    // La unidad puede estar guardada como número (3), como UF ("3") o como piso/depto ("1° C"):
+    // se busca al titular por cualquiera de esas formas. (Antes, una unidad numérica rompía el PDF.)
+    const buscarUsuario = (formas)=> usuariosConsorcio.find(u=>formas.some(f=>mismaUnidadTxt(u.unidad, f)));
+    const parteA = buscarUsuario([c.unidadDenunciante, c.unidadDenuncianteUF, c.unidadDenunciantePiso]);
+    const parteB = buscarUsuario([c.unidadDenunciada, c.unidadDenunciadaUF, c.unidadDenunciadaPiso]);
+    const txtUnidad = (principal, piso)=> String(piso || principal || '—');
+    const huboMediacion = !!c.formalizada;
 
     function heading(texto){
       if(y>270){ doc.addPage(); y=18; }
@@ -3750,7 +3754,7 @@ const APP_VERSION = '2026-10-15.10';
     doc.setTextColor(...COLOR_PRINCIPAL);
     doc.text('ADMINISTRACIÓN NAKEN', M, y); y+=6;
     doc.setFontSize(11);
-    doc.text('Planilla de Mediación Vecinal', M, y); y+=5;
+    doc.text(huboMediacion ? 'Planilla de Mediación Vecinal' : 'Constancia de resolución de conflicto vecinal', M, y); y+=5;
     doc.setFont('helvetica','normal');
     doc.setFontSize(9);
     doc.setTextColor(...COLOR_TEXTO);
@@ -3777,7 +3781,7 @@ const APP_VERSION = '2026-10-15.10';
       head: [['', 'Parte A', 'Parte B']],
       body: [
         ['Nombre completo', (parteA&&parteA.nombreCompleto)||'—', (parteB&&parteB.nombreCompleto)||'—'],
-        ['Unidad funcional', c.unidadDenunciante||'—', c.unidadDenunciada||'—'],
+        ['Unidad funcional', txtUnidad(c.unidadDenunciante, c.unidadDenunciantePiso), txtUnidad(c.unidadDenunciada, c.unidadDenunciadaPiso)],
         ['Rol en el conflicto', 'Denunciante', 'Denunciada'],
       ]
     });
@@ -3789,14 +3793,14 @@ const APP_VERSION = '2026-10-15.10';
       body: [
         ['Fecha y hora del incidente', c.fechaHecho||'—'],
         ['Tipo de conflicto', c.tipo||'—'],
-        ['Unidad afectada', c.unidadDenunciada||'—'],
+        ['Unidad señalada', txtUnidad(c.unidadDenunciada, c.unidadDenunciadaPiso)],
       ]
     });
     y = doc.lastAutoTable.finalY + 8;
     parrafo('Descripción detallada de los hechos:', {bold:true});
     parrafo(c.descripcion || '(sin descripción cargada)');
 
-    heading('PROCESO DE MEDIACIÓN — REGISTRO DE INSTANCIAS');
+    heading(huboMediacion ? 'PROCESO DE MEDIACIÓN — REGISTRO DE INSTANCIAS' : 'REGISTRO DE INSTANCIAS');
     const instancias = [];
     if(c.notificacion) instancias.push(['Instancia 1 — Comunicación de la administración', c.fecha||'—', c.notificacion]);
     if(c.descargo) instancias.push([`Instancia 2 — Descargo (${c.descargoTipo==='admite'?'reconoce la situación':'no está de acuerdo'})`, c.descargoFecha||'—', c.descargo]);
@@ -3822,17 +3826,22 @@ const APP_VERSION = '2026-10-15.10';
     if(c.cierreMotivo) parrafo('Motivo del cierre: ' + c.cierreMotivo);
     if(!c.resultadoReunion && !c.cierreMotivo) parrafo('(sin resultado cargado todavía)');
 
+    if(!huboMediacion){
+      heading('MARCO DE LA RESOLUCIÓN');
+      parrafo('La situación se resolvió en la instancia de comunicación de la administración, sin necesidad de una mediación formal. La presente constancia queda archivada en el legajo del consorcio y podrá ser exhibida como antecedente si los hechos se reiteraran.', {size:8.5});
+    } else {
     heading('MARCO DE LA MEDIACIÓN — DECLARACIÓN DE BUENA FE Y NO ESCALAMIENTO');
     parrafo('Las partes que suscriben la presente planilla declaran haber participado voluntariamente del proceso de mediación conducido por la administración del consorcio, con el objetivo de resolver el conflicto descripto por la vía del diálogo, evitando su escalada a instancias administrativas, judiciales o de convivencia que puedan afectar la paz social del edificio.', {size:8.5});
     parrafo('Ambas partes se comprometen a respetar los acuerdos alcanzados y a informar a la administración cualquier reiteración de los hechos, antes de recurrir a otras vías. La presente planilla queda archivada en el legajo del consorcio como constancia del proceso llevado a cabo, y podrá ser exhibida como antecedente ante la reiteración del conflicto o la intervención de terceros (asamblea, asesoría legal, autoridad competente).', {size:8.5});
 
+    }
     heading('CONFORMIDAD');
     parrafo('La conformidad de las partes se dio a través de las intervenciones registradas dentro de la aplicación de administración del consorcio (app.administracionnaken.com.ar - Conflictos entre vecinos), donde cada parte ingresó con su usuario y clave personal. Por ese motivo, esta acta no requiere firma física.', {size:8.5});
     if(!c.formalizada){
       parrafo('En este caso en particular, la buena predisposición de la unidad denunciada permitió resolver la situación sin necesidad de avanzar a una instancia formal de mediación. Por lo tanto, en ningún momento se le informó a la unidad denunciada la identidad de la unidad denunciante.', {size:8.5, bold:true, acento:true});
     }
 
-    doc.save(`Mediacion_${c.id}_${(c.unidadDenunciada||'').replace(/[^a-zA-Z0-9]/g,'')}.pdf`);
+    doc.save(`${huboMediacion ? 'Mediacion' : 'Constancia_conflicto'}_${c.id}_${String(c.unidadDenunciadaPiso || c.unidadDenunciada || '').replace(/[^a-zA-Z0-9]/g,'')}.pdf`);
   }
 
   function mountConflictos(mountId){
@@ -4180,7 +4189,7 @@ const APP_VERSION = '2026-10-15.10';
 
             <div class="toolbar" style="margin-top:16px;border-top:1px solid var(--gray-200);padding-top:12px;">
               <span></span>
-              <button class="btn ghost" data-action="pdf-mediacion" data-id="${c.id}" style="font-size:12px;">Generar acta de mediación (PDF) ↓</button>
+              <button class="btn ghost" data-action="pdf-mediacion" data-id="${c.id}" style="font-size:12px;">${c.formalizada ? 'Generar acta de mediación (PDF) ↓' : 'Generar constancia del caso (PDF) ↓'}</button>
             </div>
           ` : `
             ${esDenunciado ? `
@@ -9094,7 +9103,7 @@ const APP_VERSION = '2026-10-15.10';
               </div>
               ${movs.length ? `
                 <table class="ledger"><thead><tr><th>Fecha</th><th>Concepto</th><th class="num">Ingreso</th><th class="num">Egreso</th></tr></thead><tbody>
-                ${movs.map(r=>`<tr><td>${escapeHtml(fechaCorta(parseFechaFlexible(r.fecha)))}</td><td>${escapeHtml(r.concepto||r.tipo||'')}</td><td class="num">${num(r.ingreso)?fmt(num(r.ingreso)):''}</td><td class="num">${num(r.egreso)?fmt(num(r.egreso)):''}</td></tr>`).join('')}
+                ${movs.map(r=>`<tr><td>${escapeHtml(fechaCorta(parseFechaFlexible(r.fecha)))}</td><td style="white-space:normal;min-width:150px;">${escapeHtml(r.concepto||r.tipo||'')}</td><td class="num" style="white-space:nowrap;">${num(r.ingreso)?fmt(num(r.ingreso)):''}</td><td class="num" style="white-space:nowrap;">${num(r.egreso)?fmt(num(r.egreso)):''}</td></tr>`).join('')}
                 </tbody></table>` : `<p class="panel-note" style="margin:0;">Sin movimientos registrados en el mes.</p>`}
               <div class="subhead" style="margin-top:14px;">Control contra el extracto bancario</div>
               <table class="ledger"><tbody>
@@ -10251,7 +10260,7 @@ const APP_VERSION = '2026-10-15.10';
               </div>
               ${movs.length ? `
                 <table class="ledger"><thead><tr><th>Fecha</th><th>Concepto</th><th class="num">Ingreso</th><th class="num">Egreso</th></tr></thead><tbody>
-                ${movs.map(r=>`<tr><td>${escapeHtml(fechaCorta(parseFechaFlexible(r.fecha)))}</td><td>${escapeHtml(r.concepto||r.tipo||'')}</td><td class="num">${num(r.ingreso)?fmt(num(r.ingreso)):''}</td><td class="num">${num(r.egreso)?fmt(num(r.egreso)):''}</td></tr>`).join('')}
+                ${movs.map(r=>`<tr><td>${escapeHtml(fechaCorta(parseFechaFlexible(r.fecha)))}</td><td style="white-space:normal;min-width:150px;">${escapeHtml(r.concepto||r.tipo||'')}</td><td class="num" style="white-space:nowrap;">${num(r.ingreso)?fmt(num(r.ingreso)):''}</td><td class="num" style="white-space:nowrap;">${num(r.egreso)?fmt(num(r.egreso)):''}</td></tr>`).join('')}
                 </tbody></table>` : `<p class="panel-note" style="margin:0;">Sin movimientos de efectivo en el período.</p>`}
               ${ok ? '' : `<div style="margin-top:10px;padding:10px 12px;background:var(--paper-deep,#f8f9fa);border-left:3px solid var(--gold);border-radius:4px;font-size:13px;"><b>Explicación de la administración:</b> ${escapeHtml(a.observaciones || 'La administración está revisando esta diferencia.')}</div>`}
             </div>
