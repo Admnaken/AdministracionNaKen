@@ -706,7 +706,7 @@
   .tema-row input[type="text"] { flex: 1; }
   .voto-row { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; }
   .voto-row .voto-tema { font-weight: 600; color: var(--primary); margin-bottom: 8px; }
-  .voto-inputs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 8px; }
+  .voto-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 8px; }
   .voto-inputs label { font-size: 11px; color: var(--gray-600); display: block; margin-bottom: 4px; }
   @media (max-width: 820px){ .voto-inputs { grid-template-columns: 1fr; } }
   .acta-cierre-box {
@@ -1785,7 +1785,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    Sin esto, los navegadores seguían usando el index.html anterior aunque
    se recargara la página, y una corrección publicada no llegaba a nadie.
    ===================================================================== */
-const APP_VERSION = '2026-10-15.5';
+const APP_VERSION = '2026-10-15.7';
 (function avisoVersionNueva(){
   async function revisar(){
     try{
@@ -2156,11 +2156,18 @@ const APP_VERSION = '2026-10-15.5';
       return { key, value: data.value, shared: false };
     },
     async set(key, value){
-      const data = await fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // evita el preflight de CORS
-        body: JSON.stringify({ action:'set', key, value, sessionToken: SESSION_TOKEN })
-      }));
+      // Guardar es idempotente (se reescribe el valor completo): ante un error raro del servidor
+      // (pasa a veces con varios pedidos simultáneos) se reintenta hasta 2 veces más.
+      let data;
+      for(let intento=0; intento<3; intento++){
+        data = await fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // evita el preflight de CORS
+          body: JSON.stringify({ action:'set', key, value, sessionToken: SESSION_TOKEN })
+        }));
+        if(data.ok || data.sessionExpired || /autorizad|sesi[oó]n/i.test(String(data.error||''))) break;
+        await new Promise(r=>setTimeout(r, 1200 * (intento+1)));
+      }
       if(data.sessionExpired){ SESSION_TOKEN = null; window.dispatchEvent(new CustomEvent('naken-sesion-vencida')); }
       if(!data.ok) throw new Error(data.error || 'No se pudo guardar.');
       return { key, value, shared:false };
@@ -5386,6 +5393,11 @@ const APP_VERSION = '2026-10-15.5';
     const now = Date.now();
     const cached = _cache.resumen[cacheKey];
     if(cached && (now - cached.at) < CACHE_TTL_MS) return cached.data;
+    // Si ya hay un pedido igual en curso (varias secciones lo piden a la vez al entrar al
+    // consorcio), se espera ese en vez de mandar otro: el resumen es lo más lento del servidor.
+    _cache.resumenEnCurso = _cache.resumenEnCurso || {};
+    if(_cache.resumenEnCurso[cacheKey]) return _cache.resumenEnCurso[cacheKey];
+    const pedido = (async ()=>{
     const url = `${APPS_SCRIPT_URL}?action=resumenConsorcio&spreadsheetId=${encodeURIComponent(spreadsheetId)}&periodo=${encodeURIComponent(periodo||'')}&sessionToken=${encodeURIComponent(window.storage.getSessionToken()||'')}${Date.now() < _frescoHasta ? '&fresh=1' : ''}`;
     try{
       const data = await window.storage.conCupo(()=>fetch(url).then(r=>r.json()));
@@ -5395,6 +5407,9 @@ const APP_VERSION = '2026-10-15.5';
     }catch(e){
       return null;
     }
+    })();
+    _cache.resumenEnCurso[cacheKey] = pedido;
+    try{ return await pedido; } finally { delete _cache.resumenEnCurso[cacheKey]; }
   }
   /* ---------- Informe General: junta todo lo necesario para armar el documento mensual directo
      en la app (reemplaza las tablas vinculadas de Google Docs, que quedaban feas con datos de
@@ -6184,7 +6199,13 @@ const APP_VERSION = '2026-10-15.5';
         const contenido = document.getElementById('at-contenido').value.trim();
         const vigencia = document.getElementById('at-vigencia').value;
         if(!tema || !vigencia){ alert('Completá al menos el tema y hasta cuándo queda vigente.'); return; }
+        if(!(new Date(vigencia).getTime() > Date.now())){ alert('La fecha "Vigente hasta" tiene que ser posterior a ahora.'); return; }
+        // Se muestra un solo tema vigente por vez: si hay otro abierto, se cierra al publicar el nuevo
+        // (antes quedaba abierto pero escondido, y los vecinos no podían seguir preguntando en él).
+        if(activo && !confirm(`Ya hay un tema en consulta ("${activo.tema}"). Al publicar este, aquel se cierra y pasa a "Temas anteriores". ¿Seguir?`)) return;
+        btnPublicar.disabled = true;
         const lista = await loadData('naken-asamblea-temas', []);
+        if(activo){ const viejo = lista.find(x=>x.id===activo.id); if(viejo) viejo.vigenciaHasta = new Date(Date.now()-1000).toISOString(); }
         lista.push({
           id: uid(), creadoFecha: new Date().toISOString(),
           tema, titulo, contenido, vigenciaHasta: new Date(vigencia).toISOString(),
@@ -8022,11 +8043,15 @@ const APP_VERSION = '2026-10-15.5';
     async function refrescar(){
       mount.innerHTML = `<div class="empty">Cargando…</div>`;
 
-      const [datosAsamblea, asistenciaGuardada, votacionGuardada] = await Promise.all([
+      const [datosGuardados, asistenciaGuardada, votacionGuardada, edificiosAct] = await Promise.all([
         loadData('naken-asamblea-datos', {temas:[]}),
         loadData('naken-asamblea-asistencia', {rows:[], cerrada:false, fechaCierre:null}),
         loadData(storageKey, {resultados:{}, actaCerrada:false, actaFechaCierre:null}),
+        getEdificios().catch(()=>[]),
       ]);
+      // El acta tiene que identificar el edificio: se guarda el nombre junto con los datos.
+      const edAct = (edificiosAct||[]).find(e=>e.id===getActiveConsorcioId());
+      const datosAsamblea = {...(datosGuardados||{}), _consorcio: (datosGuardados && datosGuardados._consorcio) || (edAct ? edAct.nombre : '')};
       const temas = (datosAsamblea && datosAsamblea.temas) || [];
       const asistRows = Array.isArray(asistenciaGuardada) ? asistenciaGuardada : (asistenciaGuardada.rows || []);
       const asistCerrada = Array.isArray(asistenciaGuardada) ? false : !!asistenciaGuardada.cerrada;
@@ -8066,7 +8091,9 @@ const APP_VERSION = '2026-10-15.5';
         const errores = [];
         if(cant > presentesCant) errores.push(`Hay ${cant} votos a favor pero solo ${presentesCant} unidades presentes.`);
         if(porcentual > presentesPorcentual + 0.005) errores.push(`El porcentual a favor (${porcentual.toFixed(2)}%) supera el presente (${presentesPorcentual.toFixed(2)}%).`);
-        if(cant !== Math.floor(cant)) errores.push('La cantidad de unidades tiene que ser un número entero.');
+        const contra = num(r.contra), abst = num(r.abstenciones);
+        if(cant !== Math.floor(cant) || contra !== Math.floor(contra) || abst !== Math.floor(abst)) errores.push('Las cantidades de unidades tienen que ser números enteros.');
+        if(cant + contra + abst > presentesCant) errores.push(`A favor + en contra + abstenciones (${cant + contra + abst}) supera las ${presentesCant} unidades presentes.`);
         // Art. 2060: si no se llega sobre el total pero sí con más de la mitad de los presentes,
         // la decisión se notifica a los ausentes y queda aprobada a los 15 días si no se oponen.
         const viaPresentes = !aprobado && requerida==='absoluta' && presentesCant>0 && presentesPorcentual>0
@@ -8097,6 +8124,10 @@ const APP_VERSION = '2026-10-15.5';
                 <input type="text" data-voto-field="cant" value="${escapeHtml(r.cant)}" placeholder="0" ${actaCerrada?'disabled':''}></div>
               <div><label>Votos a favor — porcentual (de ${totalPorcentualPadron.toFixed(2)}%)</label>
                 <input type="text" data-voto-field="porcentual" value="${escapeHtml(r.porcentual)}" placeholder="0.00" ${actaCerrada?'disabled':''}></div>
+              <div><label>En contra (unidades, opcional)</label>
+                <input type="text" data-voto-field="contra" value="${escapeHtml(r.contra||'')}" placeholder="0" ${actaCerrada?'disabled':''}></div>
+              <div><label>Abstenciones (unidades, opcional)</label>
+                <input type="text" data-voto-field="abstenciones" value="${escapeHtml(r.abstenciones||'')}" placeholder="0" ${actaCerrada?'disabled':''}></div>
             </div>
             <div style="font-size:12.5px;" data-voto-veredicto>${veredictoDeVoto(r)}</div>
           </div>
@@ -8246,7 +8277,7 @@ const APP_VERSION = '2026-10-15.5';
           <tr>
             <td>${i+1}. ${escapeHtml(t.texto||'')}</td>
             <td>${escapeHtml(NOMBRE_MAYORIA[a.requerida])}</td>
-            <td>${escapeHtml(String(r.cant||'0'))} / ${totalPadron}</td>
+            <td>${escapeHtml(String(r.cant||'0'))} / ${totalPadron}${(r.contra||r.abstenciones) ? `<br><span style="font-size:11px;">En contra: ${escapeHtml(String(r.contra||'0'))} · Abst.: ${escapeHtml(String(r.abstenciones||'0'))}</span>` : ''}</td>
             <td>${escapeHtml(String(r.porcentual||'0'))}% / ${totalPorcentualPadron.toFixed(2)}%</td>
             <td><b>${res}</b></td>
           </tr>`;
@@ -8268,6 +8299,7 @@ const APP_VERSION = '2026-10-15.5';
           @media print{ body{margin:0;padding:16px;} }
         </style></head><body>
           <h1>Acta de Asamblea de Propietarios — Registro de respaldo digital</h1>
+          ${d._consorcio ? `<p style="font-size:15px;margin:4px 0 0;"><b>Consorcio:</b> ${escapeHtml(d._consorcio)}</p>` : ''}
           <div class="datos-grid">
             <div><b>Tipo:</b> ${escapeHtml(d.tipo||'—')}</div>
             <div><b>Convocatoria:</b> ${escapeHtml(d.convocatoria||'—')}</div>
