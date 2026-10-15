@@ -1784,7 +1784,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    Sin esto, los navegadores seguían usando el index.html anterior aunque
    se recargara la página, y una corrección publicada no llegaba a nadie.
    ===================================================================== */
-const APP_VERSION = '2026-10-15.1';
+const APP_VERSION = '2026-10-15.2';
 (function avisoVersionNueva(){
   async function revisar(){
     try{
@@ -6737,16 +6737,15 @@ const APP_VERSION = '2026-10-15.1';
           </p>
           ${n ? `
           <table class="ledger" style="margin-bottom:10px;">
-            <thead><tr><th></th><th>Unidad</th><th>Informado</th><th>Declaró</th><th>Estado</th><th>Monto a acreditar ($)</th></tr></thead>
+            <thead><tr><th></th><th>Unidad</th><th>Estado</th><th>Declaró</th><th>Monto a acreditar ($)</th></tr></thead>
             <tbody>
               ${r.filas.map((f, i)=>`
                 <tr data-i="${i}">
                   <td><input type="checkbox" class="vr-sel" ${f.preseleccion ? 'checked' : ''}></td>
                   <td>${escapeHtml(String(f.p.unidad))}<div class="card-meta">${escapeHtml(f.p.propietario || '')}</div></td>
-                  <td>${escapeHtml(f.p.fecha || '')}</td>
-                  <td>${fmt(parseMontoFlexible(f.p.monto))}${f.p.comprobante ? `<br><a href="${escapeHtml(f.p.comprobante)}" target="_blank" rel="noopener" style="font-size:11px;">Ver comprobante ↗</a>` : '<br><span class="card-meta">Sin comprobante</span>'}</td>
-                  <td><span class="badge ${etiqueta[f.estado][0]}">${etiqueta[f.estado][1]}</span><div class="card-meta" style="white-space:normal;min-width:220px;">${escapeHtml(f.detalle)}</div></td>
-                  <td><input type="text" class="vr-monto" value="${escapeHtml(String(f.monto).replace('.', ','))}" style="max-width:130px;"></td>
+                  <td><span class="badge ${etiqueta[f.estado][0]}">${etiqueta[f.estado][1]}</span><div class="card-meta" style="white-space:normal;min-width:180px;max-width:320px;">${escapeHtml(f.detalle)}</div></td>
+                  <td>${fmt(parseMontoFlexible(f.p.monto))}<div class="card-meta">Informado el ${escapeHtml(f.p.fecha || '—')}</div>${f.p.comprobante ? `<a href="${escapeHtml(f.p.comprobante)}" target="_blank" rel="noopener" style="font-size:11px;">Ver comprobante ↗</a>` : '<span class="card-meta">Sin comprobante</span>'}</td>
+                  <td><input type="text" class="vr-monto" value="${escapeHtml(Number(f.monto).toFixed(2).replace('.', ','))}" style="max-width:130px;"></td>
                 </tr>`).join('')}
             </tbody>
           </table>` : ''}
