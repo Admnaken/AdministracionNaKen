@@ -706,8 +706,9 @@
   .tema-row input[type="text"] { flex: 1; }
   .voto-row { border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; margin-bottom: 12px; }
   .voto-row .voto-tema { font-weight: 600; color: var(--primary); margin-bottom: 8px; }
-  .voto-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
+  .voto-inputs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 8px; }
   .voto-inputs label { font-size: 11px; color: var(--gray-600); display: block; margin-bottom: 4px; }
+  @media (max-width: 820px){ .voto-inputs { grid-template-columns: 1fr; } }
   .acta-cierre-box {
     border: 1px dashed var(--gold); border-radius: var(--radius); padding: 16px; margin-top: 18px;
     background: #FBF6E7;
@@ -1784,7 +1785,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    Sin esto, los navegadores seguían usando el index.html anterior aunque
    se recargara la página, y una corrección publicada no llegaba a nadie.
    ===================================================================== */
-const APP_VERSION = '2026-10-15.2';
+const APP_VERSION = '2026-10-15.5';
 (function avisoVersionNueva(){
   async function revisar(){
     try{
@@ -2007,6 +2008,21 @@ const APP_VERSION = '2026-10-15.2';
         body: JSON.stringify(Object.assign({ action:'crearReclamoPropio', key, sessionToken: SESSION_TOKEN }, datos))
       }));
     },
+    // Pre-Asamblea: una pregunta (propietario) o una respuesta (admin) por vez, nunca la lista entera.
+    async crearPreguntaAsamblea(key, datos){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'crearPreguntaAsamblea', key, sessionToken: SESSION_TOKEN }, datos))
+      }));
+    },
+    async responderPreguntaAsamblea(key, datos){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action:'responderPreguntaAsamblea', key, sessionToken: SESSION_TOKEN }, datos))
+      }));
+    },
     async actualizarReclamoAdmin(key, datos){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
@@ -2113,6 +2129,13 @@ const APP_VERSION = '2026-10-15.2';
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(Object.assign({ action:'actualizarConflictoPropio', key, casoId, accion, sessionToken: SESSION_TOKEN }, extra||{}))
+      }));
+    },
+    async actualizarConflictoAdmin(key, casoId, cambios){
+      return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action:'actualizarConflictoAdmin', key, casoId, cambios, sessionToken: SESSION_TOKEN })
       }));
     },
     async solicitarAcceso(payload){
@@ -3819,7 +3842,7 @@ const APP_VERSION = '2026-10-15.2';
             <select id="cf-tipo">${CONFLICTO_TIPOS.map(t=>`<option>${t}</option>`).join('')}</select>
           </div>
           <div><label>Unidad denunciante</label><input type="text" id="cf-denunciante" value="${currentUser ? escapeHtml(currentUser.unidad) : ''}" readonly style="background:var(--gray-100,#f2f2f2);cursor:not-allowed;"></div>
-          <div><label>Unidad denunciada</label><input type="text" id="cf-denunciada" placeholder="Ej: 5° A"></div>
+          <div><label>Unidad denunciada</label><select id="cf-denunciada"><option value="">Cargando unidades…</option></select></div>
           <div>
             <label>Fecha y hora del hecho</label>
             <input type="datetime-local" id="cf-fechahecho">
@@ -3872,6 +3895,22 @@ const APP_VERSION = '2026-10-15.2';
     });
 
     if(role==='propietario'){
+      // Unidad denunciada: se elige de la lista del consorcio (escrita a mano, "5 A" y "5° A"
+      // no coincidían con la unidad del vecino y el caso nunca le llegaba).
+      getSpreadsheetIdActivo().then(id=>obtenerDeptosConPorcentual(id)).then(deptos=>{
+        const sel = document.getElementById('cf-denunciada');
+        if(!sel) return;
+        const propia = String(currentUser && currentUser.unidad || '').trim().toLowerCase();
+        const opciones = (deptos||[]).map(d=>d.valor).filter(v=>v && String(v).trim().toLowerCase()!==propia);
+        if(!opciones.length){
+          const input = document.createElement('input');
+          input.type = 'text'; input.id = 'cf-denunciada'; input.placeholder = 'Ej: 5° A';
+          sel.replaceWith(input);
+          return;
+        }
+        sel.innerHTML = `<option value="">Elegí la unidad…</option>` + opciones.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+      }).catch(()=>{});
+
       function renderNormativa(){
         const tipo = document.getElementById('cf-tipo').value;
         document.getElementById('cf-normativa-box').innerHTML = `
@@ -3925,6 +3964,11 @@ const APP_VERSION = '2026-10-15.2';
         const denunciada = document.getElementById('cf-denunciada').value.trim();
         if(!denunciante || !denunciada){
           setStatus(statusId,'error');
+          alert('Elegí la unidad denunciada.');
+          return;
+        }
+        if(!document.getElementById('cf-descripcion').value.trim()){
+          alert('Contá brevemente qué pasó en "Descripción del hecho".');
           return;
         }
         setStatus(statusId,'saving');
@@ -4183,12 +4227,10 @@ const APP_VERSION = '2026-10-15.2';
             const ta = document.getElementById('cf-notif-'+b.dataset.id);
             const texto = ta ? ta.value.trim() : '';
             if(!texto){ alert('Escribí la comunicación antes de enviarla.'); return; }
-            const casos2 = await loadData('naken-conflictos', []);
-            const caso = casos2.find(x=>x.id===b.dataset.id);
-            if(!caso) return;
-            caso.notificacion = texto;
-            caso.estado = 'Notificado';
-            await saveData('naken-conflictos', casos2, statusId);
+            b.disabled = true;
+            const ok = await cambiarCaso(b.dataset.id, {notificacion: texto, estado: 'Notificado'});
+            b.disabled = false;
+            if(!ok) return;
             flashButtonSuccess(b, '✓ Enviada');
             refreshConflictosBadge();
             renderList();
@@ -4196,12 +4238,8 @@ const APP_VERSION = '2026-10-15.2';
         });
         listEl.querySelectorAll('[data-action="cerrar-favorable"]').forEach(b=>{
           b.addEventListener('click', async ()=>{
-            const casos2 = await loadData('naken-conflictos', []);
-            const caso = casos2.find(x=>x.id===b.dataset.id);
-            if(!caso) return;
-            caso.estado = 'Resuelto';
-            caso.cierreMotivo = 'El denunciado reconoció la situación y se comprometió a que no se repita.';
-            await saveData('naken-conflictos', casos2, statusId);
+            const ok = await cambiarCaso(b.dataset.id, {estado: 'Resuelto', cierreMotivo: 'El denunciado reconoció la situación y se comprometió a que no se repita.'});
+            if(!ok) return;
             flashButtonSuccess(b, '✓ Caso cerrado');
             refreshConflictosBadge();
             renderList();
@@ -4210,12 +4248,8 @@ const APP_VERSION = '2026-10-15.2';
         listEl.querySelectorAll('[data-action="formalizar"]').forEach(b=>{
           b.addEventListener('click', async ()=>{
             if(!confirm('¿Formalizar la mediación? A partir de acá, el denunciado va a poder ver la denuncia completa, y ambas partes van a poder elegir si continúan o desisten.')) return;
-            const casos2 = await loadData('naken-conflictos', []);
-            const caso = casos2.find(x=>x.id===b.dataset.id);
-            if(!caso) return;
-            caso.formalizada = true;
-            caso.estado = 'Mediación formal';
-            await saveData('naken-conflictos', casos2, statusId);
+            const ok = await cambiarCaso(b.dataset.id, {formalizada: true, estado: 'Mediación formal'});
+            if(!ok) return;
             flashButtonSuccess(b, '✓ Formalizada');
             refreshConflictosBadge();
             renderList();
@@ -4225,14 +4259,9 @@ const APP_VERSION = '2026-10-15.2';
           b.addEventListener('click', async ()=>{
             const ta = document.getElementById('cf-resultado-'+b.dataset.id);
             const texto = ta ? ta.value.trim() : '';
-            if(!texto) return;
-            const casos2 = await loadData('naken-conflictos', []);
-            const caso = casos2.find(x=>x.id===b.dataset.id);
-            if(!caso) return;
-            caso.resultadoReunion = texto;
-            caso.resultadoReunionFecha = new Date().toLocaleDateString('es-AR');
-            caso.estado = 'Resuelto';
-            await saveData('naken-conflictos', casos2, statusId);
+            if(!texto){ alert('Escribí qué se acordó en la reunión.'); return; }
+            const ok = await cambiarCaso(b.dataset.id, {resultadoReunion: texto, resultadoReunionFecha: new Date().toLocaleDateString('es-AR'), estado: 'Resuelto'});
+            if(!ok) return;
             flashButtonSuccess(b, '✓ Guardado');
             refreshConflictosBadge();
             renderList();
@@ -4315,11 +4344,18 @@ const APP_VERSION = '2026-10-15.2';
       return html;
     }
 
+    // La administración cambia UN caso por vez en el servidor (nunca la lista entera).
+    async function cambiarCaso(casoId, cambios){
+      setStatus(statusId,'saving');
+      let res;
+      try{ res = await window.storage.actualizarConflictoAdmin(nsKey('naken-conflictos'), casoId, cambios); }
+      catch(e){ res = {ok:false, error: e && e.message || String(e)}; }
+      if(!res || !res.ok){ setStatus(statusId,'error'); alert('No se pudo guardar: ' + ((res && res.error) || '')); return false; }
+      setStatus(statusId,'saved');
+      return true;
+    }
     async function persistField(e){
-      const casos = await loadData('naken-conflictos', []);
-      const caso = casos.find(x=>x.id===e.target.dataset.id);
-      if(caso) caso[e.target.dataset.f] = e.target.value;
-      await saveData('naken-conflictos', casos, statusId);
+      await cambiarCaso(e.target.dataset.id, {[e.target.dataset.f]: e.target.value});
     }
 
     renderList();
@@ -6184,10 +6220,13 @@ const APP_VERSION = '2026-10-15.2';
       mount.querySelectorAll('.preg-responder').forEach(b=>{
         b.addEventListener('click', async ()=>{
           const ta = mount.querySelector(`.preg-respuesta[data-id="${b.dataset.id}"]`);
-          const lista = await loadData('naken-asamblea-preguntas', []);
-          const p = lista.find(x=>x.id===b.dataset.id);
-          if(p){ p.respuesta = ta.value.trim(); p.respuestaFechaHora = new Date().toISOString(); }
-          await saveData('naken-asamblea-preguntas', lista);
+          if(!ta.value.trim()){ alert('Escribí la respuesta antes de enviarla.'); return; }
+          b.disabled = true;
+          let res;
+          try{ res = await window.storage.responderPreguntaAsamblea(nsKey('naken-asamblea-preguntas'), {id: b.dataset.id, respuesta: ta.value.trim()}); }
+          catch(e){ res = {ok:false, error: e && e.message || String(e)}; }
+          b.disabled = false;
+          if(!res || !res.ok){ alert('No se pudo enviar la respuesta: ' + ((res && res.error) || '')); return; }
           flashButtonSuccess(b, '✓ Enviada');
           refreshAsambleaBadge();
           setTimeout(()=>mountAsambleaSistema(mountId), 700);
@@ -6199,15 +6238,16 @@ const APP_VERSION = '2026-10-15.2';
       const btnPreguntar = document.getElementById('at-pregunta-enviar');
       if(btnPreguntar) btnPreguntar.addEventListener('click', async ()=>{
         const texto = document.getElementById('at-pregunta').value.trim();
-        if(!texto || !activo) return;
-        const lista = await loadData('naken-asamblea-preguntas', []);
-        lista.push({
-          id: uid(), temaId: activo.id,
-          unidad: currentUser.unidad, propietario: currentUser.nombreCompleto,
-          fechaHora: new Date().toISOString(),
-          asunto: texto, estado:'Pendiente', respuesta:'', respuestaFechaHora:''
-        });
-        await saveData('naken-asamblea-preguntas', lista);
+        if(!texto){ alert('Escribí tu pregunta antes de enviarla.'); return; }
+        if(!activo) return;
+        btnPreguntar.disabled = true;
+        // Unidad, nombre y hora los pone el servidor. idCliente evita duplicados si la red reintenta.
+        const idCliente = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+        let res;
+        try{ res = await window.storage.crearPreguntaAsamblea(nsKey('naken-asamblea-preguntas'), {temaId: activo.id, asunto: texto, idCliente}); }
+        catch(e){ res = {ok:false, error: e && e.message || String(e)}; }
+        btnPreguntar.disabled = false;
+        if(!res || !res.ok){ alert('No se pudo enviar la pregunta: ' + ((res && res.error) || '')); return; }
         flashButtonSuccess(btnPreguntar, '✓ Enviada');
         markAsambleaSeen();
         setTimeout(()=>mountAsambleaSistema(mountId), 700);
@@ -7444,6 +7484,10 @@ const APP_VERSION = '2026-10-15.2';
 
   /* ---------- Registro de asistencia a asamblea (doble cómputo + mayorías CCyCN) ---------- */
   /* ---------- Mayorías del CCyCN (doble cómputo), helper compartido entre etapas ---------- */
+  // Una fila de asistencia cuenta como presente solo si tiene unidad cargada.
+  function tieneUnidad(r){ return !!String((r && r.unidad) || '').trim(); }
+  function esPresenteAsamblea(r){ return tieneUnidad(r) && (r.modo==='Titular' || r.modo==='Representante (poder)'); }
+
   function nivelesMayoria(fracCant, fracPor){
     const niveles = [
       {key:'absoluta', label:'Mayoría absoluta', detalle:'más de la mitad del total de propietarios', umbral:0.5, estricto:true},
@@ -7489,7 +7533,7 @@ const APP_VERSION = '2026-10-15.2';
     // Etapa 1 y 3 se montan primero (son livianas); la 2 reutiliza toda la lógica ya existente.
     mountDatosAsamblea(mountId+'-panel-datos', tabs[0]);
     await mountAsistencia(mountId+'-panel-asistencia', 'naken-asamblea-asistencia');
-    mountResultadosAsamblea(mountId+'-panel-resultados', tabs[2]);
+    mountResultadosAsamblea(mountId+'-panel-resultados', tabs[2], ()=>mountGestionAsamblea(mountId));
 
     irA('datos');
   }
@@ -7689,10 +7733,10 @@ const APP_VERSION = '2026-10-15.2';
 
     function updateKpi(){
       const total = totalPadron>0 ? totalPadron : rows.length;
-      const titulares = rows.filter(r=>r.modo==='Titular').length;
-      const representantes = rows.filter(r=>r.modo==='Representante (poder)').length;
+      const titulares = rows.filter(r=>tieneUnidad(r) && r.modo==='Titular').length;
+      const representantes = rows.filter(r=>tieneUnidad(r) && r.modo==='Representante (poder)').length;
       const presentes = titulares + representantes;
-      const porcentualPresente = rows.filter(r=>r.modo==='Titular'||r.modo==='Representante (poder)').reduce((s,r)=>s+num(r.porcentual),0);
+      const porcentualPresente = rows.filter(esPresenteAsamblea).reduce((s,r)=>s+num(r.porcentual),0);
       const m = computeMayorias();
       const veredictoTxt = m.totalUnidades===0 ? '—' : (m.alcanzada ? m.alcanzada.label : 'Ninguna mayoría');
       kpi.innerHTML = `
@@ -7720,7 +7764,7 @@ const APP_VERSION = '2026-10-15.2';
     // propietarios como por su porcentual. Las unidades no cargadas cuentan como ausentes.
     function computeMayorias(){
       const totalUnidades = totalPadron>0 ? totalPadron : rows.length;
-      const presentesRows = rows.filter(r=>r.modo==='Titular'||r.modo==='Representante (poder)');
+      const presentesRows = rows.filter(esPresenteAsamblea);
       const presentesCant = presentesRows.length;
       const baseTotalPorcentual = totalPadron>0
         ? (totalPorcentualPadron>0 ? totalPorcentualPadron : 100)
@@ -7745,6 +7789,16 @@ const APP_VERSION = '2026-10-15.2';
       return {totalUnidades, presentesCant, porcentualPresente, baseTotalPorcentual, fracCant, fracPor, resultado, alcanzada};
     }
 
+    // Problemas de carga que conviene resolver antes de cerrar la asistencia.
+    function avisosAsistencia(){
+      const out = [];
+      const sinUnidad = rows.filter(r=>!tieneUnidad(r)).length;
+      if(sinUnidad) out.push(sinUnidad===1 ? 'Hay 1 fila sin unidad elegida: no se cuenta como presente.' : `Hay ${sinUnidad} filas sin unidad elegida: no se cuentan como presentes.`);
+      const poderSinNombre = rows.filter(r=>tieneUnidad(r) && r.modo==='Representante (poder)' && !String(r.representante||'').trim()).map(r=>r.unidad);
+      if(poderSinNombre.length) out.push('Falta el nombre y DNI del representante en: ' + poderSinNombre.join(', ') + '. El acta debe identificar a quien vota por poder.');
+      return out;
+    }
+
     function renderMayoriaBox(){
       const m = computeMayorias();
       const pct = f => (f*100).toFixed(2)+'%';
@@ -7757,6 +7811,8 @@ const APP_VERSION = '2026-10-15.2';
       } else {
         veredictoHtml = `<div class="mayoria-veredicto">Con la asistencia actual se alcanza: <b>${m.alcanzada.label.toUpperCase()}</b></div>`;
       }
+      const av = avisosAsistencia();
+      if(av.length) veredictoHtml = `<div class="mayoria-veredicto sin-quorum" style="margin-bottom:8px;">⚠ ${av.map(escapeHtml).join('<br>⚠ ')}</div>` + veredictoHtml;
 
       const filas = m.resultado.map(r=>`
         <tr>
@@ -7834,7 +7890,7 @@ const APP_VERSION = '2026-10-15.2';
               <option ${modo==='Representante (poder)'?'selected':''}>Representante (poder)</option>
             </select>
           </td>
-          <td><input type="text" data-field="representante" value="${escapeHtml(row.representante)}" placeholder="Nombre y DNI del representante" ${esRepresentante?'':'disabled'}></td>
+          <td><input type="text" data-field="representante" value="${escapeHtml(row.representante)}" placeholder="Nombre y DNI del representante" ${esRepresentante?'':'disabled'} ${esRepresentante && !String(row.representante||'').trim() ? 'style="border-color:var(--danger);"' : ''}></td>
           <td class="row-del"><button data-action="delete" title="Eliminar">✕</button></td>
         `;
         body.appendChild(tr);
@@ -7864,6 +7920,7 @@ const APP_VERSION = '2026-10-15.2';
     body.addEventListener('input', e=>{
       if(cerrada) return;
       if(e.target.dataset.field==='modo' || e.target.dataset.field==='unidad') return;
+      if(e.target.dataset.field==='representante') e.target.style.borderColor = e.target.value.trim() ? '' : 'var(--danger)';
       scheduleSave();
     });
     body.addEventListener('change', e=>{
@@ -7883,6 +7940,7 @@ const APP_VERSION = '2026-10-15.2';
         const repInput = tr.querySelector('[data-field="representante"]');
         const esRepresentante = e.target.value === 'Representante (poder)';
         repInput.disabled = !esRepresentante;
+        repInput.style.borderColor = (esRepresentante && !repInput.value.trim()) ? 'var(--danger)' : '';
         if(!esRepresentante) repInput.value = ''; // si asistió el titular (o está ausente), la caja queda en gris y vacía
         rows = readRows();
         updateKpi();
@@ -7921,9 +7979,19 @@ const APP_VERSION = '2026-10-15.2';
       render();
       persist();
     });
-    cerrarBtn.addEventListener('click', ()=>{
+    cerrarBtn.addEventListener('click', async ()=>{
+      if(cerrada){
+        // Con el acta ya cerrada, la asistencia queda fija: es parte de lo que se asentó.
+        const v = await loadData('naken-asamblea-votacion', null);
+        if(v && v.actaCerrada){ alert('El acta de esta asamblea ya está cerrada: la asistencia no se puede reabrir.'); return; }
+      }
       rows = readRows();
-      if(!cerrada){ cerrada = true; fechaCierre = new Date().toISOString(); }
+      if(!cerrada){
+        const av = avisosAsistencia();
+        if(av.length && !confirm('Antes de cerrar la asistencia:\n\n• ' + av.join('\n• ') + '\n\n¿Cerrarla igual?')) return;
+        rows = rows.filter(tieneUnidad); // las filas vacías no tienen sentido en el acta
+        cerrada = true; fechaCierre = new Date().toISOString();
+      }
       else { cerrada = false; fechaCierre = null; }
       renderCierre();
       render();
@@ -7944,7 +8012,7 @@ const APP_VERSION = '2026-10-15.2';
   }
 
   /* ---------- Etapa 3: resultados de la votación + cierre del acta (con PDF de respaldo) ---------- */
-  async function mountResultadosAsamblea(mountId, tabEl){
+  async function mountResultadosAsamblea(mountId, tabEl, alNuevaAsamblea){
     const mount = document.getElementById(mountId);
     const statusId = mountId+'-status';
     const storageKey = 'naken-asamblea-votacion';
@@ -7972,8 +8040,8 @@ const APP_VERSION = '2026-10-15.2';
       const totalPorcentualPadron = deptos.length>0
         ? deptos.reduce((s,d)=>s+(parseFloat((d.porcentual||'0').replace(',','.'))||0),0)
         : (asistRows.reduce((s,r)=>s+num(r.porcentual),0) || 100);
-      const presentesCant = asistRows.filter(r=>r.modo==='Titular'||r.modo==='Representante (poder)').length;
-      const presentesPorcentual = asistRows.filter(r=>r.modo==='Titular'||r.modo==='Representante (poder)').reduce((s,r)=>s+num(r.porcentual),0);
+      const presentesCant = asistRows.filter(esPresenteAsamblea).length;
+      const presentesPorcentual = asistRows.filter(esPresenteAsamblea).reduce((s,r)=>s+num(r.porcentual),0);
 
       let resultados = (votacionGuardada && votacionGuardada.resultados) || {};
       let actaCerrada = !!(votacionGuardada && votacionGuardada.actaCerrada);
@@ -7983,24 +8051,48 @@ const APP_VERSION = '2026-10-15.2';
         saveData(storageKey, {resultados, actaCerrada, actaFechaCierre}, statusId);
       }
 
-      function veredictoDeVoto(r){
-        const cant = num(r.cant);
-        const porcentual = num(r.porcentual);
+      const ORDEN_MAYORIA = {absoluta:1, dosTercios:2, unanimidad:3};
+      const NOMBRE_MAYORIA = {absoluta:'Mayoría absoluta', dosTercios:'Mayoría de 2/3', unanimidad:'Unanimidad'};
+      // Análisis de un tema: qué mayoría se alcanzó sobre el total, si alcanza la que pide el tema,
+      // si los números son coherentes con la asistencia, y la vía del art. 2060 (mayoría de presentes).
+      function analizarVoto(r){
+        const vacio = (String(r.cant||'').trim()==='' && String(r.porcentual||'').trim()==='');
+        const cant = num(r.cant), porcentual = num(r.porcentual);
+        const requerida = r.requerida || 'absoluta';
         const fracCant = totalPadron>0 ? cant/totalPadron : 0;
         const fracPor = totalPorcentualPadron>0 ? porcentual/totalPorcentualPadron : 0;
         const {alcanzada} = nivelesMayoria(fracCant, fracPor);
-        return (r.cant==='' && r.porcentual==='')
-          ? `<span style="color:var(--gray-500,#9aa0a6);">Sin cargar</span>`
-          : alcanzada
-            ? `<span class="mayoria-ok">${alcanzada.label} alcanzada</span>`
-            : `<span class="mayoria-no">Ninguna mayoría alcanzada</span>`;
+        const aprobado = !!alcanzada && ORDEN_MAYORIA[alcanzada.key] >= ORDEN_MAYORIA[requerida];
+        const errores = [];
+        if(cant > presentesCant) errores.push(`Hay ${cant} votos a favor pero solo ${presentesCant} unidades presentes.`);
+        if(porcentual > presentesPorcentual + 0.005) errores.push(`El porcentual a favor (${porcentual.toFixed(2)}%) supera el presente (${presentesPorcentual.toFixed(2)}%).`);
+        if(cant !== Math.floor(cant)) errores.push('La cantidad de unidades tiene que ser un número entero.');
+        // Art. 2060: si no se llega sobre el total pero sí con más de la mitad de los presentes,
+        // la decisión se notifica a los ausentes y queda aprobada a los 15 días si no se oponen.
+        const viaPresentes = !aprobado && requerida==='absoluta' && presentesCant>0 && presentesPorcentual>0
+          && cant > presentesCant/2 && porcentual > presentesPorcentual/2;
+        return {vacio, alcanzada, requerida, aprobado, errores, viaPresentes};
+      }
+      function veredictoDeVoto(r){
+        const a = analizarVoto(r);
+        if(a.vacio) return `<span style="color:var(--gray-500,#9aa0a6);">Sin cargar</span>`;
+        let html = a.aprobado
+          ? `<span class="mayoria-ok">APROBADO — ${a.alcanzada.label} alcanzada (se pedía ${NOMBRE_MAYORIA[a.requerida].toLowerCase()})</span>`
+          : `<span class="mayoria-no">NO APROBADO — ${a.alcanzada ? 'solo ' + a.alcanzada.label.toLowerCase() : 'ninguna mayoría'} sobre el total (se pedía ${NOMBRE_MAYORIA[a.requerida].toLowerCase()})</span>`;
+        if(a.viaPresentes) html += `<br><span style="color:var(--gray-600);">Tiene mayoría de los presentes: puede quedar aprobado si se notifica en forma fehaciente a los ausentes y no se oponen con mayoría suficiente dentro de los 15 días (art. 2060 CCyCN).</span>`;
+        if(a.errores.length) html += `<br><span style="color:var(--danger);">⚠ ${a.errores.map(escapeHtml).join(' ')}</span>`;
+        return html;
       }
       function filaVoto(tema, i){
-        const r = resultados[tema.id] || {cant:'', porcentual:''};
+        const r = resultados[tema.id] || {cant:'', porcentual:'', requerida:'absoluta'};
         return `
           <div class="voto-row" data-tema-id="${escapeHtml(tema.id)}">
             <div class="voto-tema">${i+1}. ${escapeHtml(tema.texto || '(tema sin título — completalo en la Etapa 1)')}</div>
             <div class="voto-inputs">
+              <div><label>Mayoría que exige este tema</label>
+                <select data-voto-field="requerida" ${actaCerrada?'disabled':''}>
+                  ${['absoluta','dosTercios','unanimidad'].map(k=>`<option value="${k}" ${(r.requerida||'absoluta')===k?'selected':''}>${NOMBRE_MAYORIA[k]}</option>`).join('')}
+                </select></div>
               <div><label>Votos a favor — cantidad de unidades (de ${totalPadron})</label>
                 <input type="text" data-voto-field="cant" value="${escapeHtml(r.cant)}" placeholder="0" ${actaCerrada?'disabled':''}></div>
               <div><label>Votos a favor — porcentual (de ${totalPorcentualPadron.toFixed(2)}%)</label>
@@ -8021,7 +8113,8 @@ const APP_VERSION = '2026-10-15.2';
           ${actaCerrada
             ? `<b style="color:var(--ok);">✓ Acta cerrada el ${actaFechaCierre ? new Date(actaFechaCierre).toLocaleString('es-AR') : ''}</b>
                <p class="panel-note" style="margin:8px 0 0;">Este cierre queda como respaldo digital — no reemplaza la firma del libro de actas físico.</p>
-               <div class="toolbar" style="margin-top:10px;"><button class="btn primary" id="${mountId}-pdf">Generar PDF del acta</button></div>`
+               <div class="toolbar" style="margin-top:10px;"><button class="btn primary" id="${mountId}-pdf">Generar PDF del acta</button>
+                 <button class="btn ghost" id="${mountId}-nueva">Archivar y empezar una asamblea nueva</button></div>`
             : `<b>Cerrar acta de la asamblea</b>
                <p class="panel-note" style="margin:8px 0 12px;">Al cerrar, la fecha y hora quedan fijas en forma automática (no se pueden elegir) y ya no se puede editar ni la asistencia ni los resultados. Este registro sirve de respaldo de lo que después se asentará en el libro físico.</p>
                <div class="toolbar">${statusEl(statusId)}<button class="btn primary" id="${mountId}-cerrar-acta" ${asistCerrada?'':'disabled'}>Cerrar acta y generar PDF</button></div>`}
@@ -8031,45 +8124,110 @@ const APP_VERSION = '2026-10-15.2';
       const votosBox = document.getElementById(mountId+'-votos');
       if(votosBox){
         let saveTimer;
-        votosBox.addEventListener('input', e=>{
+        const alCambiarVoto = e=>{
           const campo = e.target.dataset.votoField;
           if(!campo || actaCerrada) return;
           const fila = e.target.closest('.voto-row');
           const temaId = fila.dataset.temaId;
-          if(!resultados[temaId]) resultados[temaId] = {cant:'', porcentual:''};
+          if(!resultados[temaId]) resultados[temaId] = {cant:'', porcentual:'', requerida:'absoluta'};
           resultados[temaId][campo] = e.target.value;
           // Solo actualiza el veredicto, sin tocar los inputs, para no perder el foco al tipear.
           fila.querySelector('[data-voto-veredicto]').innerHTML = veredictoDeVoto(resultados[temaId]);
           setStatus(statusId,'saving');
           clearTimeout(saveTimer);
           saveTimer = setTimeout(()=>persist(), 500);
-        });
+        };
+        votosBox.addEventListener('input', alCambiarVoto);
+        votosBox.addEventListener('change', e=>{ if(e.target.tagName==='SELECT') alCambiarVoto(e); });
       }
 
       const cerrarActaBtn = document.getElementById(mountId+'-cerrar-acta');
       if(cerrarActaBtn){
         cerrarActaBtn.addEventListener('click', ()=>{
           if(!asistCerrada) return;
+          const conError = temas.filter(t=>analizarVoto(resultados[t.id]||{}).errores.length).map((t,i)=>t.texto||('tema '+(i+1)));
+          if(conError.length){ alert('Revisá los votos de: ' + conError.join(', ') + '. Hay más votos que presentes o números inválidos.'); return; }
+          const sinCargar = temas.filter(t=>analizarVoto(resultados[t.id]||{}).vacio).length;
+          if(sinCargar && !confirm(`Hay ${sinCargar} tema(s) sin votos cargados. Van a figurar en el acta como "sin votación". ¿Seguir?`)) return;
           if(!confirm('Al cerrar el acta ya no vas a poder editar los resultados ni la asistencia de esta asamblea. ¿Confirmás el cierre?')) return;
           actaCerrada = true;
           actaFechaCierre = new Date().toISOString();
-          persist();
-          refrescar();
+          cerrarActaBtn.disabled = true;
+          // Se espera a que quede guardado antes de volver a leer (si no, se relee el estado viejo).
+          saveData(storageKey, {resultados, actaCerrada, actaFechaCierre}, statusId)
+            .then(()=>refrescar())
+            .catch(err=>{ actaCerrada = false; actaFechaCierre = null; cerrarActaBtn.disabled = false; alert('No se pudo cerrar el acta: ' + (err && err.message || err)); });
         });
       }
+
+      const nuevaBtn = document.getElementById(mountId+'-nueva');
+      if(nuevaBtn){
+        nuevaBtn.addEventListener('click', async ()=>{
+          if(!confirm('La asamblea cerrada pasa al historial (con su acta, asistencia y votos, y se puede volver a ver) y las tres etapas quedan en blanco para la próxima. ¿Seguir?')) return;
+          nuevaBtn.disabled = true;
+          try{
+            const historial = await loadData('naken-asamblea-historial', []);
+            const lista = Array.isArray(historial) ? historial : [];
+            if(!lista.some(h=>h.actaFechaCierre===actaFechaCierre)){
+              lista.unshift({actaFechaCierre, datos: datosAsamblea, asistencia: asistenciaGuardada, votacion: {resultados, actaCerrada, actaFechaCierre}});
+            }
+            await saveData('naken-asamblea-historial', lista, statusId);
+            await saveData('naken-asamblea-datos', {tipo:'Ordinaria', convocatoria:'Primera', fecha:'', horaInicio:'', horaFin:'', lugar:'', administrador:'', presidente:'', secretario:'', temas:[]});
+            await saveData('naken-asamblea-asistencia', {rows:[], reglamento:'', cerrada:false, fechaCierre:null});
+            await saveData(storageKey, {resultados:{}, actaCerrada:false, actaFechaCierre:null});
+            if(typeof alNuevaAsamblea === 'function') alNuevaAsamblea();
+          }catch(err){
+            nuevaBtn.disabled = false;
+            alert('No se pudo archivar la asamblea: ' + (err && err.message || err));
+          }
+        });
+      }
+
+      // Asambleas anteriores (archivadas): se puede volver a generar su acta.
+      loadData('naken-asamblea-historial', []).then(historial=>{
+        const lista = Array.isArray(historial) ? historial : [];
+        if(!lista.length) return;
+        const box = document.createElement('div');
+        box.innerHTML = `<div class="subhead">Asambleas anteriores</div>` + lista.map((h,i)=>{
+          const d = h.datos || {};
+          const fecha = d.fecha ? new Date(d.fecha+'T00:00:00').toLocaleDateString('es-AR') : '(sin fecha)';
+          return `<div class="toolbar" style="justify-content:space-between;border-bottom:1px solid var(--line);padding:6px 0;">
+            <span>${escapeHtml(d.tipo||'Asamblea')} del ${fecha} — ${(d.temas||[]).length} tema(s)</span>
+            <button class="btn ghost" data-hist="${i}">Ver acta</button></div>`;
+        }).join('');
+        mount.appendChild(box);
+        box.addEventListener('click', e=>{
+          const b = e.target.closest('[data-hist]'); if(!b) return;
+          const h = lista[+b.dataset.hist];
+          const aRows = Array.isArray(h.asistencia) ? h.asistencia : ((h.asistencia && h.asistencia.rows) || []);
+          const res = (h.votacion && h.votacion.resultados) || {};
+          // El total del consorcio puede haber cambiado desde entonces: se usa el de hoy (es lo que hay).
+          generarPdfActa(h.datos||{}, aRows, (h.datos && h.datos.temas)||[], res, totalPadron, totalPorcentualPadron,
+            aRows.filter(esPresenteAsamblea).length, aRows.filter(esPresenteAsamblea).reduce((s,r)=>s+num(r.porcentual),0),
+            h.actaFechaCierre, (r)=>{
+              const pc = aRows.filter(esPresenteAsamblea);
+              const cant=num(r.cant), por=num(r.porcentual), req=r.requerida||'absoluta';
+              const {alcanzada} = nivelesMayoria(totalPadron? cant/totalPadron:0, totalPorcentualPadron? por/totalPorcentualPadron:0);
+              const aprobado = !!alcanzada && ORDEN_MAYORIA[alcanzada.key] >= ORDEN_MAYORIA[req];
+              const pp = pc.reduce((s,x)=>s+num(x.porcentual),0);
+              return {vacio:(String(r.cant||'').trim()==='' && String(r.porcentual||'').trim()===''), alcanzada, requerida:req, aprobado, errores:[],
+                viaPresentes: !aprobado && req==='absoluta' && cant > pc.length/2 && por > pp/2};
+            }, NOMBRE_MAYORIA);
+        });
+      }).catch(()=>{});
 
       const pdfBtn = document.getElementById(mountId+'-pdf');
       if(pdfBtn){
         pdfBtn.addEventListener('click', ()=>{
-          generarPdfActa(datosAsamblea, asistRows, temas, resultados, totalPadron, totalPorcentualPadron, presentesCant, presentesPorcentual, actaFechaCierre);
+          generarPdfActa(datosAsamblea, asistRows, temas, resultados, totalPadron, totalPorcentualPadron, presentesCant, presentesPorcentual, actaFechaCierre, analizarVoto, NOMBRE_MAYORIA);
         });
       }
     }
 
-    function generarPdfActa(datosAsamblea, asistRows, temas, resultados, totalPadron, totalPorcentualPadron, presentesCant, presentesPorcentual, actaFechaCierre){
+    function generarPdfActa(datosAsamblea, asistRows, temas, resultados, totalPadron, totalPorcentualPadron, presentesCant, presentesPorcentual, actaFechaCierre, analizarVoto, NOMBRE_MAYORIA){
       const d = datosAsamblea || {};
       const fmtFecha = (v)=> v ? new Date(v+'T00:00:00').toLocaleDateString('es-AR') : '(sin fecha)';
-      const filasAsistencia = asistRows.filter(r=>r.modo!=='No presente').map(r=>`
+      const filasAsistencia = asistRows.filter(esPresenteAsamblea).map(r=>`
         <tr>
           <td>${escapeHtml(r.unidad)}</td>
           <td>${escapeHtml(r.porcentual)}%</td>
@@ -8079,19 +8237,20 @@ const APP_VERSION = '2026-10-15.2';
 
       const filasTemas = temas.map((t,i)=>{
         const r = resultados[t.id] || {cant:'', porcentual:''};
-        const cant = parseFloat((r.cant||'0').toString().replace(',','.'))||0;
-        const porcentual = parseFloat((r.porcentual||'0').toString().replace(',','.'))||0;
-        const fracCant = totalPadron>0 ? cant/totalPadron : 0;
-        const fracPor = totalPorcentualPadron>0 ? porcentual/totalPorcentualPadron : 0;
-        const {alcanzada} = nivelesMayoria(fracCant, fracPor);
+        const a = analizarVoto(r);
+        const res = a.vacio ? 'Sin votación'
+          : a.aprobado ? 'APROBADO (' + a.alcanzada.label + ')'
+          : a.viaPresentes ? 'Mayoría de presentes — se notifica a ausentes (art. 2060)'
+          : 'NO APROBADO (' + (a.alcanzada ? a.alcanzada.label : 'ninguna mayoría') + ')';
         return `
           <tr>
             <td>${i+1}. ${escapeHtml(t.texto||'')}</td>
-            <td>${r.cant||'0'} / ${totalPadron}</td>
-            <td>${r.porcentual||'0'}% / ${totalPorcentualPadron.toFixed(2)}%</td>
-            <td><b>${alcanzada ? alcanzada.label : 'Ninguna mayoría alcanzada'}</b></td>
+            <td>${escapeHtml(NOMBRE_MAYORIA[a.requerida])}</td>
+            <td>${escapeHtml(String(r.cant||'0'))} / ${totalPadron}</td>
+            <td>${escapeHtml(String(r.porcentual||'0'))}% / ${totalPorcentualPadron.toFixed(2)}%</td>
+            <td><b>${res}</b></td>
           </tr>`;
-      }).join('') || `<tr><td colspan="4">Sin temas cargados.</td></tr>`;
+      }).join('') || `<tr><td colspan="5">Sin temas cargados.</td></tr>`;
 
       const win = window.open('', '_blank');
       if(!win){ alert('El navegador bloqueó la ventana emergente. Habilitala para generar el PDF.'); return; }
@@ -8121,7 +8280,7 @@ const APP_VERSION = '2026-10-15.2';
           </div>
 
           <h2>Orden del día</h2>
-          <table><thead><tr><th>Tema</th><th>Votos a favor (cant.)</th><th>Votos a favor (%)</th><th>Resultado</th></tr></thead>
+          <table><thead><tr><th>Tema</th><th>Mayoría exigida</th><th>Votos a favor (cant.)</th><th>Votos a favor (%)</th><th>Resultado</th></tr></thead>
           <tbody>${filasTemas}</tbody></table>
 
           <h2>Asistencia registrada</h2>
