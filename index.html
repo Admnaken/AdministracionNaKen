@@ -204,6 +204,7 @@
     line-height: 1;
     font-family: 'Inter', sans-serif;
   }
+  .btn.btn-ocupado { opacity: .6; cursor: wait; }
   .btn.btn-flash-ok {
     background: var(--ok) !important;
     border-color: var(--ok) !important;
@@ -1785,7 +1786,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    Sin esto, los navegadores seguían usando el index.html anterior aunque
    se recargara la página, y una corrección publicada no llegaba a nadie.
    ===================================================================== */
-const APP_VERSION = '2026-10-15.7';
+const APP_VERSION = '2026-10-15.8';
 (function avisoVersionNueva(){
   async function revisar(){
     try{
@@ -3978,6 +3979,8 @@ const APP_VERSION = '2026-10-15.7';
           alert('Contá brevemente qué pasó en "Descripción del hecho".');
           return;
         }
+        const liberarCf = ocuparBoton(document.getElementById('cf-submit'));
+        if(!liberarCf) return;
         setStatus(statusId,'saving');
         const fechaHecho = (()=>{
           const raw = document.getElementById('cf-fechahecho').value;
@@ -3985,14 +3988,18 @@ const APP_VERSION = '2026-10-15.7';
           const d = new Date(raw);
           return isNaN(d.getTime()) ? raw : d.toLocaleString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
         })();
-        const res = await window.storage.crearConflictoPropio(nsKey('naken-conflictos'), {
-          tipo: document.getElementById('cf-tipo').value,
-          unidadDenunciada: denunciada,
-          fechaHecho,
-          evidencia: document.getElementById('cf-evidencia').value.trim(),
-          descripcion: document.getElementById('cf-descripcion').value.trim(),
-        });
-        if(!res.ok){
+        let res;
+        try{
+          res = await window.storage.crearConflictoPropio(nsKey('naken-conflictos'), {
+            tipo: document.getElementById('cf-tipo').value,
+            unidadDenunciada: denunciada,
+            fechaHecho,
+            evidencia: document.getElementById('cf-evidencia').value.trim(),
+            descripcion: document.getElementById('cf-descripcion').value.trim(),
+          });
+        }catch(e){ res = {ok:false, error: e && e.message || String(e)}; }
+        liberarCf();
+        if(!res || !res.ok){
           setStatus(statusId,'error');
           alert(res.error || 'No se pudo cargar el caso.');
           return;
@@ -4234,9 +4241,10 @@ const APP_VERSION = '2026-10-15.7';
             const ta = document.getElementById('cf-notif-'+b.dataset.id);
             const texto = ta ? ta.value.trim() : '';
             if(!texto){ alert('Escribí la comunicación antes de enviarla.'); return; }
-            b.disabled = true;
+            const liberar = ocuparBoton(b);
+            if(!liberar) return;
             const ok = await cambiarCaso(b.dataset.id, {notificacion: texto, estado: 'Notificado'});
-            b.disabled = false;
+            liberar();
             if(!ok) return;
             flashButtonSuccess(b, '✓ Enviada');
             refreshConflictosBadge();
@@ -4298,7 +4306,12 @@ const APP_VERSION = '2026-10-15.7';
             const texto = ta ? ta.value.trim() : '';
             const admite = b.dataset.action==='descargo-admite';
             if(!admite && !texto){ alert('Contanos tu versión antes de enviar.'); return; }
-            const res = await window.storage.actualizarConflictoPropio(nsKey('naken-conflictos'), b.dataset.id, 'descargo', { texto, admite });
+            const liberar = ocuparBoton(b);
+            if(!liberar) return;
+            let res;
+            try{ res = await window.storage.actualizarConflictoPropio(nsKey('naken-conflictos'), b.dataset.id, 'descargo', { texto, admite }); }
+            catch(e){ res = {ok:false, error: e && e.message || String(e)}; }
+            liberar();
             if(!res.ok){ alert(res.error || 'No se pudo enviar.'); return; }
             flashButtonSuccess(b, '✓ Enviado');
             refreshConflictosBadge();
@@ -4308,7 +4321,12 @@ const APP_VERSION = '2026-10-15.7';
         listEl.querySelectorAll('[data-action="decidir-continuar"], [data-action="decidir-desistir"]').forEach(b=>{
           b.addEventListener('click', async ()=>{
             const continuar = b.dataset.action==='decidir-continuar';
-            const res = await window.storage.actualizarConflictoPropio(nsKey('naken-conflictos'), b.dataset.id, 'decidir', { continuar });
+            const liberar = ocuparBoton(b);
+            if(!liberar) return;
+            let res;
+            try{ res = await window.storage.actualizarConflictoPropio(nsKey('naken-conflictos'), b.dataset.id, 'decidir', { continuar }); }
+            catch(e){ res = {ok:false, error: e && e.message || String(e)}; }
+            liberar();
             if(!res.ok){ alert(res.error || 'No se pudo enviar.'); return; }
             flashButtonSuccess(b, '✓ Enviado');
             refreshConflictosBadge();
@@ -5181,6 +5199,44 @@ const APP_VERSION = '2026-10-15.7';
   }
 
   /** Feedback visual en un botón de "Enviar/Guardar": cambia de color y texto un ratito para confirmar que se cargó. */
+  /** Pone un botón en "Enviando…" (deshabilitado, se ve distinto) desde el primer clic, para que
+   *  quede claro que algo está pasando y un segundo clic no mande lo mismo dos veces.
+   *  Devuelve la función que lo vuelve a la normalidad, o null si ya estaba ocupado. */
+  // Fechas: el selector del navegador deja escribir años de 5 o 6 cifras ("20262" por un 2 de más).
+  // En todos los campos de fecha de la app se limita el año a 4 cifras y, si igual queda un año
+  // absurdo, se marca en rojo y se avisa.
+  (function protegerAniosEnFechas(){
+    const ajustarMax = (el)=>{
+      if(el.type==='date' && !el.max) el.max = '2099-12-31';
+      if(el.type==='datetime-local' && !el.max) el.max = '2099-12-31T23:59';
+      if(el.type==='month' && !el.max) el.max = '2099-12';
+    };
+    const revisar = (el)=>{
+      const m = String(el.value||'').match(/^(\d+)-/);
+      const malo = m && (m[1].length !== 4 || +m[1] < 1990 || +m[1] > 2099);
+      el.style.borderColor = malo ? 'var(--danger)' : '';
+      el.setCustomValidity && el.setCustomValidity(malo ? 'Revisá el año' : '');
+      if(malo && el.dataset.avisoAnio !== el.value){ el.dataset.avisoAnio = el.value; alert('Revisá el año de la fecha: quedó "' + m[1] + '".'); }
+    };
+    const esFecha = (el)=> el && el.tagName==='INPUT' && /^(date|datetime-local|month)$/.test(el.type);
+    document.addEventListener('focusin', e=>{ if(esFecha(e.target)) ajustarMax(e.target); }, true);
+    document.addEventListener('change', e=>{ if(esFecha(e.target)) revisar(e.target); }, true);
+  })();
+
+  function ocuparBoton(btn, texto){
+    if(!btn || btn.dataset.ocupado) return null;
+    btn.dataset.ocupado = '1';
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.classList.add('btn-ocupado');
+    btn.textContent = texto || 'Enviando…';
+    return ()=>{
+      delete btn.dataset.ocupado;
+      btn.disabled = false;
+      btn.classList.remove('btn-ocupado');
+      btn.textContent = original;
+    };
+  }
   function flashButtonSuccess(btn, successText){
     if(!btn) return;
     if(btn.dataset.flashing) return;
@@ -6199,11 +6255,14 @@ const APP_VERSION = '2026-10-15.7';
         const contenido = document.getElementById('at-contenido').value.trim();
         const vigencia = document.getElementById('at-vigencia').value;
         if(!tema || !vigencia){ alert('Completá al menos el tema y hasta cuándo queda vigente.'); return; }
-        if(!(new Date(vigencia).getTime() > Date.now())){ alert('La fecha "Vigente hasta" tiene que ser posterior a ahora.'); return; }
+        const vigMs = new Date(vigencia).getTime();
+        if(!(vigMs > Date.now())){ alert('La fecha "Vigente hasta" tiene que ser posterior a ahora.'); return; }
+        if(vigMs > Date.now() + 366*86400000){ alert('Revisá la fecha "Vigente hasta": está a más de un año (¿un dígito de más en el año?).'); return; }
         // Se muestra un solo tema vigente por vez: si hay otro abierto, se cierra al publicar el nuevo
         // (antes quedaba abierto pero escondido, y los vecinos no podían seguir preguntando en él).
         if(activo && !confirm(`Ya hay un tema en consulta ("${activo.tema}"). Al publicar este, aquel se cierra y pasa a "Temas anteriores". ¿Seguir?`)) return;
-        btnPublicar.disabled = true;
+        const liberarPub = ocuparBoton(btnPublicar, 'Publicando…');
+        if(!liberarPub) return;
         const lista = await loadData('naken-asamblea-temas', []);
         if(activo){ const viejo = lista.find(x=>x.id===activo.id); if(viejo) viejo.vigenciaHasta = new Date(Date.now()-1000).toISOString(); }
         lista.push({
@@ -6211,7 +6270,9 @@ const APP_VERSION = '2026-10-15.7';
           tema, titulo, contenido, vigenciaHasta: new Date(vigencia).toISOString(),
           resolucion: '', resolucionFecha: ''
         });
-        await saveData('naken-asamblea-temas', lista);
+        try{ await saveData('naken-asamblea-temas', lista); }
+        catch(e){ liberarPub(); alert('No se pudo publicar: ' + (e && e.message || e)); return; }
+        liberarPub();
         flashButtonSuccess(btnPublicar, '✓ Publicado');
         setTimeout(()=>mountAsambleaSistema(mountId), 700);
       });
@@ -6242,11 +6303,12 @@ const APP_VERSION = '2026-10-15.7';
         b.addEventListener('click', async ()=>{
           const ta = mount.querySelector(`.preg-respuesta[data-id="${b.dataset.id}"]`);
           if(!ta.value.trim()){ alert('Escribí la respuesta antes de enviarla.'); return; }
-          b.disabled = true;
+          const liberar = ocuparBoton(b);
+          if(!liberar) return;
           let res;
           try{ res = await window.storage.responderPreguntaAsamblea(nsKey('naken-asamblea-preguntas'), {id: b.dataset.id, respuesta: ta.value.trim()}); }
           catch(e){ res = {ok:false, error: e && e.message || String(e)}; }
-          b.disabled = false;
+          liberar();
           if(!res || !res.ok){ alert('No se pudo enviar la respuesta: ' + ((res && res.error) || '')); return; }
           flashButtonSuccess(b, '✓ Enviada');
           refreshAsambleaBadge();
@@ -6261,14 +6323,16 @@ const APP_VERSION = '2026-10-15.7';
         const texto = document.getElementById('at-pregunta').value.trim();
         if(!texto){ alert('Escribí tu pregunta antes de enviarla.'); return; }
         if(!activo) return;
-        btnPreguntar.disabled = true;
+        const liberar = ocuparBoton(btnPreguntar);
+        if(!liberar) return;
         // Unidad, nombre y hora los pone el servidor. idCliente evita duplicados si la red reintenta.
         const idCliente = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
         let res;
         try{ res = await window.storage.crearPreguntaAsamblea(nsKey('naken-asamblea-preguntas'), {temaId: activo.id, asunto: texto, idCliente}); }
         catch(e){ res = {ok:false, error: e && e.message || String(e)}; }
-        btnPreguntar.disabled = false;
+        liberar();
         if(!res || !res.ok){ alert('No se pudo enviar la pregunta: ' + ((res && res.error) || '')); return; }
+        document.getElementById('at-pregunta').value = ''; // la caja queda vacía: la pregunta ya se publicó
         flashButtonSuccess(btnPreguntar, '✓ Enviada');
         markAsambleaSeen();
         setTimeout(()=>mountAsambleaSistema(mountId), 700);
@@ -6418,12 +6482,13 @@ const APP_VERSION = '2026-10-15.7';
         const tipo = document.getElementById(mountId+'-tipo').value;
         const asuntoEl = document.getElementById(mountId+'-asunto');
         const asunto = asuntoEl.value.trim();
-        if(!asunto) return;
+        if(!asunto){ alert('Escribí el detalle antes de enviarlo.'); return; }
         const alcanceInput = opts.hasAlcance ? mount.querySelector(`input[name="${mountId}-alcance"]:checked`) : null;
         // La unidad y la fecha las pone el servidor (la unidad sale de la sesión). El idCliente hace
         // que un reintento automático de red no cree el mismo reclamo dos veces.
         const idCliente = 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
-        btn.disabled = true;
+        const liberar = ocuparBoton(btn);
+        if(!liberar) return;
         setStatus(statusId,'saving');
         let enviado = false;
         try{
@@ -6444,7 +6509,7 @@ const APP_VERSION = '2026-10-15.7';
           setStatus(statusId,'error');
           alert('No se pudo enviar el reclamo: ' + (e && e.message ? e.message : e));
         } finally {
-          btn.disabled = false;
+          liberar();
         }
         if(enviado){
           flashButtonSuccess(btn, '✓ Enviado');
