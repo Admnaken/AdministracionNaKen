@@ -1786,7 +1786,7 @@ const APPS_SCRIPT_TOKEN = '9OCpNdEBMfc4zl3BtLUOahQm0DNx4azDX1O9OS0D';
    Sin esto, los navegadores seguían usando el index.html anterior aunque
    se recargara la página, y una corrección publicada no llegaba a nadie.
    ===================================================================== */
-const APP_VERSION = '2026-10-15.8';
+const APP_VERSION = '2026-10-15.9';
 (function avisoVersionNueva(){
   async function revisar(){
     try{
@@ -3550,7 +3550,7 @@ const APP_VERSION = '2026-10-15.8';
     if(role==='admin'){
       return countUnseen(preguntas, seenKey, it=>it.id+'|'+(it.respuesta||''));
     } else if(role==='propietario' && currentUser){
-      const misPreguntas = preguntas.filter(it=>it.unidad===currentUser.unidad);
+      const misPreguntas = preguntas.filter(it=>mismaUnidadTxt(it.unidad, currentUser.unidad));
       const relevantes = [...comunicados.map(it=>({id:it.id, sig:it.id})), ...misPreguntas.map(it=>({id:it.id, sig:it.id+'|'+(it.respuesta||'')}))];
       const seen = seenMapGet(seenKey);
       return relevantes.filter(it=>seen[it.id]!==it.sig).length;
@@ -3569,7 +3569,7 @@ const APP_VERSION = '2026-10-15.8';
     if(role==='admin'){
       markAllSeen(preguntas, seenKey, it=>it.id+'|'+(it.respuesta||''));
     } else if(role==='propietario' && currentUser){
-      const misPreguntas = preguntas.filter(it=>it.unidad===currentUser.unidad);
+      const misPreguntas = preguntas.filter(it=>mismaUnidadTxt(it.unidad, currentUser.unidad));
       const seen = seenMapGet(seenKey);
       comunicados.forEach(it=>{ seen[it.id]=it.id; });
       misPreguntas.forEach(it=>{ seen[it.id]=it.id+'|'+(it.respuesta||''); });
@@ -3580,7 +3580,7 @@ const APP_VERSION = '2026-10-15.8';
 
   function conflictosRelevantes(casos){
     if(role==='admin') return casos;
-    if(role==='propietario' && currentUser) return casos.filter(c=>c.unidadDenunciante===currentUser.unidad || c.unidadDenunciada===currentUser.unidad);
+    if(role==='propietario' && currentUser) return casos.filter(c=>mismaUnidadTxt(c.unidadDenunciante, currentUser.unidad) || mismaUnidadTxt(c.unidadDenunciada, currentUser.unidad));
     return [];
   }
   function conflictoSig(c){
@@ -3905,11 +3905,14 @@ const APP_VERSION = '2026-10-15.8';
     if(role==='propietario'){
       // Unidad denunciada: se elige de la lista del consorcio (escrita a mano, "5 A" y "5° A"
       // no coincidían con la unidad del vecino y el caso nunca le llegaba).
-      getSpreadsheetIdActivo().then(id=>obtenerDeptosConPorcentual(id)).then(deptos=>{
+      // Solo hace falta la lista de unidades (no los porcentuales): se pide eso, que es rápido.
+      getSpreadsheetIdActivo().then(id=>fetchUnidadesConsorcio(id)).then(data=>{
         const sel = document.getElementById('cf-denunciada');
         if(!sel) return;
-        const propia = String(currentUser && currentUser.unidad || '').trim().toLowerCase();
-        const opciones = (deptos||[]).map(d=>d.valor).filter(v=>v && String(v).trim().toLowerCase()!==propia);
+        const unidades = (data && data.unidades) || [];
+        const opciones = unidades
+          .filter(u=>!mismaUnidadTxt(u.uf, currentUser && currentUser.unidad) && !mismaUnidadTxt(u.pisoDpto, currentUser && currentUser.unidad))
+          .map(u=>String(u.pisoDpto || u.uf || '').trim()).filter(Boolean);
         if(!opciones.length){
           const input = document.createElement('input');
           input.type = 'text'; input.id = 'cf-denunciada'; input.placeholder = 'Ej: 5° A';
@@ -3917,7 +3920,10 @@ const APP_VERSION = '2026-10-15.8';
           return;
         }
         sel.innerHTML = `<option value="">Elegí la unidad…</option>` + opciones.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
-      }).catch(()=>{});
+      }).catch(()=>{
+        const sel = document.getElementById('cf-denunciada');
+        if(sel && sel.tagName==='SELECT'){ const input = document.createElement('input'); input.type='text'; input.id='cf-denunciada'; input.placeholder='Ej: 5° A'; sel.replaceWith(input); }
+      });
 
       function renderNormativa(){
         const tipo = document.getElementById('cf-tipo').value;
@@ -3982,6 +3988,12 @@ const APP_VERSION = '2026-10-15.8';
         const liberarCf = ocuparBoton(document.getElementById('cf-submit'));
         if(!liberarCf) return;
         setStatus(statusId,'saving');
+        const rawHecho = document.getElementById('cf-fechahecho').value;
+        if(rawHecho){
+          const dH = new Date(rawHecho), anioH = (rawHecho.match(/^(\d+)-/)||[])[1] || '';
+          if(isNaN(dH.getTime()) || anioH.length !== 4){ alert('Revisá la fecha del hecho: el año tiene que tener 4 cifras.'); return; }
+          if(dH.getTime() > Date.now() + 5*60000){ alert('La fecha del hecho no puede ser posterior a hoy.'); return; }
+        }
         const fechaHecho = (()=>{
           const raw = document.getElementById('cf-fechahecho').value;
           if(!raw) return '';
@@ -4036,8 +4048,8 @@ const APP_VERSION = '2026-10-15.8';
         ? casos
         : casos.filter(c => {
             if(!currentUser) return false;
-            if(c.unidadDenunciante===currentUser.unidad) return true; // el denunciante siempre ve su propio caso
-            if(c.unidadDenunciada===currentUser.unidad) return c.estado!=='Pendiente'; // el denunciado recién ve algo cuando la admin lo notifica
+            if(mismaUnidadTxt(c.unidadDenunciante, currentUser.unidad)) return true; // el denunciante siempre ve su propio caso
+            if(mismaUnidadTxt(c.unidadDenunciada, currentUser.unidad)) return c.estado!=='Pendiente'; // el denunciado recién ve algo cuando la admin lo notifica
             return false;
           });
 
@@ -4049,8 +4061,8 @@ const APP_VERSION = '2026-10-15.8';
       listEl.innerHTML = '';
       visibles.slice().reverse().forEach(c=>{
         const reincidencias = casos.filter(x=>x.unidadDenunciada===c.unidadDenunciada && x.tipo===c.tipo).length;
-        const esDenunciante = role==='propietario' && currentUser && currentUser.unidad===c.unidadDenunciante;
-        const esDenunciado = role==='propietario' && currentUser && currentUser.unidad===c.unidadDenunciada;
+        const esDenunciante = role==='propietario' && currentUser && mismaUnidadTxt(currentUser.unidad, c.unidadDenunciante);
+        const esDenunciado = role==='propietario' && currentUser && mismaUnidadTxt(currentUser.unidad, c.unidadDenunciada);
         const puedeVerDenunciaCompleta = role==='admin' || esDenunciante || (esDenunciado && c.formalizada);
         const card = document.createElement('div');
         card.className = 'card';
@@ -4354,8 +4366,8 @@ const APP_VERSION = '2026-10-15.8';
     }
 
     function renderAceptacion(c){
-      const esDenunciante = currentUser.unidad === c.unidadDenunciante;
-      const esDenunciado = currentUser.unidad === c.unidadDenunciada;
+      const esDenunciante = mismaUnidadTxt(currentUser.unidad, c.unidadDenunciante);
+      const esDenunciado = mismaUnidadTxt(currentUser.unidad, c.unidadDenunciada);
       let html = `<span class="card-field-label">Aceptación del acuerdo</span><div style="font-size:12.5px;margin-top:4px;">`;
       html += `<div>Denunciante: ${c.aceptoDenunciante ? '✅ '+escapeHtml(c.aceptoDenunciante) : '— pendiente —'}</div>`;
       html += `<div>Denunciado: ${c.aceptoDenunciado ? '✅ '+escapeHtml(c.aceptoDenunciado) : '— pendiente —'}</div>`;
@@ -5222,6 +5234,9 @@ const APP_VERSION = '2026-10-15.8';
     document.addEventListener('focusin', e=>{ if(esFecha(e.target)) ajustarMax(e.target); }, true);
     document.addEventListener('change', e=>{ if(esFecha(e.target)) revisar(e.target); }, true);
   })();
+
+  // Las unidades pueden venir como número (3) o texto ("3") según de dónde se leyeron: se comparan como texto.
+  function mismaUnidadTxt(a, b){ return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase() && String(a == null ? '' : a).trim() !== ''; }
 
   function ocuparBoton(btn, texto){
     if(!btn || btn.dataset.ocupado) return null;
@@ -6401,7 +6416,7 @@ const APP_VERSION = '2026-10-15.8';
     function visibleItems(){
       if(!opts.hasAlcance) return items; // preguntas de asamblea: las ve todo el mundo, sin cambios
       if(role==='admin') return items;
-      return items.filter(i => i.alcance==='Común a todos' || (currentUser && i.unidad===currentUser.unidad));
+      return items.filter(i => i.alcance==='Común a todos' || (currentUser && mismaUnidadTxt(i.unidad, currentUser.unidad)));
     }
 
     function render(){
