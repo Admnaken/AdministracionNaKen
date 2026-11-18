@@ -1949,11 +1949,11 @@ const APP_VERSION = '2026-10-18.1';
         body: JSON.stringify({ action:'cerrarMes', spreadsheetId, confirmar: !!confirmar, consorcioId, periodoEsperado: periodoEsperado || '', sessionToken: SESSION_TOKEN })
       }), confirmar ? 1 : 4, confirmar ? 330000 : 60000);
     },
-    async prepararCarpetaFacturasDelPeriodo(spreadsheetId){
+    async prepararCarpetaFacturasDelPeriodo(spreadsheetId, consorcioId){
       return fetchConReintento(()=>fetch(APPS_SCRIPT_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action:'prepararCarpetaFacturasDelPeriodo', spreadsheetId, sessionToken: SESSION_TOKEN })
+        body: JSON.stringify({ action:'prepararCarpetaFacturasDelPeriodo', spreadsheetId, consorcioId, sessionToken: SESSION_TOKEN })
       }));
     },
     async traerSaldoBancoAlCierre(spreadsheetId, consorcioId){
@@ -4632,6 +4632,9 @@ const APP_VERSION = '2026-10-18.1';
 
       await withLoading(btn, 'Verificando…', async ()=>{
         const res = await window.storage.login(username, password);
+        // La contraseña no debe quedar escrita en la página después de entrar (se podía leer con las
+        // herramientas del navegador o desde una extensión).
+        if(res.ok) document.getElementById('login-password').value = '';
         if(!res.ok){
           msg.innerHTML = res.pending
             ? `<div class="gate-msg pending">Tu solicitud todavía no fue habilitada por la administración.</div>`
@@ -5360,7 +5363,7 @@ const APP_VERSION = '2026-10-18.1';
   /** Clave de "visto" única por usuario + consorcio, para que no se pisen entre distintos consorcios o propietarios. */
   function seenKeyFor(panel){
     const consorcioId = getActiveConsorcioId() || 'sc';
-    const quien = role==='admin' ? 'admin' : (currentUser ? currentUser.username : 'anon');
+    const quien = role==='admin' ? 'admin' : (currentUser ? (currentUser.username || currentUser.unidad || 'anon') : 'anon');
     return `naken-visto-${panel}-${consorcioId}-${quien}`;
   }
 
@@ -6785,13 +6788,21 @@ const APP_VERSION = '2026-10-18.1';
       const monto = parseMontoFlexible(p.monto);
       const u = unidadDe(p.unidad);
       const t1 = u ? Number(u.totalPrimerVto) || 0 : 0, t2 = u ? Number(u.totalSegundoVto) || 0 : 0;
+      // Se compara contra lo que correspondía pagar EN ESA FECHA: hasta el 1er vencimiento, el total al
+      // 1er vto.; después, el total al 2do vto. (con recargo). Antes, un pago del 09/10 por el monto
+      // del 1er vto. (vencido el 08/10) se marcaba "Coincide" y nadie veía que faltaba el recargo.
+      const vto1 = u ? parseFechaFlexible(u.fechaPrimerVto) : null;
+      const fPago = parseFechaFlexible(p.fecha);
+      const tarde = !!(vto1 && fPago && fPago.getTime() > vto1.getTime());
+      const debia = tarde ? t2 : t1;
       let contraDeuda = '';
       if(!u) contraDeuda = 'No se encontró la unidad en el prorrateo.';
-      else if(Math.abs(monto - t1) <= TOL) contraDeuda = 'Coincide con el total al 1er vencimiento.';
-      else if(Math.abs(monto - t2) <= TOL) contraDeuda = 'Coincide con el total al 2do vencimiento.';
-      else if(monto < t1) contraDeuda = 'Pago parcial: faltan ' + fmt(t1 - monto) + ' para el total al 1er vencimiento.';
-      else if(monto > t2 + TOL) contraDeuda = 'Pagó ' + fmt(monto - t2) + ' más que el total al 2do vencimiento.';
-      else contraDeuda = 'Entre el 1er y el 2do vencimiento.';
+      else if(!tarde && Math.abs(monto - t1) <= TOL) contraDeuda = 'Coincide con el total al 1er vencimiento.';
+      else if(tarde && Math.abs(monto - t2) <= TOL) contraDeuda = 'Coincide con el total al 2do vencimiento (pagó el ' + fechaCorta(fPago) + ', después del 1er vto.).';
+      else if(!tarde && Math.abs(monto - t2) <= TOL) contraDeuda = 'Pagó en término el total al 2do vencimiento: le quedan ' + fmt(t2 - t1) + ' a favor.';
+      else if(tarde && Math.abs(monto - t1) <= TOL) contraDeuda = 'Pagó el total al 1er vencimiento pero el ' + fechaCorta(fPago) + ', después del vencimiento (' + fechaCorta(vto1) + '): faltan ' + fmt(t2 - t1) + ' de recargo.';
+      else if(monto < debia) contraDeuda = 'Pago parcial: faltan ' + fmt(debia - monto) + ' para el total al ' + (tarde ? '2do' : '1er') + ' vencimiento' + (tarde ? ' (pagó después del 1er vto.)' : '') + '.';
+      else contraDeuda = 'Pagó ' + fmt(monto - debia) + ' más que el total al ' + (tarde ? '2do' : '1er') + ' vencimiento.';
       const coincide = /^Coincide/.test(contraDeuda);
 
       if(creditos){
@@ -7375,10 +7386,16 @@ const APP_VERSION = '2026-10-18.1';
                           ? ` (de los cuales $${fmt2(resDeuda.interesPagado)} se imputaron a intereses pendientes y $${fmt2(resDeuda.capitalPagado)} a capital)`
                           : '';
                         // Lo que importa al propietario y al admin: cuánto queda pendiente después de este pago.
-                        const pendiente = Math.max(0, (Number(resDeuda.deudaResultante)||0) + (Number(resDeuda.interesRestante)||0));
-                        const lineaSaldo = pendiente < 0.01
-                          ? ' Quedó al día: saldo pendiente $ 0,00.'
-                          : ` Saldo pendiente después de este pago: $${fmt2(pendiente)}.`;
+                        // Saldo REAL: el backend nuevo devuelve saldoTotalPendiente (expensa del mes + saldo
+                        // anterior + intereses + recargo si ya venció). "deudaResultante" no incluye la
+                        // expensa del mes: con eso se le decía "Quedó al día" a quien pagó de menos.
+                        const saldoReal = (resDeuda.saldoTotalPendiente !== undefined && resDeuda.saldoTotalPendiente !== null)
+                          ? Number(resDeuda.saldoTotalPendiente)
+                          : (Number(resDeuda.deudaResultante)||0) + (Number(resDeuda.interesRestante)||0);
+                        const recargoPrev = Number(resDeuda.recargoPrevisto)||0;
+                        const lineaSaldo = saldoReal < 0.01
+                          ? (saldoReal <= -0.01 ? ` Quedó al día, con $${fmt2(-saldoReal)} a favor para la próxima expensa.` : ' Quedó al día: saldo pendiente $ 0,00.')
+                          : ` Saldo pendiente después de este pago: $${fmt2(saldoReal)}${recargoPrev>0 ? ` (incluye $${fmt2(recargoPrev)} de recargo por la parte de la expensa del mes que quedó impaga al 1er vencimiento)` : ''}.`;
                         p.notaAdmin = notaCorreccion + `Pago acreditado por $${fmt2(monto)}${desgloseInteres}.` + lineaSaldo;
                       } else if(resDeuda && resDeuda.aviso){
                         p.notaAdmin = notaCorreccion + resDeuda.aviso;
@@ -8574,9 +8591,21 @@ const APP_VERSION = '2026-10-18.1';
         const btn = e.currentTarget;
         const msg = document.getElementById(mountId+'-preparar-facturas-msg');
         await withLoading(btn, 'Preparando…', async ()=>{
-          const res = await window.storage.prepararCarpetaFacturasDelPeriodo(spreadsheetId);
+          const res = await window.storage.prepararCarpetaFacturasDelPeriodo(spreadsheetId, getActiveConsorcioId());
           if(!res.ok){ msg.innerHTML = `<div class="gate-msg error">${escapeHtml(res.error||'No se pudo preparar la carpeta.')}</div>`; return; }
           msg.innerHTML = `<div class="gate-msg ok">✓ Carpeta lista para ${escapeHtml(res.periodo)} (${res.comprobantesYaSumados||0} comprobante(s) ya sumado(s)): <a href="${escapeHtml(res.carpetaUrl)}" target="_blank" rel="noopener">${escapeHtml(res.carpetaUrl)}</a></div>`;
+          // Antes de emitir las expensas: sueldos calculados que todavía no están en los gastos del mes,
+          // y fórmulas que se completaron recién ahora (p. ej. Fondo de Reserva de unidades nuevas).
+          const sueldosPend = res.sueldosSinCargar || [];
+          if(sueldosPend.length){
+            msg.innerHTML += `<div class="gate-msg error" style="margin-top:8px;"><b>⚠ No generes las expensas todavía.</b> Hay ${sueldosPend.length} sueldo(s) de ${escapeHtml(res.periodo)} calculados que no están cargados en Gastos_Mensual:
+              <ul style="margin:6px 0 0 18px;">${sueldosPend.map(s=>`<li>${escapeHtml(s.nombre||'')} — neto $ ${Math.round(Number(s.sueldoNeto)||0).toLocaleString('es-AR')}</li>`).join('')}</ul>
+              Cargalos desde "Personal y Liquidación de Sueldos" (+ Cargar en Gastos_Mensual). Si se emite sin ellos, la expensa cambia después de que los propietarios pagaron.</div>`;
+          }
+          const rp = res.reparaciones || {};
+          if((rp.columnasUnidades||0) + (rp.saldoAnterior||0) + (rp.segundoVto||0) > 0){
+            msg.innerHTML += `<div class="gate-msg pending" style="margin-top:8px;">Se completó la planilla antes de emitir: ${rp.columnasUnidades||0} unidad(es) con Fondo de Reserva y datos de administración, ${rp.saldoAnterior||0} saldo(s) anterior, ${rp.segundoVto||0} total(es) al 2do vencimiento. Revisá los montos antes de generar las expensas.</div>`;
+          }
         });
       });
       document.getElementById(mountId+'-reparar-planilla-btn').addEventListener('click', async (e)=>{
@@ -8623,9 +8652,12 @@ const APP_VERSION = '2026-10-18.1';
             }
             return;
           }
-          const lineaInteres = (preview.unidadesConInteresNuevo > 0)
-            ? `<br>📈 Se va a aplicar el interés por mora (${(preview.tasaInteresMensual*100).toFixed(2)}% mensual) sobre la deuda impaga de ${preview.unidadesConInteresNuevo} unidad(es), por un total de $ ${Math.round(Number(preview.interesPorMoraAAplicar)||0).toLocaleString('es-AR')}.`
+          const lineaRecargo = (preview.unidadesConRecargo > 0)
+            ? `<br>⏱ Se va a cobrar el recargo por pago fuera de término (${((Number(preview.tasaRecargo)||0)*100).toFixed(2)}%) sobre la parte de la expensa del mes que quedó impaga al 1er vencimiento en ${preview.unidadesConRecargo} unidad(es), por un total de $ ${Math.round(Number(preview.recargoAAplicar)||0).toLocaleString('es-AR')}.`
             : '';
+          const lineaInteres = lineaRecargo + ((preview.unidadesConInteresNuevo > 0)
+            ? `<br>📈 Se va a aplicar el interés por mora (${(preview.tasaInteresMensual*100).toFixed(2)}% mensual) sobre la deuda impaga de ${preview.unidadesConInteresNuevo} unidad(es), por un total de $ ${Math.round(Number(preview.interesPorMoraAAplicar)||0).toLocaleString('es-AR')}.`
+            : '');
           // "Botón antipánico": antes de dejar confirmar, muestra cualquier cosa rara que se
           // haya detectado en cómo le va a quedar a cada unidad -- montos en $0/negativos, o
           // variaciones extremas contra el mes anterior. Si hay algo, exige un check explícito
@@ -8646,8 +8678,8 @@ const APP_VERSION = '2026-10-18.1';
             <div class="gate-msg pending">
               Se va a archivar <b>${escapeHtml(preview.periodoActual)}</b> como hoja
               <code>${escapeHtml(preview.hojaAArchivar)}</code>, y el período activo pasa a
-              <b>${escapeHtml(preview.proximoPeriodo)}</b>. Los pagos, intereses y cargos particulares
-              del mes que cierra quedan en cero.${lineaInteres} Esto no se puede deshacer solo — ¿confirmás?
+              <b>${escapeHtml(preview.proximoPeriodo)}</b>. Los pagos y cargos particulares del mes que cierra
+              vuelven a cero; lo que quedó impago (con intereses y recargos) pasa al mes nuevo.${lineaInteres} Esto no se puede deshacer solo — ¿confirmás?
               ${lineaAnomalias}
               <div class="toolbar" style="margin-top:10px;">
                 <button class="btn ghost" id="${mountId}-cerrar-mes-cancelar">Todavía no, quiero revisar</button>
@@ -12436,7 +12468,9 @@ const APP_VERSION = '2026-10-18.1';
             const edificios = await getEdificios();
             const edificioActivo = edificios.find(e=>e.id===getActiveConsorcioId());
             const nombreEsperado = edificioActivo ? edificioActivo.nombre : '';
-            if(nombreEsperado && res.consorcio && nombreEsperado.trim().toLowerCase() !== res.consorcio.trim().toLowerCase()){
+            // Se compara el ID de la planilla (el nombre del archivo casi nunca coincide con el del
+            // consorcio: "expensas_naken_actualizada" vs "Talcahuano 1234" daba un aviso falso).
+            if(res.spreadsheetId && spreadsheetId && String(res.spreadsheetId).trim() !== String(spreadsheetId).trim()){
               alert(`⚠ Atención: la carga se hizo, pero en una planilla distinta a la esperada.\n\nConsorcio activo acá: "${nombreEsperado}"\nPlanilla donde realmente escribió: "${res.consorcio}"\n\nRevisá el ID de planilla cargado para "${nombreEsperado}" en "Todos los consorcios" — probablemente esté apuntando a la planilla de otro edificio.\n\nLink de la hoja donde SÍ quedó cargado: ${res.hojaUrl}`);
               return; // no marco como "cargado" para este consorcio, ya que en realidad fue a otro lado
             }
